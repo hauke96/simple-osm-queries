@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<osm version='0.6' generator='JOSM'>
+  <node id='-25362' action='modify' visible='true' lat='53.587' lon='9.9330'>
+    <tag k='height' v='10.5' />
+    <tag k='natural' v='tree' />
+  </node>
+  <node id='-25364' action='modify' visible='true' lat='53.587' lon='9.9331'>
+    <tag k='amenity' v='bench' />
+    <tag k='backrest' v='no' />
+    <tag k='name' v='Testbank' />
+  </node>
+  <node id='-25365' action='modify' visible='true' lat='53.587' lon='9.9332'>
+    <tag k='amenity' v='bench' />
+    <tag k='backrest' v='yes' />
+    <tag k='material' v='wood' />
+  </node>
+</osm>
