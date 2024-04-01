@@ -80,8 +80,8 @@ func (f NegatedStatement) Applies() bool {
 }
 
 type LogicalFilterExpression struct {
-	statementA Statement
-	statementB Statement
+	statementA FilterExpression
+	statementB FilterExpression
 	operator   LogicalOperator
 }
 
