@@ -55,10 +55,12 @@ func main() {
 	}
 
 	switch ctx.Command() {
-	case "import <input-file>":
+	case "import <input>":
 		importing.Import(cli.Import.Input)
 	case "querty <query>":
 		sigolo.Info("Not yet implemented")
 		os.Exit(1)
+	default:
+		sigolo.Errorf("Unknown command '%s'", ctx.Command())
 	}
 }

@@ -7,7 +7,9 @@ import (
 	"github.com/paulmach/osm/osmpbf"
 	"github.com/paulmach/osm/osmxml"
 	"os"
+	"soq/storage"
 	"strings"
+	"time"
 )
 
 func Import(inputFile string) {
@@ -29,14 +31,59 @@ func Import(inputFile string) {
 	defer scanner.Close()
 
 	sigolo.Debug("Start processing input data")
+	importStartTime := time.Now()
+
+	// TODO Try pre-allocating memory for performance enhancement.
+	var keyMap []string     // [key-index] -> key-string
+	var valueMap [][]string // [key-index][value-index] -> value-string
+
+	var tagIndex *storage.TagIndex
 	for scanner.Scan() {
 		obj := scanner.Object()
 		switch osmObj := obj.(type) {
 		case *osm.Node:
+			for _, tag := range osmObj.Tags {
+				// Search for the given key in the key map to get its index
+				keyIndex := -1
+				for i, k := range keyMap {
+					if k == tag.Key {
+						keyIndex = i
+						break
+					}
+				}
+
+				if keyIndex != -1 {
+					// Key already exists and so does its value map. Check is value already appeared and if not, add it.
+					valueMapForKey := valueMap[keyIndex]
+					containsValue := false
+					for _, value := range valueMapForKey {
+						if value == tag.Value {
+							containsValue = true
+							break
+						}
+					}
+					if !containsValue {
+						// Value not yet seen -> Add to value-map
+						valueMapForKey = append(valueMapForKey, tag.Value)
+					}
+				} else {
+					// Key appeared for the first time -> Create maps and add entry
+					keyMap = append(keyMap, tag.Key)
+					valueMap = append(valueMap, []string{tag.Value})
+				}
+			}
+
+			// TODO Sort the values so that binary comparisons(<, <=, >, >=, ...) work just by comparing the value indices.
+			tagIndex = storage.NewTagIndex(keyMap, valueMap)
 		}
 		// TODO Implement way handling
 		//case *osm.Way:
 		// TODO Implement relation handling
 		//case *osm.Relation:
 	}
+
+	importDuration := time.Since(importStartTime)
+
+	sigolo.Tracef("%+v", tagIndex)
+	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
 }

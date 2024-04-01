@@ -2,7 +2,7 @@
   <configuration default="false" name="run import" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="simple-osm-queries" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="import test.osm.pbf" />
+    <parameters value="--logging=trace import test-small.osm" />
     <kind value="FILE" />
     <package value="github.com/hauke96/simple-osm-queries" />
     <directory value="$PROJECT_DIR$" />
