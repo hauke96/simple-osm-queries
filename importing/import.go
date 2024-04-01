@@ -7,7 +7,7 @@ import (
 	"github.com/paulmach/osm/osmpbf"
 	"github.com/paulmach/osm/osmxml"
 	"os"
-	"soq/storage"
+	"soq/index"
 	"strings"
 	"time"
 )
@@ -37,7 +37,7 @@ func Import(inputFile string) {
 	var keyMap []string     // [key-index] -> key-string
 	var valueMap [][]string // [key-index][value-index] -> value-string
 
-	var tagIndex *storage.TagIndex
+	var tagIndex *index.TagIndex
 	for scanner.Scan() {
 		obj := scanner.Object()
 		switch osmObj := obj.(type) {
@@ -72,7 +72,7 @@ func Import(inputFile string) {
 				}
 			}
 
-			tagIndex = storage.NewTagIndex(keyMap, valueMap)
+			tagIndex = index.NewTagIndex(keyMap, valueMap)
 		}
 		// TODO Implement way handling
 		//case *osm.Way:

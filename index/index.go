@@ -1,12 +1,15 @@
-package storage
+package index
 
 import (
+	"bufio"
 	"github.com/hauke96/sigolo/v2"
 	"github.com/pkg/errors"
 	"os"
 	"sort"
 	"strings"
 )
+
+const filename = "./tag-index"
 
 type TagIndex struct {
 	keyMap   []string   // The index value of a key is the position in this array.
@@ -23,6 +26,40 @@ func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 		keyMap:   keyMap,
 		valueMap: valueMap,
 	}
+}
+
+func LoadTagIndex() (*TagIndex, error) {
+	f, err := os.Open(filename)
+	sigolo.FatalCheck(err)
+
+	defer func() {
+		err = f.Close()
+		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filename))
+	}()
+
+	var keyMap []string
+	var valueMap [][]string
+	scanner := bufio.NewScanner(f)
+	lineCounter := 0
+	for scanner.Scan() {
+		// 0 = key
+		// 1 = values separated by "|"
+		splitLine := strings.Split(scanner.Text(), "=")
+		if len(splitLine) != 2 {
+			return nil, errors.Errorf("Wrong format of line %d: '=' expected separating key and value list", lineCounter)
+		}
+
+		keyMap = append(keyMap, splitLine[0])
+		valueMap = append(valueMap, strings.Split(splitLine[0], "|"))
+
+		lineCounter++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", filename)
+	}
+
+	return NewTagIndex(keyMap, valueMap), nil
 }
 
 // GetIndexFromKey returns the numerical index representation of the given key string and -1 if the key doesn't exist.
@@ -53,8 +90,6 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 }
 
 func (i *TagIndex) Save() error {
-	filename := "./tag-index"
-
 	f, err := os.Create(filename)
 	sigolo.FatalCheck(err)
 
