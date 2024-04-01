@@ -87,6 +87,8 @@ func (l *Lexer) nextToken() (*Token, error) {
 			return l.currentSingleCharToken(OpeningBraces), nil
 		case '}':
 			return l.currentSingleCharToken(ClosingBraces), nil
+		case '.':
+			return l.currentSingleCharToken(ExpressionSeparator), nil
 			// TODO I think this token kind is not necessary:
 			//case ',':
 			//	return l.currentSingleCharToken(ParameterSeparator), nil

@@ -15,8 +15,8 @@ const (
 	NotEqual
 	Greater
 	GreaterEqual
-	Smaller
-	SmallerEqual
+	Lower
+	LowerEqual
 )
 
 type LogicalOperator int
@@ -24,16 +24,34 @@ type LogicalOperator int
 const (
 	And LogicalOperator = iota
 	Or
+	Not
 )
 
 type Query struct {
 	topLevelStatements []Statement
 }
 
-type Location interface {
-	// TODO Implement + function parameter
+/*
+	Location expressions
+*/
+
+type LocationExpression interface {
+	// TODO Function parameter
 	IsWithin() bool
 }
+
+type BboxLocationExpression struct {
+	coordinates [4]int
+}
+
+func (b *BboxLocationExpression) IsWithin() bool {
+	// TODO Implement
+	return true
+}
+
+/*
+	Filter expressions
+*/
 
 type FilterExpression interface {
 	// TODO Function parameter
@@ -41,12 +59,22 @@ type FilterExpression interface {
 }
 
 type Statement struct {
-	location   Location
+	location   LocationExpression
 	objectType ObjectType
-	filter     []FilterExpression
+	filter     FilterExpression
 }
 
 func (f Statement) Applies() bool {
+	// TODO Implement
+	return true
+}
+
+type NegatedStatement struct {
+	baseExpression FilterExpression
+	operator       LogicalOperator
+}
+
+func (f NegatedStatement) Applies() bool {
 	// TODO Implement
 	return true
 }

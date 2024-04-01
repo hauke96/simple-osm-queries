@@ -5,7 +5,9 @@ type TokenKind int
 const (
 	Keyword TokenKind = iota
 	Number
+	String // TODO
 
+	ExpressionSeparator
 	//ParameterSeparator
 
 	OpeningParenthesis
