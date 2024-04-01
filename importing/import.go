@@ -33,7 +33,7 @@ func Import(inputFile string) {
 	sigolo.Debug("Start processing input data")
 	importStartTime := time.Now()
 
-	// TODO Try pre-allocating memory for performance enhancement.
+	// TODO Use maps to quickly find keys and tags
 	var keyMap []string     // [key-index] -> key-string
 	var valueMap [][]string // [key-index][value-index] -> value-string
 
@@ -54,9 +54,8 @@ func Import(inputFile string) {
 
 				if keyIndex != -1 {
 					// Key already exists and so does its value map. Check is value already appeared and if not, add it.
-					valueMapForKey := valueMap[keyIndex]
 					containsValue := false
-					for _, value := range valueMapForKey {
+					for _, value := range valueMap[keyIndex] {
 						if value == tag.Value {
 							containsValue = true
 							break
@@ -64,7 +63,7 @@ func Import(inputFile string) {
 					}
 					if !containsValue {
 						// Value not yet seen -> Add to value-map
-						valueMapForKey = append(valueMapForKey, tag.Value)
+						valueMap[keyIndex] = append(valueMap[keyIndex], tag.Value)
 					}
 				} else {
 					// Key appeared for the first time -> Create maps and add entry
@@ -73,7 +72,6 @@ func Import(inputFile string) {
 				}
 			}
 
-			// TODO Sort the values so that binary comparisons(<, <=, >, >=, ...) work just by comparing the value indices.
 			tagIndex = storage.NewTagIndex(keyMap, valueMap)
 		}
 		// TODO Implement way handling
@@ -83,7 +81,9 @@ func Import(inputFile string) {
 	}
 
 	importDuration := time.Since(importStartTime)
-
 	sigolo.Tracef("%+v", tagIndex)
 	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
+
+	err = tagIndex.Save()
+	sigolo.FatalCheck(err)
 }

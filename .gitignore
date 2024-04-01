@@ -17,5 +17,8 @@
 # OSM files
 *.osm.pbf
 
+# Index files
+tag-index
+
 # Go workspace file
 go.work
