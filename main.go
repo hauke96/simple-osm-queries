@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/alecthomas/kong"
 	"github.com/hauke96/sigolo/v2"
-	"os"
 	"soq/importing"
+	"soq/query"
 	"strings"
 )
 
@@ -57,9 +57,15 @@ func main() {
 	switch ctx.Command() {
 	case "import <input>":
 		importing.Import(cli.Import.Input)
-	case "querty <query>":
-		sigolo.Info("Not yet implemented")
-		os.Exit(1)
+	case "query <query>":
+		_, err := query.ParseQueryString(`// this is a comment
+bbox(1,2,3,4).nodes{ amenity=bench}`)
+		sigolo.FatalCheck(err)
+		//query.ParseQueryString(`// this is a comment
+		//
+		//bbox(1,  2,3,
+		//4).nodes{   amenity
+		//=bench}`)
 	default:
 		sigolo.Errorf("Unknown command '%s'", ctx.Command())
 	}

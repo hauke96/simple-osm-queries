@@ -1,74 +1,26 @@
 package query
 
-type ObjectType int
+import "github.com/hauke96/sigolo/v2"
 
-const (
-	Node ObjectType = iota
-	Way
-	Relation
-)
-
-type BinaryOperator int
-
-const (
-	Equal BinaryOperator = iota
-	NotEqual
-	Greater
-	GreaterEqual
-	Smaller
-	SmallerEqual
-)
-
-type LogicalOperator int
-
-const (
-	And LogicalOperator = iota
-	Or
-)
-
-type Query struct {
-	topLevelStatements []Statement
+type Parser struct {
 }
 
-type Location interface {
-	// TODO Implement + function parameter
-	IsWithin() bool
-}
+func ParseQueryString(queryString string) (*Query, error) {
+	runes := []rune(queryString)
+	lexer := Lexer{
+		input: runes,
+		index: 0,
+	}
 
-type FilterExpression interface {
-	// TODO Function parameter
-	Applies() bool
-}
+	token, err := lexer.read()
+	if err != nil {
+		return nil, err
+	}
 
-type Statement struct {
-	location   Location
-	objectType ObjectType
-	filter     []FilterExpression
-}
+	sigolo.Tracef("Found %d token", len(token))
+	for _, t := range token {
+		sigolo.Tracef("  kind=%d, pos=%d : %s", t.kind, t.startPosition, t.lexeme)
+	}
 
-func (f Statement) Applies() bool {
-	// TODO Implement
-	return true
-}
-
-type LogicalFilterExpression struct {
-	statementA Statement
-	statementB Statement
-	operator   LogicalOperator
-}
-
-func (f LogicalFilterExpression) Applies() bool {
-	// TODO Implement
-	return true
-}
-
-type TagFilterExpression struct {
-	key      int
-	value    int
-	operator BinaryOperator
-}
-
-func (f TagFilterExpression) Applies() bool {
-	// TODO Implement
-	return true
+	return nil, nil // TODO
 }
