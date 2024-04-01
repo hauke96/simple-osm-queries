@@ -58,8 +58,10 @@ func main() {
 	case "import <input>":
 		importing.Import(cli.Import.Input)
 	case "query <query>":
-		_, err := query.ParseQueryString(`// this is a comment
-bbox(1,2,3,4).nodes{ amenity=bench AND (foo=bar OR a!=b)}`)
+		_, err := query.ParseQueryString(`
+// this is a comment
+bbox(1,2,3,4).nodes{ amenity=bench }
+`)
 		sigolo.FatalCheck(err)
 		//query.ParseQueryString(`// this is a comment
 		//

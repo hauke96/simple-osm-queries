@@ -22,7 +22,7 @@ type Parser struct {
 }
 
 func ParseQueryString(queryString string) (*Query, error) {
-	runes := []rune(queryString)
+	runes := []rune(strings.Trim(queryString, "\n\r\t "))
 	lexer := Lexer{
 		input: runes,
 		index: 0,
