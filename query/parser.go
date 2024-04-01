@@ -47,6 +47,7 @@ func ParseQueryString(queryString string) (*Query, error) {
 
 func (p *Parser) moveToNextToken() *Token {
 	p.index++
+	sigolo.Debugb(1, "Moved to next token: %+v", p.currentToken())
 	return p.currentToken()
 }
 
@@ -67,11 +68,13 @@ func (p *Parser) currentToken() *Token {
 func (p *Parser) parse() (*Query, error) {
 	var topLevelStatements []Statement
 
-	for p.index < len(p.token) {
+	for p.peekNextToken() != nil {
 		statement, err := p.parseStatement()
 		if err != nil {
 			return nil, err
 		}
+
+		statement.Print(0)
 
 		topLevelStatements = append(topLevelStatements, *statement)
 	}
@@ -88,9 +91,13 @@ func (p *Parser) parseStatement() (*Statement, error) {
 	}
 
 	// Then a '.'
+	previousToken := p.currentToken()
 	token := p.moveToNextToken()
+	if token == nil {
+		return nil, errors.Errorf("Expected '.' after token '%s' (at position %d) but token stream ended", previousToken.lexeme, previousToken.startPosition)
+	}
 	if token.kind != ExpressionSeparator {
-		return nil, errors.Errorf("Expected '(' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
+		return nil, errors.Errorf("Expected '.' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
 	// Then object type
@@ -100,7 +107,11 @@ func (p *Parser) parseStatement() (*Statement, error) {
 	}
 
 	// Expect "{"
+	previousToken = p.currentToken()
 	token = p.moveToNextToken()
+	if token == nil {
+		return nil, errors.Errorf("Expected '{' after token '%s' (at position %d) but token stream ended", previousToken.lexeme, previousToken.startPosition)
+	}
 	if token.kind != OpeningBraces {
 		return nil, errors.Errorf("Expected '{' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
@@ -109,6 +120,16 @@ func (p *Parser) parseStatement() (*Statement, error) {
 	filterExpression, err := p.parseFilterExpressions()
 	if err != nil {
 		return nil, err
+	}
+
+	// Expect "}"
+	previousToken = p.currentToken()
+	token = p.moveToNextToken()
+	if token == nil {
+		return nil, errors.Errorf("Expected '}' after token '%s' (at position %d) but token stream ended", previousToken.lexeme, previousToken.startPosition)
+	}
+	if token.kind != ClosingBraces {
+		return nil, errors.Errorf("Expected '}' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
 	return &Statement{
@@ -139,12 +160,6 @@ func (p *Parser) parseLocationExpression() (LocationExpression, error) {
 
 	var locationExpression LocationExpression
 	var err error
-	//
-	//parenthesisPosition := token.startPosition
-	//parenthesisToken := p.moveToNextToken()
-	//if parenthesisToken == nil {
-	//	return nil, errors.Errorf("Expected start of values for location expression (at position %d) but token stream ended", parenthesisPosition)
-	//}
 
 	switch token.lexeme {
 	case bboxLocationExpression:
@@ -196,25 +211,35 @@ func (p *Parser) parseObjectType() (ObjectType, error) {
 }
 
 func (p *Parser) parseFilterExpressions() (FilterExpression, error) {
-	var expression FilterExpression
-	var err error
+	expression, err := p.parseNextExpression()
+	if err != nil {
+		return nil, err
+	}
 
 	for {
-		var nextExpression FilterExpression
-		nextExpression, err = p.parseNextExpression()
-		if err != nil {
-			return nil, err
+		//var nextExpression FilterExpression
+
+		lastToken := p.currentToken()
+		token := p.peekNextToken()
+		if token == nil {
+			return nil, errors.Errorf("Token stream ended unexpectedly after token '%s' at position %d while parsing filter expression. Missing '}'?", lastToken.lexeme, lastToken.startPosition)
 		}
 
-		token := p.moveToNextToken()
-		if p.peekNextToken() == nil {
-			return nil, errors.Errorf("Token stream ended unexpectedly while parsing filter expression. Missing '}'?")
+		// Closing parentheses and braces are handles by calling functions
+		if token.kind == ClosingBraces {
+			//expression = nextExpression
+			//p.moveToNextToken()
+			break
+		} else if token.kind == ClosingParenthesis {
+			//p.moveToNextToken()
+			break
 		}
+
+		// nil check happened already above.
+		token = p.moveToNextToken()
 
 		// Expect AND, OR or '}' after expression
-		if token.kind == ClosingBraces || token.kind == ClosingParenthesis {
-			break
-		} else if token.kind == Keyword {
+		if token.kind == Keyword {
 			// Handle conjunction/disjunction
 			switch token.lexeme {
 			case "AND":
@@ -226,7 +251,7 @@ func (p *Parser) parseFilterExpressions() (FilterExpression, error) {
 				}
 
 				expression = &LogicalFilterExpression{
-					statementA: nextExpression,
+					statementA: expression,
 					statementB: secondExpression,
 					operator:   And,
 				}
@@ -238,11 +263,11 @@ func (p *Parser) parseFilterExpressions() (FilterExpression, error) {
 					return nil, err
 				}
 
-				return &LogicalFilterExpression{
-					statementA: nextExpression,
+				expression = &LogicalFilterExpression{
+					statementA: expression,
 					statementB: secondExpression,
 					operator:   Or,
-				}, nil
+				}
 			default:
 				return nil, errors.Errorf("Unexpected keyword '%s' at position %d, expected 'AND' or 'OR'", token.lexeme, token.startPosition)
 			}
@@ -322,6 +347,7 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			if err != nil {
 				return nil, err
 			}
+			token = p.currentToken()
 			binaryOperatorLexeme := token.lexeme
 
 			// Parse value (e.g. "primary" in "highway=primary")
@@ -329,7 +355,7 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			if token == nil {
 				return nil, errors.Errorf("Expected value after key '%s' but token stream ended", key+binaryOperatorLexeme)
 			}
-			if token.kind == Keyword {
+			if token.kind != Keyword {
 				return nil, errors.Errorf("Expected value after key '%s' but found kind=%d with lexeme=%s", key+binaryOperatorLexeme, token.kind, token.lexeme)
 			}
 			//value := token.lexeme
