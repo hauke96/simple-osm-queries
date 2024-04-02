@@ -52,8 +52,12 @@ func LoadTagIndex() (*TagIndex, error) {
 			return nil, errors.Errorf("Wrong format of line %d: '=' expected separating key and value list", lineCounter)
 		}
 
-		keyMap = append(keyMap, splitLine[0])
-		valueMap = append(valueMap, strings.Split(splitLine[0], "|"))
+		key := splitLine[0]
+		values := splitLine[1]
+		sigolo.Tracef("Found key=%s with values=%s", key, values)
+
+		keyMap = append(keyMap, key)
+		valueMap = append(valueMap, strings.Split(values, "|"))
 
 		lineCounter++
 	}
@@ -117,16 +121,6 @@ func (i *TagIndex) SaveToFile() error {
 		err = f.Close()
 		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filename))
 	}()
-
-	for keyIndex, values := range i.valueMap {
-		valueString := strings.Join(values, "|")
-		valueString = strings.ReplaceAll(valueString, "\n", "\\n")
-
-		_, err = f.WriteString(i.keyMap[keyIndex] + "=" + valueString + "\n")
-		if err != nil {
-			return errors.Wrapf(err, "Unable to write to tag-index store %s", filename)
-		}
-	}
 
 	return i.WriteAsString(f)
 }
