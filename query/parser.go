@@ -362,9 +362,10 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			}
 			value := token.lexeme
 
+			keyIndex, valueIndex := p.tagIndex.GetIndicesFromKeyValueStrings(key, value)
 			expression = &TagFilterExpression{
-				key:      p.tagIndex.GetKeyIndexFromKeyString(key),
-				value:    p.tagIndex.GetValueIndexFromKeyValueStrings(key, value),
+				key:      keyIndex,
+				value:    valueIndex,
 				operator: binaryOperator,
 			}
 		}

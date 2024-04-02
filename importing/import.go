@@ -30,7 +30,7 @@ func Import(inputFile string) {
 	}
 	defer scanner.Close()
 
-	sigolo.Debug("Start processing input data")
+	sigolo.Debug("Start processing tags from input data")
 	importStartTime := time.Now()
 
 	// TODO Use maps to quickly find keys and tags

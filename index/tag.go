@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/osm"
 	"github.com/pkg/errors"
 	"io"
 	"os"
@@ -11,7 +12,7 @@ import (
 	"strings"
 )
 
-const filename = "./tag-index"
+const tagIndexFilename = "./tag-index"
 const NotFound = -1
 
 type TagIndex struct {
@@ -32,12 +33,12 @@ func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 }
 
 func LoadTagIndex() (*TagIndex, error) {
-	f, err := os.Open(filename)
+	f, err := os.Open(tagIndexFilename)
 	sigolo.FatalCheck(err)
 
 	defer func() {
 		err = f.Close()
-		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filename))
+		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", tagIndexFilename))
 	}()
 
 	var keyMap []string
@@ -63,7 +64,7 @@ func LoadTagIndex() (*TagIndex, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", filename)
+		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", tagIndexFilename)
 	}
 
 	index := NewTagIndex(keyMap, valueMap)
@@ -82,18 +83,18 @@ func (i *TagIndex) GetKeyIndexFromKeyString(key string) int {
 	return NotFound
 }
 
-func (i *TagIndex) GetValueIndexFromKeyValueStrings(key string, value string) int {
+func (i *TagIndex) GetIndicesFromKeyValueStrings(key string, value string) (int, int) {
 	keyIndex := i.GetKeyIndexFromKeyString(key)
 	if keyIndex == NotFound {
-		return NotFound
+		return NotFound, NotFound
 	}
 
 	for idx, v := range i.valueMap[keyIndex] {
 		if v == value {
-			return idx
+			return keyIndex, idx
 		}
 	}
-	return NotFound
+	return NotFound, NotFound
 }
 
 // GetKeyFromIndex returns the string representation of the given key index.
@@ -113,13 +114,46 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 	return valueMap[value]
 }
 
+func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
+	// See EncodedFeature for details on the array that are created here.
+
+	encodedKeys := make([]byte, len(i.keyMap)/8+1)
+	bitPosToValue := map[int]int{} // Position in bit-string to numeric representation of value
+	for _, tag := range tags {
+		keyIndex, valueIndex := i.GetIndicesFromKeyValueStrings(tag.Key, tag.Value)
+
+		// Set 1 for the given key because it's set
+		bin := keyIndex / 8      // Element of the array
+		idxInBin := keyIndex % 8 // Bit position within the byte
+		encodedKeys[bin] |= 1 << idxInBin
+
+		// Store encoded value for later
+		bitPosToValue[keyIndex] = valueIndex
+	}
+
+	// Now we know all keys that are set and can determine the order of the values for the array.
+	encodedValues := make([]int, len(tags))
+	setKeyCounter := 0
+	for pos := 0; pos < len(i.keyMap); pos++ {
+		bin := pos / 8      // Element of the array
+		idxInBin := pos % 8 // Bit position within the byte
+		if encodedKeys[bin] & 1 << idxInBin {
+			// Key at "pos" is set -> store its value
+			encodedValues[setKeyCounter] = bitPosToValue[pos]
+			setKeyCounter++
+		}
+	}
+
+	return encodedKeys, encodedValues
+}
+
 func (i *TagIndex) SaveToFile() error {
-	f, err := os.Create(filename)
+	f, err := os.Create(tagIndexFilename)
 	sigolo.FatalCheck(err)
 
 	defer func() {
 		err = f.Close()
-		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filename))
+		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", tagIndexFilename))
 	}()
 
 	return i.WriteAsString(f)
@@ -133,7 +167,7 @@ func (i *TagIndex) WriteAsString(f io.Writer) error {
 		line := i.keyMap[keyIndex] + "=" + valueString + "\n"
 		_, err := f.Write([]byte(line))
 		if err != nil {
-			return errors.Wrapf(err, "Unable to write to tag-index store %s", filename)
+			return errors.Wrapf(err, "Unable to write to tag-index store %s", tagIndexFilename)
 		}
 	}
 	return nil
