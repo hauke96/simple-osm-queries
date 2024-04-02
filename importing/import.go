@@ -81,9 +81,9 @@ func Import(inputFile string) {
 	}
 
 	importDuration := time.Since(importStartTime)
-	sigolo.Tracef("%+v", tagIndex)
+	tagIndex.Print()
 	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
 
-	err = tagIndex.Save()
+	err = tagIndex.SaveToFile()
 	sigolo.FatalCheck(err)
 }

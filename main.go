@@ -5,6 +5,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/hauke96/sigolo/v2"
 	"soq/importing"
+	"soq/index"
 	"soq/query"
 	"strings"
 )
@@ -58,10 +59,13 @@ func main() {
 	case "import <input>":
 		importing.Import(cli.Import.Input)
 	case "query <query>":
-		_, err := query.ParseQueryString(`
+		tagIndex, err := index.LoadTagIndex()
+		sigolo.FatalCheck(err)
+
+		_, err = query.ParseQueryString(`
 // this is a comment
-bbox(1,2,3,4).nodes{ amenity=bench }
-`)
+bbox(1,2,3,4).nodes{ (amenity=bench OR height=10.5) AND backrest=no }
+`, tagIndex)
 		sigolo.FatalCheck(err)
 		//query.ParseQueryString(`// this is a comment
 		//

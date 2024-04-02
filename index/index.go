@@ -2,14 +2,17 @@ package index
 
 import (
 	"bufio"
+	"bytes"
 	"github.com/hauke96/sigolo/v2"
 	"github.com/pkg/errors"
+	"io"
 	"os"
 	"sort"
 	"strings"
 )
 
 const filename = "./tag-index"
+const NotFound = -1
 
 type TagIndex struct {
 	keyMap   []string   // The index value of a key is the position in this array.
@@ -59,17 +62,34 @@ func LoadTagIndex() (*TagIndex, error) {
 		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", filename)
 	}
 
-	return NewTagIndex(keyMap, valueMap), nil
+	index := NewTagIndex(keyMap, valueMap)
+	index.Print()
+
+	return index, nil
 }
 
-// GetIndexFromKey returns the numerical index representation of the given key string and -1 if the key doesn't exist.
-func (i *TagIndex) GetIndexFromKey(key string) int {
-	for i, k := range i.keyMap {
+// GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.
+func (i *TagIndex) GetKeyIndexFromKeyString(key string) int {
+	for idx, k := range i.keyMap {
 		if k == key {
-			return i
+			return idx
 		}
 	}
-	return -1
+	return NotFound
+}
+
+func (i *TagIndex) GetValueIndexFromKeyValueStrings(key string, value string) int {
+	keyIndex := i.GetKeyIndexFromKeyString(key)
+	if keyIndex == NotFound {
+		return NotFound
+	}
+
+	for idx, v := range i.valueMap[keyIndex] {
+		if v == value {
+			return idx
+		}
+	}
+	return NotFound
 }
 
 // GetKeyFromIndex returns the string representation of the given key index.
@@ -89,7 +109,7 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 	return valueMap[value]
 }
 
-func (i *TagIndex) Save() error {
+func (i *TagIndex) SaveToFile() error {
 	f, err := os.Create(filename)
 	sigolo.FatalCheck(err)
 
@@ -108,5 +128,32 @@ func (i *TagIndex) Save() error {
 		}
 	}
 
+	return i.WriteAsString(f)
+}
+
+func (i *TagIndex) WriteAsString(f io.Writer) error {
+	for keyIndex, values := range i.valueMap {
+		valueString := strings.Join(values, "|")
+		valueString = strings.ReplaceAll(valueString, "\n", "\\n")
+
+		line := i.keyMap[keyIndex] + "=" + valueString + "\n"
+		_, err := f.Write([]byte(line))
+		if err != nil {
+			return errors.Wrapf(err, "Unable to write to tag-index store %s", filename)
+		}
+	}
 	return nil
+}
+
+func (i *TagIndex) Print() {
+	if sigolo.GetCurrentLogLevel() > sigolo.LOG_TRACE {
+		return
+	}
+	buffer := bytes.NewBuffer([]byte{})
+	err := i.WriteAsString(buffer)
+	if err == nil {
+		sigolo.Tracef("Tag-index:\n%+v", buffer.String())
+	} else {
+		sigolo.Tracef("Error writing tag-index to string: %v", err)
+	}
 }

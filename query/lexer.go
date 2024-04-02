@@ -101,7 +101,7 @@ func (l *Lexer) nextToken() (*Token, error) {
 
 		// Numbers
 		if util.Contains(numberChars, char) {
-			return l.currentSingleCharToken(Number), nil
+			return l.currentNumber(), nil
 		}
 
 		// Operators
@@ -175,6 +175,22 @@ func (l *Lexer) currentKeyword() *Token {
 
 	return &Token{
 		kind:          Keyword,
+		lexeme:        lexeme,
+		startPosition: startIndex,
+	}
+}
+
+func (l *Lexer) currentNumber() *Token {
+	lexeme := ""
+	startIndex := l.index
+
+	// Collect lexeme until end of character (e.g. when ")" or a newline comes)
+	for ; l.index < len(l.input) && util.Contains(numberChars, l.char()); l.index++ {
+		lexeme += string(l.char())
+	}
+
+	return &Token{
+		kind:          Number,
 		lexeme:        lexeme,
 		startPosition: startIndex,
 	}

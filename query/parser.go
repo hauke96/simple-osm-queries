@@ -3,6 +3,7 @@ package query
 import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/pkg/errors"
+	"soq/index"
 	"soq/util"
 	"strconv"
 	"strings"
@@ -13,15 +14,15 @@ var (
 	locationExpressions    = []string{bboxLocationExpression}
 
 	objectTypeNodeExpression = "nodes"
-	objectTypeExpressions    = []string{objectTypeNodeExpression}
 )
 
 type Parser struct {
-	token []*Token
-	index int
+	token    []*Token
+	index    int
+	tagIndex *index.TagIndex
 }
 
-func ParseQueryString(queryString string) (*Query, error) {
+func ParseQueryString(queryString string, tagIndex *index.TagIndex) (*Query, error) {
 	runes := []rune(strings.Trim(queryString, "\n\r\t "))
 	lexer := Lexer{
 		input: runes,
@@ -39,8 +40,9 @@ func ParseQueryString(queryString string) (*Query, error) {
 	}
 
 	parser := Parser{
-		token: token,
-		index: 0,
+		token:    token,
+		index:    0,
+		tagIndex: tagIndex,
 	}
 	return parser.parse()
 }
@@ -355,14 +357,14 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			if token == nil {
 				return nil, errors.Errorf("Expected value after key '%s' but token stream ended", key+binaryOperatorLexeme)
 			}
-			if token.kind != Keyword {
+			if token.kind != Keyword && token.kind != Number && token.kind != String {
 				return nil, errors.Errorf("Expected value after key '%s' but found kind=%d with lexeme=%s", key+binaryOperatorLexeme, token.kind, token.lexeme)
 			}
-			//value := token.lexeme
+			value := token.lexeme
 
 			expression = &TagFilterExpression{
-				key:      0, // TODO convert key to int representation
-				value:    0, // TODO convert value to int representation
+				key:      p.tagIndex.GetKeyIndexFromKeyString(key),
+				value:    p.tagIndex.GetValueIndexFromKeyValueStrings(key, value),
 				operator: binaryOperator,
 			}
 		}
