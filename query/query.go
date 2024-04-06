@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"soq/index"
 	"strings"
+	"time"
 )
 
 type ObjectType int
@@ -84,6 +85,9 @@ type Query struct {
 }
 
 func (q *Query) Execute() ([]index.EncodedFeature, error) {
+	sigolo.Debug("Start query")
+	queryStartTime := time.Now()
+
 	var result []index.EncodedFeature
 
 	for _, statement := range q.topLevelStatements {
@@ -104,6 +108,9 @@ func (q *Query) Execute() ([]index.EncodedFeature, error) {
 			}
 		}
 	}
+
+	queryDuration := time.Since(queryStartTime)
+	sigolo.Debugf("Executed query in %s", queryDuration)
 
 	return result, nil
 }

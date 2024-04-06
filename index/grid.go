@@ -162,11 +162,12 @@ func (g *GridIndex) writeNodeData(id osm.NodeID, feature *EncodedFeature, f io.W
 		Names: | osmId | lon | lat | num. keys | num. values |   encodedKeys   |   encodedValues   |
 		Bytes: |   8   |  8  |  8  |     4     |      4      | <num. keys> / 8 | <num. values> * 4 |
 
-		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The encodedValue part,
-		however, is an int-array, therefore, we need the multiplication with 4.
+		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
+		number of bytes in the keys array of the feature (i.e. "len(feature.keys)"). The encodedValue part, however,
+		is an int-array, therefore, we need the multiplication with 4.
 	*/
-	encodedKeyBytes := len(feature.keys) // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(feature.values) * 4
+	encodedKeyBytes := len(feature.keys)         // Is already a byte-array -> no division by 8 needed
+	encodedValueBytes := len(feature.values) * 4 // Int array and int = 4 bytes
 
 	byteCount := 8 + 8 + 8 + 4 + 4 // = 32
 	byteCount += encodedKeyBytes
@@ -185,6 +186,8 @@ func (g *GridIndex) writeNodeData(id osm.NodeID, feature *EncodedFeature, f io.W
 	for i, v := range feature.values {
 		binary.LittleEndian.PutUint32(data[32+encodedKeyBytes+i*4:], uint32(v))
 	}
+
+	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d", id, point, byteCount, len(feature.keys), len(feature.values))
 
 	_, err := f.Write(data)
 	if err != nil {
@@ -260,6 +263,7 @@ func (g *GridIndex) readFeaturesFromCell(cellX int, cellY int, objectType string
 
 	for pos := 0; pos < len(data); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
+		sigolo.Tracef("Read feature from pos=%d", pos)
 
 		// OSM-ID currently not needed:
 		// osmId := binary.LittleEndian.Uint64(data[pos+0:])
@@ -267,8 +271,9 @@ func (g *GridIndex) readFeaturesFromCell(cellX int, cellY int, objectType string
 		lat := math.Float64frombits(binary.LittleEndian.Uint64(data[pos+16:]))
 		numKeys := int(binary.LittleEndian.Uint32(data[pos+24:]))
 		numValues := int(binary.LittleEndian.Uint32(data[pos+28:]))
+		sigolo.Tracef("  lon=%f, lat=%f, numKeys=%d, numValues=%d", lon, lat, numKeys, numValues)
 
-		encodedKeyBytes := numKeys/8 + 1    // Division since a bit-string is stored (each key got one bit) and +1 because the plain division on integers is a floor operation.
+		encodedKeyBytes := numKeys          // Division since a bit-string is stored (each key got one bit) and +1 because the plain division on integers is a floor operation.
 		encodedValuesBytes := numValues * 4 // Multiplication since each value is an int with 4 bytes
 
 		encodedKeys := make([]byte, numKeys)

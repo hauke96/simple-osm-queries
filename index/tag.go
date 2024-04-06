@@ -27,22 +27,24 @@ type TagIndex struct {
 }
 
 func LoadTagIndex(baseFolder string) (*TagIndex, error) {
-	f, err := os.Open(path.Join(baseFolder, TagIndexFilename))
+	tagIndexFile, err := os.Open(path.Join(baseFolder, TagIndexFilename))
 	sigolo.FatalCheck(err)
 
 	defer func() {
-		err = f.Close()
+		err = tagIndexFile.Close()
 		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", baseFolder))
 	}()
 
 	var keyMap []string
 	var valueMap [][]string
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(tagIndexFile)
+	buf := make([]byte, 0, 64*1024)   // 64k buffer
+	scanner.Buffer(buf, 10*1024*1024) // 10M max buffer size
 	lineCounter := 0
 	for scanner.Scan() {
 		// 0 = key
 		// 1 = values separated by "|"
-		splitLine := strings.Split(scanner.Text(), "=")
+		splitLine := strings.SplitN(scanner.Text(), "=", 2)
 		if len(splitLine) != 2 {
 			return nil, errors.Errorf("Wrong format of line %d: '=' expected separating key and value list", lineCounter)
 		}
