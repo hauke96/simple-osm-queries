@@ -100,7 +100,7 @@ func (q *Query) Execute() ([]index.EncodedFeature, error) {
 			sigolo.Trace("----- next feature -----")
 			feature.Print()
 			if statement.Applies(&feature) {
-				result = append(features, feature)
+				result = append(result, feature)
 			}
 		}
 	}
