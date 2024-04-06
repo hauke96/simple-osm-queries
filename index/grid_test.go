@@ -13,10 +13,10 @@ import (
 func TestGridIndex_writeNodeBytes(t *testing.T) {
 	// Arrange
 	gridIndex := &GridIndex{
-		tagIndex:    nil,
-		cellWidth:   10,
-		cellHeight:  10,
-		indexFolder: "foobar",
+		TagIndex:   nil,
+		CellWidth:  10,
+		CellHeight: 10,
+		BaseFolder: "foobar",
 	}
 
 	geometry := orb.Point{1.23, 2.34}

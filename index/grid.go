@@ -18,13 +18,13 @@ import (
 	"time"
 )
 
-const gridIndexFilename = "./grid-index/"
+const GridIndexFolder = "grid-index"
 
 type GridIndex struct {
-	tagIndex    *TagIndex
-	cellWidth   float64
-	cellHeight  float64
-	indexFolder string
+	TagIndex   *TagIndex
+	CellWidth  float64
+	CellHeight float64
+	BaseFolder string
 }
 
 func LoadGridIndexFromFile(filename string, tagIndex *TagIndex) (*GridIndex, error) {
@@ -85,10 +85,15 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 	var f *os.File
 	var err error
 
+	sigolo.Tracef("Write OSM object to cell x=%d, y=%d, obj=%s", cellX, cellY, obj.ObjectID().String())
+
 	defer func() {
 		if f != nil {
+			sigolo.Tracef("Close cell file %s for object x=%d, y=%d, obj=%s", f.Name(), cellX, cellY, obj.ObjectID().String())
 			err = f.Close()
 			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", f.Name()))
+		} else {
+			sigolo.Tracef("No cell file to close (x=%d, y=%d, obj=%s), there's probably an error opening/creating it", cellX, cellY, obj.ObjectID().String())
 		}
 	}()
 
@@ -98,7 +103,11 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 		if err != nil {
 			return err
 		}
-		return g.writeNodeData(osmObj.ID, feature, f)
+		err = g.writeNodeData(osmObj.ID, feature, f)
+		if err != nil {
+			return errors.Wrapf(err, "Unable to write node %d to cell file %s", osmObj.ID, f.Name())
+		}
+		return nil
 	}
 	// TODO Implement way handling
 	//case *osm.Way:
@@ -109,11 +118,32 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 }
 
 func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (*os.File, error) {
-	filename := path.Join(g.indexFolder, objectType, strconv.Itoa(cellX), strconv.Itoa(cellY)+".cell")
-	file, err := os.Open(filename)
+	cellFolderName := path.Join(g.BaseFolder, objectType, strconv.Itoa(cellX))
+	err := os.MkdirAll(cellFolderName, os.ModePerm)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Unable to open cell file %s", filename)
+		return nil, errors.Wrapf(err, "Unable to create cell folder %s for cellY=%d", cellFolderName, cellY)
 	}
+
+	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
+
+	var file *os.File
+
+	if _, err = os.Stat(cellFileName); err == nil {
+		sigolo.Tracef("Cell file %s already exist, I'll open it", cellFolderName)
+		file, err = os.OpenFile(cellFileName, os.O_APPEND|os.O_WRONLY, 0666)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		sigolo.Debugf("Cell file %s does not exist, I'll create it", cellFolderName)
+		file, err = os.Create(cellFileName)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Unable to create new cell file %s", cellFileName)
+		}
+	} else {
+		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
+	}
+
 	return file, nil
 }
 
@@ -149,12 +179,15 @@ func (g *GridIndex) writeNodeData(id osm.NodeID, feature *EncodedFeature, f io.W
 	}
 
 	_, err := f.Write(data)
-	return err
+	if err != nil {
+		return errors.Wrapf(err, "Unable to write node %d to cell file", id)
+	}
+	return nil
 }
 
 // getCellIdsForCoordinate returns the cell ID (i.e. position) for the given coordinate.
 func (g *GridIndex) getCellIdForCoordinate(x float64, y float64) (int, int) {
-	return int(x / g.cellWidth), int(y / g.cellHeight)
+	return int(x / g.CellWidth), int(y / g.CellHeight)
 }
 
 func (g *GridIndex) toEncodedFeature(obj osm.Object) *EncodedFeature {
@@ -170,7 +203,7 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) *EncodedFeature {
 	// TODO Implement relation handling
 	//case *osm.Relation:
 
-	encodedKeys, encodedValues := g.tagIndex.encodeTags(tags)
+	encodedKeys, encodedValues := g.TagIndex.encodeTags(tags)
 
 	return &EncodedFeature{
 		geometry: geometry,

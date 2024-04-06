@@ -11,26 +11,28 @@ import (
 	"github.com/pkg/errors"
 	"io"
 	"os"
+	"path"
 	"sort"
 	"strings"
 	"time"
 )
 
-const tagIndexFilename = "./tag-index"
+const TagIndexFilename = "tag-index"
 const NotFound = -1
 
 type TagIndex struct {
-	keyMap   []string   // The index value of a key is the position in this array.
-	valueMap [][]string // Array index is here the key index. I.e. valueMap[key] contains the list of value strings.
+	BaseFolder string
+	keyMap     []string   // The index value of a key is the position in this array.
+	valueMap   [][]string // Array index is here the key index. I.e. valueMap[key] contains the list of value strings.
 }
 
-func LoadTagIndexFromFile(filename string) (*TagIndex, error) {
-	f, err := os.Open(filename)
+func LoadTagIndexFromFile(filepath string) (*TagIndex, error) {
+	f, err := os.Open(filepath)
 	sigolo.FatalCheck(err)
 
 	defer func() {
 		err = f.Close()
-		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filename))
+		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filepath))
 	}()
 
 	var keyMap []string
@@ -56,19 +58,20 @@ func LoadTagIndexFromFile(filename string) (*TagIndex, error) {
 	}
 
 	if err = scanner.Err(); err != nil {
-		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", filename)
+		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", filepath)
 	}
 
 	index := &TagIndex{
-		keyMap:   keyMap,
-		valueMap: valueMap,
+		BaseFolder: path.Base(filepath),
+		keyMap:     keyMap,
+		valueMap:   valueMap,
 	}
 	index.Print()
 
 	return index, nil
 }
 
-func (i *TagIndex) Import(inputFile string) error {
+func (i *TagIndex) ImportAndSave(inputFile string, outputFile string) error {
 	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
 		sigolo.Error("Input file must be an .osm or .pbf file")
 		os.Exit(1)
@@ -149,7 +152,7 @@ func (i *TagIndex) Import(inputFile string) error {
 	i.Print()
 	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
 
-	return i.SaveToFile()
+	return i.SaveToFile(outputFile)
 }
 
 // GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.
@@ -211,28 +214,37 @@ func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 	}
 
 	// Now we know all keys that are set and can determine the order of the values for the array.
-	encodedValues := make([]int, len(tags))
-	setKeyCounter := 0
+	var encodedValues []int
 	for pos := 0; pos < len(i.keyMap); pos++ {
 		bin := pos / 8      // Element of the array
 		idxInBin := pos % 8 // Bit position within the byte
 		if encodedKeys[bin]&(1<<idxInBin) == 0 {
 			// Key at "pos" is set -> store its value
-			encodedValues[setKeyCounter] = bitPosToValue[pos]
-			setKeyCounter++
+			encodedValues = append(encodedValues, bitPosToValue[pos])
 		}
 	}
 
 	return encodedKeys, encodedValues
 }
 
-func (i *TagIndex) SaveToFile() error {
-	f, err := os.Create(tagIndexFilename)
+func (i *TagIndex) SaveToFile(filename string) error {
+	err := os.RemoveAll(i.BaseFolder)
+	if err != nil {
+		return errors.Wrapf(err, "Unable to remove tag-index base folder %s", i.BaseFolder)
+	}
+
+	err = os.MkdirAll(i.BaseFolder, os.ModePerm)
+	if err != nil {
+		return errors.Wrapf(err, "Unable to create tag-index base folder %s", i.BaseFolder)
+	}
+
+	filepath := path.Join(i.BaseFolder, filename)
+	f, err := os.Create(filepath)
 	sigolo.FatalCheck(err)
 
 	defer func() {
 		err = f.Close()
-		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", tagIndexFilename))
+		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filepath))
 	}()
 
 	return i.WriteAsString(f)
@@ -246,7 +258,7 @@ func (i *TagIndex) WriteAsString(f io.Writer) error {
 		line := i.keyMap[keyIndex] + "=" + valueString + "\n"
 		_, err := f.Write([]byte(line))
 		if err != nil {
-			return errors.Wrapf(err, "Unable to write to tag-index store %s", tagIndexFilename)
+			return errors.Wrapf(err, "Unable to write to tag-index store %s", TagIndexFilename)
 		}
 	}
 	return nil
