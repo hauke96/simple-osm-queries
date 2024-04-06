@@ -97,6 +97,8 @@ func (q *Query) Execute() ([]index.EncodedFeature, error) {
 		sigolo.Tracef("Read %d features", len(features))
 
 		for _, feature := range features {
+			sigolo.Trace("----- next feature -----")
+			feature.Print()
 			if statement.Applies(&feature) {
 				result = append(features, feature)
 			}

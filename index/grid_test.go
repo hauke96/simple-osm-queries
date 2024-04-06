@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestGridIndex_writeNodeBytes(t *testing.T) {
+func TestGridIndex_writeNodeData(t *testing.T) {
 	// Arrange
 	gridIndex := &GridIndex{
 		TagIndex:   nil,

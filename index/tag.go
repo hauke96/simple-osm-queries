@@ -218,7 +218,7 @@ func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 	for pos := 0; pos < len(i.keyMap); pos++ {
 		bin := pos / 8      // Element of the array
 		idxInBin := pos % 8 // Bit position within the byte
-		if encodedKeys[bin]&(1<<idxInBin) == 0 {
+		if encodedKeys[bin]&(1<<idxInBin) != 0 {
 			// Key at "pos" is set -> store its value
 			encodedValues = append(encodedValues, bitPosToValue[pos])
 		}

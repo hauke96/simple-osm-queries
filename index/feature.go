@@ -24,7 +24,7 @@ type EncodedFeature struct {
 func (f *EncodedFeature) HasKey(keyIndex int) bool {
 	bin := keyIndex / 8      // Element of the array
 	idxInBin := keyIndex % 8 // Bit position within the byte
-	return f.keys[bin]&(1<<idxInBin) == 0
+	return f.keys[bin]&(1<<idxInBin) != 0
 }
 
 // GetValueIndex returns the value index (numerical representation of the actual value) for a given key index. This
@@ -36,7 +36,7 @@ func (f *EncodedFeature) GetValueIndex(keyIndex int) int {
 	for i := 0; i < keyIndex; i++ {
 		bin := i / 8      // Element of the array
 		idxInBin := i % 8 // Bit position within the byte
-		if f.keys[bin]&(1<<idxInBin) == 0 {
+		if f.keys[bin]&(1<<idxInBin) != 0 {
 			// Key at "i" is set -> store its value
 			valueIndexPosition++
 		}
@@ -51,6 +51,24 @@ func (f *EncodedFeature) HasTag(keyIndex int, valueIndex int) bool {
 	}
 
 	return f.GetValueIndex(keyIndex) == valueIndex
+}
+
+func (f *EncodedFeature) Print() {
+	if sigolo.GetCurrentLogLevel() > sigolo.LOG_TRACE {
+		return
+	}
+
+	sigolo.Tracef("EncodedFeature:")
+	sigolo.Tracef("  geometry=%#v", f.Geometry)
+	sigolo.Tracef("  keys=%v", f.keys)
+	var setKeyBits []int
+	for i := 0; i < len(f.keys)*8; i++ {
+		if f.HasKey(i) {
+			setKeyBits = append(setKeyBits, i)
+		}
+	}
+	sigolo.Tracef("  set key bit positions=%v", setKeyBits)
+	sigolo.Tracef("  values=%v", f.values)
 }
 
 func WriteFeaturesAsGeoJson(encodedFeatures []EncodedFeature, tagIndex *TagIndex) error {
@@ -69,6 +87,10 @@ func WriteFeaturesAsGeoJson(encodedFeatures []EncodedFeature, tagIndex *TagIndex
 		feature := geojson.NewFeature(encodedFeature.Geometry)
 
 		for keyIndex := 0; keyIndex < len(encodedFeature.keys)*8; keyIndex++ {
+			if !encodedFeature.HasKey(keyIndex) {
+				continue
+			}
+
 			valueIndex := encodedFeature.GetValueIndex(keyIndex)
 
 			keyString := tagIndex.GetKeyFromIndex(keyIndex)

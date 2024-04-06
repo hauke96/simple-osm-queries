@@ -168,7 +168,7 @@ func (g *GridIndex) writeNodeData(id osm.NodeID, feature *EncodedFeature, f io.W
 	encodedKeyBytes := len(feature.keys) // Is already a byte-array -> no division by 8 needed
 	encodedValueBytes := len(feature.values) * 4
 
-	byteCount := 8 + 8 + 8 + 4 + 4
+	byteCount := 8 + 8 + 8 + 4 + 4 // = 32
 	byteCount += encodedKeyBytes
 	byteCount += encodedValueBytes
 
@@ -262,21 +262,21 @@ func (g *GridIndex) readFeaturesFromCell(cellX int, cellY int, objectType string
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
 
 		// OSM-ID currently not needed:
-		// osmId := binary.LittleEndian.Uint64(data[0:])
-		lon := math.Float64frombits(binary.LittleEndian.Uint64(data[8:]))
-		lat := math.Float64frombits(binary.LittleEndian.Uint64(data[16:]))
-		numKeys := int(binary.LittleEndian.Uint32(data[24:]))
-		numValues := int(binary.LittleEndian.Uint32(data[28:]))
+		// osmId := binary.LittleEndian.Uint64(data[pos+0:])
+		lon := math.Float64frombits(binary.LittleEndian.Uint64(data[pos+8:]))
+		lat := math.Float64frombits(binary.LittleEndian.Uint64(data[pos+16:]))
+		numKeys := int(binary.LittleEndian.Uint32(data[pos+24:]))
+		numValues := int(binary.LittleEndian.Uint32(data[pos+28:]))
 
-		encodedKeyBytes := numKeys / 8      // Division since a bit-string is stored (each key got one bit)
+		encodedKeyBytes := numKeys/8 + 1    // Division since a bit-string is stored (each key got one bit) and +1 because the plain division on integers is a floor operation.
 		encodedValuesBytes := numValues * 4 // Multiplication since each value is an int with 4 bytes
 
 		encodedKeys := make([]byte, numKeys)
 		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[32:])
+		copy(encodedKeys[:], data[pos+32:])
 
 		for i := 0; i < numValues; i++ {
-			encodedValues[i] = int(binary.LittleEndian.Uint32(data[32+encodedKeyBytes+i*4:]))
+			encodedValues[i] = int(binary.LittleEndian.Uint32(data[pos+32+encodedKeyBytes+i*4:]))
 		}
 
 		result = append(result, EncodedFeature{
