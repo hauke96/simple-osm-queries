@@ -152,7 +152,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 
 	importDuration := time.Since(importStartTime)
 	i.Print()
-	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
+	sigolo.Debugf("Created tag-index from OSM data in %s", importDuration)
 
 	return i.SaveToFile(TagIndexFilename)
 }

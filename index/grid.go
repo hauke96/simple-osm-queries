@@ -27,11 +27,11 @@ type GridIndex struct {
 	BaseFolder string
 }
 
-func LoadGridIndex(indexBaseFolder string, tagIndex *TagIndex) *GridIndex {
+func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, tagIndex *TagIndex) *GridIndex {
 	return &GridIndex{
 		TagIndex:   tagIndex,
-		CellWidth:  1,
-		CellHeight: 1,
+		CellWidth:  cellWidth,
+		CellHeight: cellHeight,
 		BaseFolder: path.Join(indexBaseFolder, GridIndexFolder),
 	}
 }
@@ -84,7 +84,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	}
 
 	importDuration := time.Since(importStartTime)
-	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
+	sigolo.Debugf("Created OSM object index from OSM data in %s", importDuration)
 
 	return nil
 }

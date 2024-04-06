@@ -59,17 +59,17 @@ func main() {
 
 	switch ctx.Command() {
 	case "import <input>":
-		err := importing.Import(cli.Import.Input, indexBaseFolder)
+		err := importing.Import(cli.Import.Input, 0.1, 0.1, indexBaseFolder)
 		sigolo.FatalCheck(err)
 	case "query <query>":
 		tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 		sigolo.FatalCheck(err)
 
-		geometryIndex := index.LoadGridIndex(indexBaseFolder, tagIndex)
+		geometryIndex := index.LoadGridIndex(indexBaseFolder, 0.1, 0.1, tagIndex)
 
 		q, err := query.ParseQueryString(`
 // this is a comment
-bbox(9,53,10,54).nodes{ amenity=bench}
+bbox(9.95,53.45,10,54.55).nodes{ amenity=bench}
 `, tagIndex, geometryIndex)
 		sigolo.FatalCheck(err)
 		//query.ParseQueryString(`// this is a comment
