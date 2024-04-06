@@ -267,7 +267,7 @@ func (i *TagIndex) WriteAsString(f io.Writer) error {
 }
 
 func (i *TagIndex) Print() {
-	if sigolo.GetCurrentLogLevel() > sigolo.LOG_TRACE {
+	if !sigolo.ShouldLogTrace() {
 		return
 	}
 	buffer := bytes.NewBuffer([]byte{})

@@ -85,7 +85,7 @@ type Query struct {
 }
 
 func (q *Query) Execute() ([]index.EncodedFeature, error) {
-	sigolo.Debug("Start query")
+	sigolo.Info("Start query")
 	queryStartTime := time.Now()
 
 	var result []index.EncodedFeature
@@ -110,7 +110,7 @@ func (q *Query) Execute() ([]index.EncodedFeature, error) {
 	}
 
 	queryDuration := time.Since(queryStartTime)
-	sigolo.Debugf("Executed query in %s", queryDuration)
+	sigolo.Infof("Executed query in %s", queryDuration)
 
 	return result, nil
 }
@@ -161,7 +161,9 @@ func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, 
 }
 
 func (b *BboxLocationExpression) IsWithin(feature *index.EncodedFeature) bool {
-	sigolo.Tracef("BboxLocationExpression: IsWithin((%s), %v)", b.string(), feature.Geometry)
+	if sigolo.ShouldLogTrace() {
+		sigolo.Tracef("BboxLocationExpression: IsWithin((%s), %v)", b.string(), feature.Geometry)
+	}
 	switch geometry := feature.Geometry.(type) {
 	case *orb.Point:
 		return b.bbox.Contains(*geometry)

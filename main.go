@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/alecthomas/kong"
 	"github.com/hauke96/sigolo/v2"
+	"os"
+	"runtime/pprof"
 	"soq/importing"
 	"soq/index"
 	"soq/query"
@@ -13,9 +15,10 @@ import (
 const VERSION = "v0.1.0"
 
 var cli struct {
-	Logging string      `help:"Logging verbosity." enum:"info,debug,trace" short:"l" default:"info"`
-	Version VersionFlag `help:"Print version information and quit" name:"version" short:"v"`
-	Import  struct {
+	Logging              string      `help:"Logging verbosity." enum:"info,debug,trace" short:"l" default:"info"`
+	Version              VersionFlag `help:"Print version information and quit" name:"version" short:"v"`
+	DiagnosticsProfiling bool        `help:"Enable profiling and write results to ./profiling.prof."`
+	Import               struct {
 		Input string `help:"The input file. Either .osm or .osm.pbf." placeholder:"<input-file>" arg:"" type:"existingfile"`
 	} `cmd:"" help:"Imports the given OSM file to use it in queries."`
 	Query struct {
@@ -24,6 +27,7 @@ var cli struct {
 }
 
 var indexBaseFolder = "soq-index"
+var defaultCellSize = 1.0
 
 type VersionFlag string
 
@@ -57,19 +61,28 @@ func main() {
 		sigolo.Fatalf("Unknown logging level '%s'", cli.Logging)
 	}
 
+	if cli.DiagnosticsProfiling {
+		f, err := os.Create("profiling.prof")
+		sigolo.FatalCheck(err)
+
+		err = pprof.StartCPUProfile(f)
+		sigolo.FatalCheck(err)
+		defer pprof.StopCPUProfile()
+	}
+
 	switch ctx.Command() {
 	case "import <input>":
-		err := importing.Import(cli.Import.Input, 0.1, 0.1, indexBaseFolder)
+		err := importing.Import(cli.Import.Input, defaultCellSize, defaultCellSize, indexBaseFolder)
 		sigolo.FatalCheck(err)
 	case "query <query>":
 		tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 		sigolo.FatalCheck(err)
 
-		geometryIndex := index.LoadGridIndex(indexBaseFolder, 0.1, 0.1, tagIndex)
+		geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, tagIndex)
 
 		q, err := query.ParseQueryString(`
 // this is a comment
-bbox(9.95,53.45,10,54.55).nodes{ amenity=bench}
+bbox(0.95,5.45,15,64.55).nodes{ amenity=bench}
 `, tagIndex, geometryIndex)
 		sigolo.FatalCheck(err)
 		//query.ParseQueryString(`// this is a comment

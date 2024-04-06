@@ -65,3 +65,11 @@ building = *
 }
 }
 ```
+
+## Build and run
+
+### CPU profiling
+
+* Run with the `--diagnostics-profiling` flag to generate a `profiling.prof` file.
+* Run `go tool pprof <executable> ./profiling.prof` so that the `pprof` console comes up.
+* Enter `web` for a browser or `evince` for a PDF visualization

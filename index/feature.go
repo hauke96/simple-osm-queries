@@ -54,7 +54,7 @@ func (f *EncodedFeature) HasTag(keyIndex int, valueIndex int) bool {
 }
 
 func (f *EncodedFeature) Print() {
-	if sigolo.GetCurrentLogLevel() > sigolo.LOG_TRACE {
+	if !sigolo.ShouldLogTrace() {
 		return
 	}
 
