@@ -3,6 +3,8 @@ package query
 import (
 	"fmt"
 	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb"
+	"soq/index"
 	"strings"
 )
 
@@ -84,18 +86,20 @@ type Query struct {
 */
 
 type LocationExpression interface {
-	// TODO Function parameter
-	IsWithin() bool
+	IsWithin(feature *index.EncodedFeature) bool
 	Print(indent int)
 }
 
 type BboxLocationExpression struct {
-	coordinates [4]int
+	bbox *orb.Bound
 }
 
-func (b *BboxLocationExpression) IsWithin() bool {
-	// TODO Implement
-	return true
+func (b *BboxLocationExpression) IsWithin(feature *index.EncodedFeature) bool {
+	switch geometry := feature.Geometry.(type) {
+	case orb.Point:
+		return b.bbox.Contains(geometry)
+	}
+	return false
 }
 
 func (b *BboxLocationExpression) Print(indent int) {

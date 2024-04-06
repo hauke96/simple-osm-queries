@@ -169,7 +169,7 @@ func (g *GridIndex) writeNodeData(id osm.NodeID, feature *EncodedFeature, f io.W
 
 	data := make([]byte, byteCount)
 
-	point := feature.geometry.(orb.Point)
+	point := feature.Geometry.(orb.Point)
 
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
 	binary.LittleEndian.PutUint64(data[8:], math.Float64bits(point.Lon()))
@@ -209,7 +209,7 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) *EncodedFeature {
 	encodedKeys, encodedValues := g.TagIndex.encodeTags(tags)
 
 	return &EncodedFeature{
-		geometry: geometry,
+		Geometry: geometry,
 		keys:     encodedKeys,
 		values:   encodedValues,
 	}

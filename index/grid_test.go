@@ -21,7 +21,7 @@ func TestGridIndex_writeNodeBytes(t *testing.T) {
 
 	geometry := orb.Point{1.23, 2.34}
 	feature := &EncodedFeature{
-		geometry: geometry,
+		Geometry: geometry,
 		keys:     []byte{73},     // LittleEndian: 1001 0010
 		values:   []int{5, 1, 9}, // One value per "1" in "keys"
 	}

@@ -3,7 +3,7 @@ package index
 import "github.com/paulmach/orb"
 
 type EncodedFeature struct {
-	geometry orb.Geometry // TODO Own geometry for easier (de)serialization?
+	Geometry orb.Geometry // TODO Own geometry for easier (de)serialization?
 
 	// A bit-string defining which keys are set and which aren't. A 1 at index i says that the key with numeric
 	// representation i is set.

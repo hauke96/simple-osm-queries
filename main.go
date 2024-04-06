@@ -66,7 +66,7 @@ func main() {
 		sigolo.FatalCheck(err)
 
 		// TODO use grid index
-		_ := index.LoadGridIndex(indexBaseFolder, tagIndex)
+		index.LoadGridIndex(indexBaseFolder, tagIndex)
 
 		_, err = query.ParseQueryString(`
 // this is a comment
