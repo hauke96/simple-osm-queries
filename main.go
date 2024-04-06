@@ -59,7 +59,7 @@ func main() {
 	case "import <input>":
 		importing.Import(cli.Import.Input)
 	case "query <query>":
-		tagIndex, err := index.LoadTagIndex()
+		tagIndex, err := index.LoadTagIndexFromFile()
 		sigolo.FatalCheck(err)
 
 		_, err = query.ParseQueryString(`

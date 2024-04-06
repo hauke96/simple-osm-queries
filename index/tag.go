@@ -24,13 +24,13 @@ type TagIndex struct {
 	valueMap [][]string // Array index is here the key index. I.e. valueMap[key] contains the list of value strings.
 }
 
-func LoadTagIndex() (*TagIndex, error) {
-	f, err := os.Open(tagIndexFilename)
+func LoadTagIndexFromFile(filename string) (*TagIndex, error) {
+	f, err := os.Open(filename)
 	sigolo.FatalCheck(err)
 
 	defer func() {
 		err = f.Close()
-		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", tagIndexFilename))
+		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filename))
 	}()
 
 	var keyMap []string
@@ -56,7 +56,7 @@ func LoadTagIndex() (*TagIndex, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", tagIndexFilename)
+		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", filename)
 	}
 
 	index := &TagIndex{
@@ -215,7 +215,7 @@ func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 	for pos := 0; pos < len(i.keyMap); pos++ {
 		bin := pos / 8      // Element of the array
 		idxInBin := pos % 8 // Bit position within the byte
-		if encodedKeys[bin] & 1 << idxInBin {
+		if encodedKeys[bin]&(1<<idxInBin) == 0 {
 			// Key at "pos" is set -> store its value
 			encodedValues[setKeyCounter] = bitPosToValue[pos]
 			setKeyCounter++
