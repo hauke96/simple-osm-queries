@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func Import(inputFile string, indexBaseFolder string) {
+func Import(inputFile string, indexBaseFolder string) error {
 	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
 		sigolo.Error("Input file must be an .osm or .pbf file")
 		os.Exit(1)
@@ -18,7 +18,9 @@ func Import(inputFile string, indexBaseFolder string) {
 		BaseFolder: indexBaseFolder,
 	}
 	err := tagIndex.ImportAndSave(inputFile, "tag-index")
-	sigolo.FatalCheck(err)
+	if err != nil {
+		return err
+	}
 
 	gridIndex := &index.GridIndex{
 		TagIndex:   tagIndex,
@@ -26,6 +28,5 @@ func Import(inputFile string, indexBaseFolder string) {
 		CellHeight: 1,
 		BaseFolder: path.Join(indexBaseFolder, index.GridIndexFolder),
 	}
-	_, err = gridIndex.Import(inputFile)
-	sigolo.FatalCheck(err)
+	return gridIndex.Import(inputFile)
 }

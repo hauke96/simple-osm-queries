@@ -32,7 +32,7 @@ func LoadGridIndexFromFile(filename string, tagIndex *TagIndex) (*GridIndex, err
 	panic("implement me")
 }
 
-func (g *GridIndex) Import(inputFile string) (GeometryIndex, error) {
+func (g *GridIndex) Import(inputFile string) error {
 	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
 		sigolo.Error("Input file must be an .osm or .pbf file")
 		os.Exit(1)
@@ -70,15 +70,14 @@ func (g *GridIndex) Import(inputFile string) (GeometryIndex, error) {
 		feature = g.toEncodedFeature(obj)
 		err = g.writeOsmObjectToCell(cellX, cellY, obj, feature)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	importDuration := time.Since(importStartTime)
 	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
 
-	// TODO
-	return nil, nil
+	return nil
 }
 
 func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, feature *EncodedFeature) error {

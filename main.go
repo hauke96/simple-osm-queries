@@ -57,7 +57,8 @@ func main() {
 
 	switch ctx.Command() {
 	case "import <input>":
-		importing.Import(cli.Import.Input, "soq-index")
+		err := importing.Import(cli.Import.Input, "soq-index")
+		sigolo.FatalCheck(err)
 	case "query <query>":
 		tagIndex, err := index.LoadTagIndexFromFile(index.TagIndexFilename)
 		sigolo.FatalCheck(err)
