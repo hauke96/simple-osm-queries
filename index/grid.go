@@ -27,12 +27,12 @@ type GridIndex struct {
 	BaseFolder string
 }
 
-func LoadGridIndex(baseFolder string, tagIndex *TagIndex) *GridIndex {
+func LoadGridIndex(indexBaseFolder string, tagIndex *TagIndex) *GridIndex {
 	return &GridIndex{
 		TagIndex:   tagIndex,
 		CellWidth:  1,
 		CellHeight: 1,
-		BaseFolder: baseFolder,
+		BaseFolder: path.Join(indexBaseFolder, GridIndexFolder),
 	}
 }
 
@@ -53,6 +53,11 @@ func (g *GridIndex) Import(inputFile string) error {
 		scanner = osmpbf.New(context.Background(), f, 1)
 	}
 	defer scanner.Close()
+
+	err = os.RemoveAll(g.BaseFolder)
+	if err != nil {
+		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", g.BaseFolder)
+	}
 
 	sigolo.Debug("Start processing geometries from input data")
 	importStartTime := time.Now()
@@ -132,13 +137,13 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (*os.Fi
 	var file *os.File
 
 	if _, err = os.Stat(cellFileName); err == nil {
-		sigolo.Tracef("Cell file %s already exist, I'll open it", cellFolderName)
-		file, err = os.OpenFile(cellFileName, os.O_APPEND|os.O_WRONLY, 0666)
+		sigolo.Tracef("Cell file %s already exist, I'll open it", cellFileName)
+		file, err = os.OpenFile(cellFileName, os.O_APPEND|os.O_RDWR, 0666)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
-		sigolo.Debugf("Cell file %s does not exist, I'll create it", cellFolderName)
+		sigolo.Debugf("Cell file %s does not exist, I'll create it", cellFileName)
 		file, err = os.Create(cellFileName)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to create new cell file %s", cellFileName)
@@ -215,7 +220,73 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) *EncodedFeature {
 	}
 }
 
-func (g *GridIndex) Get(bbox *orb.Bound) chan []EncodedFeature {
-	//TODO implement me
-	panic("implement me")
+func (g *GridIndex) Get(bbox *orb.Bound, objectType string) ([]EncodedFeature, error) {
+	minCellX, minCellY := g.getCellIdForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
+	maxCellX, maxCellY := g.getCellIdForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
+
+	var result []EncodedFeature
+
+	for cellX := minCellX; cellX <= maxCellX; cellX++ {
+		for cellY := minCellY; cellY <= maxCellY; cellY++ {
+			cells, err := g.readFeaturesFromCell(cellX, cellY, objectType)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, cells...)
+		}
+	}
+
+	return result, nil
+}
+
+func (g *GridIndex) readFeaturesFromCell(cellX int, cellY int, objectType string) ([]EncodedFeature, error) {
+	cellFolderName := path.Join(g.BaseFolder, objectType, strconv.Itoa(cellX))
+	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
+
+	if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
+		sigolo.Debugf("Cell file %s does not exist, I'll return an empty feature list", cellFileName)
+		return []EncodedFeature{}, nil
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
+	}
+
+	sigolo.Tracef("Read cell file %s", cellFileName)
+	data, err := os.ReadFile(cellFileName)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, objectType)
+	}
+
+	var result []EncodedFeature
+
+	for pos := 0; pos < len(data); {
+		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
+
+		// OSM-ID currently not needed:
+		// osmId := binary.LittleEndian.Uint64(data[0:])
+		lon := math.Float64frombits(binary.LittleEndian.Uint64(data[8:]))
+		lat := math.Float64frombits(binary.LittleEndian.Uint64(data[16:]))
+		numKeys := int(binary.LittleEndian.Uint32(data[24:]))
+		numValues := int(binary.LittleEndian.Uint32(data[28:]))
+
+		encodedKeyBytes := numKeys / 8      // Division since a bit-string is stored (each key got one bit)
+		encodedValuesBytes := numValues * 4 // Multiplication since each value is an int with 4 bytes
+
+		encodedKeys := make([]byte, numKeys)
+		encodedValues := make([]int, numValues)
+		copy(encodedKeys[:], data[32:])
+
+		for i := 0; i < numValues; i++ {
+			encodedValues[i] = int(binary.LittleEndian.Uint32(data[32+encodedKeyBytes+i*4:]))
+		}
+
+		result = append(result, EncodedFeature{
+			Geometry: &orb.Point{lon, lat},
+			keys:     encodedKeys,
+			values:   encodedValues,
+		})
+
+		pos += 32 + encodedKeyBytes + encodedValuesBytes
+	}
+
+	return result, nil
 }

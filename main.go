@@ -65,19 +65,26 @@ func main() {
 		tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 		sigolo.FatalCheck(err)
 
-		// TODO use grid index
-		index.LoadGridIndex(indexBaseFolder, tagIndex)
+		geometryIndex := index.LoadGridIndex(indexBaseFolder, tagIndex)
 
-		_, err = query.ParseQueryString(`
+		q, err := query.ParseQueryString(`
 // this is a comment
-bbox(1,2,3,4).nodes{ (amenity=bench OR height=10.5) AND backrest=no }
-`, tagIndex)
+bbox(9,53,10,54).nodes{ amenity=bench}
+`, tagIndex, geometryIndex)
 		sigolo.FatalCheck(err)
 		//query.ParseQueryString(`// this is a comment
 		//
 		//bbox(1,  2,3,
 		//4).nodes{   amenity
 		//=bench}`)
+
+		features, err := q.Execute()
+		sigolo.FatalCheck(err)
+
+		sigolo.Debugf("Found %d features", len(features))
+
+		err = index.WriteFeaturesAsGeoJson(features, tagIndex)
+		sigolo.FatalCheck(err)
 	default:
 		sigolo.Errorf("Unknown command '%s'", ctx.Command())
 	}

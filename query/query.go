@@ -20,11 +20,11 @@ const (
 func (o ObjectType) string() string {
 	switch o {
 	case Node:
-		return "Node"
+		return "node"
 	case Way:
-		return "Way"
+		return "way"
 	case Relation:
-		return "Relation"
+		return "relation"
 	}
 	return fmt.Sprintf("[!UNKNOWN ObjectType %d]", o)
 }
@@ -83,11 +83,18 @@ type Query struct {
 	geometryIndex      index.GeometryIndex
 }
 
-func (q *Query) Execute() []index.EncodedFeature {
+func (q *Query) Execute() ([]index.EncodedFeature, error) {
 	var result []index.EncodedFeature
 
 	for _, statement := range q.topLevelStatements {
-		features := statement.GetFeatures(q.geometryIndex)
+		statement.Print(0)
+
+		features, err := statement.GetFeatures(q.geometryIndex)
+		if err != nil {
+			return nil, err
+		}
+
+		sigolo.Tracef("Read %d features", len(features))
 
 		for _, feature := range features {
 			if statement.Applies(&feature) {
@@ -96,7 +103,7 @@ func (q *Query) Execute() []index.EncodedFeature {
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 /*
@@ -109,8 +116,8 @@ type Statement struct {
 	filter     FilterExpression
 }
 
-func (f Statement) GetFeatures(geometryIndex index.GeometryIndex) []index.EncodedFeature {
-	return f.location.GetFeatures(geometryIndex)
+func (f Statement) GetFeatures(geometryIndex index.GeometryIndex) ([]index.EncodedFeature, error) {
+	return f.location.GetFeatures(geometryIndex, f.objectType)
 }
 
 func (f Statement) Applies(feature *index.EncodedFeature) bool {
@@ -121,7 +128,7 @@ func (f Statement) Applies(feature *index.EncodedFeature) bool {
 func (f Statement) Print(indent int) {
 	sigolo.Debugf("%s%s", spacing(indent), "Statement")
 	f.location.Print(indent + 2)
-	sigolo.Debugf("%s%s", spacing(indent+2), f.objectType.string())
+	sigolo.Debugf("%stype: %s", spacing(indent+2), f.objectType.string())
 	f.filter.Print(indent + 2)
 }
 
@@ -130,7 +137,7 @@ func (f Statement) Print(indent int) {
 */
 
 type LocationExpression interface {
-	GetFeatures(geometryIndex index.GeometryIndex) []index.EncodedFeature
+	GetFeatures(geometryIndex index.GeometryIndex, objectType ObjectType) ([]index.EncodedFeature, error)
 	IsWithin(feature *index.EncodedFeature) bool
 	Print(indent int)
 }
@@ -139,20 +146,26 @@ type BboxLocationExpression struct {
 	bbox *orb.Bound
 }
 
-func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex) []index.EncodedFeature {
-	return geometryIndex.Get(b.bbox)
+func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, objectType ObjectType) ([]index.EncodedFeature, error) {
+	// TODO Find a better solution than ".string()" for object types
+	return geometryIndex.Get(b.bbox, objectType.string())
 }
 
 func (b *BboxLocationExpression) IsWithin(feature *index.EncodedFeature) bool {
+	sigolo.Tracef("BboxLocationExpression: IsWithin((%s), %v)", b.string(), feature.Geometry)
 	switch geometry := feature.Geometry.(type) {
-	case orb.Point:
-		return b.bbox.Contains(geometry)
+	case *orb.Point:
+		return b.bbox.Contains(*geometry)
 	}
 	return false
 }
 
 func (b *BboxLocationExpression) Print(indent int) {
-	sigolo.Debugf("%s%s(%d, %d, %d, %d)", spacing(indent), "bbox", b.bbox.Min.Lon(), b.bbox.Min.Lat(), b.bbox.Max.Lon(), b.bbox.Max.Lat())
+	sigolo.Debugf("%slocation: %s(%s)", spacing(indent), "bbox", b.string())
+}
+
+func (b *BboxLocationExpression) string() string {
+	return fmt.Sprintf("%f, %f, %f, %f", b.bbox.Min.Lon(), b.bbox.Min.Lat(), b.bbox.Max.Lon(), b.bbox.Max.Lat())
 }
 
 /*
@@ -166,15 +179,15 @@ type FilterExpression interface {
 
 type NegatedFilterExpression struct {
 	baseExpression FilterExpression
-	operator       LogicalOperator
 }
 
 func (f NegatedFilterExpression) Applies(feature *index.EncodedFeature) bool {
+	sigolo.Tracef("NegatedFilterExpression")
 	return !f.baseExpression.Applies(feature)
 }
 
 func (f NegatedFilterExpression) Print(indent int) {
-	sigolo.Debugf("%s%s", spacing(indent), f.operator.string())
+	sigolo.Debugf("%s%s", spacing(indent), Not.string())
 	f.baseExpression.Print(indent + 2)
 }
 
@@ -185,6 +198,7 @@ type LogicalFilterExpression struct {
 }
 
 func (f LogicalFilterExpression) Applies(feature *index.EncodedFeature) bool {
+	sigolo.Tracef("LogicalFilterExpression: Operator %d", f.operator)
 	switch f.operator {
 	case Or:
 		return f.statementA.Applies(feature) || f.statementB.Applies(feature)
@@ -207,6 +221,7 @@ type TagFilterExpression struct {
 }
 
 func (f TagFilterExpression) Applies(feature *index.EncodedFeature) bool {
+	sigolo.Tracef("TagFilterExpression: HasTag(%d, %d)?", f.key, f.value)
 	return feature.HasTag(f.key, f.value)
 }
 

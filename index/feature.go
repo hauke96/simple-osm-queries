@@ -1,6 +1,12 @@
 package index
 
-import "github.com/paulmach/orb"
+import (
+	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/geojson"
+	"github.com/pkg/errors"
+	"os"
+)
 
 type EncodedFeature struct {
 	Geometry orb.Geometry // TODO Own geometry for easier (de)serialization?
@@ -15,25 +21,74 @@ type EncodedFeature struct {
 	values []int
 }
 
-func (f *EncodedFeature) HasTag(keyIndex int, valueIndex int) bool {
+func (f *EncodedFeature) HasKey(keyIndex int) bool {
 	bin := keyIndex / 8      // Element of the array
 	idxInBin := keyIndex % 8 // Bit position within the byte
-	isKeySet := f.keys[bin]&(1<<idxInBin) == 0
-	if !isKeySet {
-		return false
-	}
+	return f.keys[bin]&(1<<idxInBin) == 0
+}
 
+// GetValueIndex returns the value index (numerical representation of the actual value) for a given key index. This
+// function assumes that the key is set on the feature. Use HasKey to check this.
+func (f *EncodedFeature) GetValueIndex(keyIndex int) int {
 	// Go through all bits to count the number of 1's.
 	// TODO This can probably be optimised by preprocessing this (i.e. map from keyIndex to position in values array)
 	valueIndexPosition := 0
 	for i := 0; i < keyIndex; i++ {
-		bin = i / 8      // Element of the array
-		idxInBin = i % 8 // Bit position within the byte
+		bin := i / 8      // Element of the array
+		idxInBin := i % 8 // Bit position within the byte
 		if f.keys[bin]&(1<<idxInBin) == 0 {
 			// Key at "i" is set -> store its value
 			valueIndexPosition++
 		}
 	}
 
-	return f.values[valueIndexPosition] == valueIndex
+	return f.values[valueIndexPosition]
+}
+
+func (f *EncodedFeature) HasTag(keyIndex int, valueIndex int) bool {
+	if !f.HasKey(keyIndex) {
+		return false
+	}
+
+	return f.GetValueIndex(keyIndex) == valueIndex
+}
+
+func WriteFeaturesAsGeoJson(encodedFeatures []EncodedFeature, tagIndex *TagIndex) error {
+	file, err := os.Create("output.geojson")
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		err = file.Close()
+		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for GeoJSON file %s", file.Name()))
+	}()
+
+	featureCollection := geojson.NewFeatureCollection()
+	for _, encodedFeature := range encodedFeatures {
+		feature := geojson.NewFeature(encodedFeature.Geometry)
+
+		for keyIndex := 0; keyIndex < len(encodedFeature.keys)*8; keyIndex++ {
+			valueIndex := encodedFeature.GetValueIndex(keyIndex)
+
+			keyString := tagIndex.GetKeyFromIndex(keyIndex)
+			valueString := tagIndex.GetValueForKey(keyIndex, valueIndex)
+
+			feature.Properties[keyString] = valueString
+		}
+
+		featureCollection.Features = append(featureCollection.Features, feature)
+	}
+
+	geojsonBytes, err := featureCollection.MarshalJSON()
+	if err != nil {
+		return err
+	}
+
+	_, err = file.Write(geojsonBytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

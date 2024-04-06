@@ -18,12 +18,13 @@ var (
 )
 
 type Parser struct {
-	token    []*Token
-	index    int
-	tagIndex *index.TagIndex
+	token         []*Token
+	index         int
+	tagIndex      *index.TagIndex
+	geometryIndex index.GeometryIndex
 }
 
-func ParseQueryString(queryString string, tagIndex *index.TagIndex) (*Query, error) {
+func ParseQueryString(queryString string, tagIndex *index.TagIndex, geometryIndex index.GeometryIndex) (*Query, error) {
 	runes := []rune(strings.Trim(queryString, "\n\r\t "))
 	lexer := Lexer{
 		input: runes,
@@ -41,9 +42,10 @@ func ParseQueryString(queryString string, tagIndex *index.TagIndex) (*Query, err
 	}
 
 	parser := Parser{
-		token:    token,
-		index:    0,
-		tagIndex: tagIndex,
+		token:         token,
+		index:         0,
+		tagIndex:      tagIndex,
+		geometryIndex: geometryIndex,
 	}
 	return parser.parse()
 }
@@ -77,12 +79,10 @@ func (p *Parser) parse() (*Query, error) {
 			return nil, err
 		}
 
-		statement.Print(0)
-
 		topLevelStatements = append(topLevelStatements, *statement)
 	}
 
-	return &Query{topLevelStatements: topLevelStatements}, nil
+	return &Query{topLevelStatements: topLevelStatements, geometryIndex: p.geometryIndex}, nil
 }
 
 func (p *Parser) parseStatement() (*Statement, error) {
@@ -325,7 +325,6 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 
 		expression = &NegatedFilterExpression{
 			baseExpression: expression,
-			operator:       Not,
 		}
 	case Keyword:
 		if token.lexeme == "this" {
