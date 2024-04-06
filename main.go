@@ -23,6 +23,8 @@ var cli struct {
 	} `cmd:"" help:"Returns the OSM data for the given query."`
 }
 
+var indexBaseFolder = "soq-index"
+
 type VersionFlag string
 
 func (v VersionFlag) Decode(ctx *kong.DecodeContext) error { return nil }
@@ -57,11 +59,14 @@ func main() {
 
 	switch ctx.Command() {
 	case "import <input>":
-		err := importing.Import(cli.Import.Input, "soq-index")
+		err := importing.Import(cli.Import.Input, indexBaseFolder)
 		sigolo.FatalCheck(err)
 	case "query <query>":
-		tagIndex, err := index.LoadTagIndexFromFile(index.TagIndexFilename)
+		tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 		sigolo.FatalCheck(err)
+
+		// TODO use grid index
+		_ := index.LoadGridIndex(indexBaseFolder, tagIndex)
 
 		_, err = query.ParseQueryString(`
 // this is a comment

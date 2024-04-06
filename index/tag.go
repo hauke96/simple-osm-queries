@@ -26,13 +26,13 @@ type TagIndex struct {
 	valueMap   [][]string // Array index is here the key index. I.e. valueMap[key] contains the list of value strings.
 }
 
-func LoadTagIndexFromFile(filepath string) (*TagIndex, error) {
-	f, err := os.Open(filepath)
+func LoadTagIndex(baseFolder string) (*TagIndex, error) {
+	f, err := os.Open(path.Join(baseFolder, TagIndexFilename))
 	sigolo.FatalCheck(err)
 
 	defer func() {
 		err = f.Close()
-		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filepath))
+		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", baseFolder))
 	}()
 
 	var keyMap []string
@@ -58,11 +58,11 @@ func LoadTagIndexFromFile(filepath string) (*TagIndex, error) {
 	}
 
 	if err = scanner.Err(); err != nil {
-		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", filepath)
+		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", baseFolder)
 	}
 
 	index := &TagIndex{
-		BaseFolder: path.Base(filepath),
+		BaseFolder: path.Base(baseFolder),
 		keyMap:     keyMap,
 		valueMap:   valueMap,
 	}
@@ -71,7 +71,7 @@ func LoadTagIndexFromFile(filepath string) (*TagIndex, error) {
 	return index, nil
 }
 
-func (i *TagIndex) ImportAndSave(inputFile string, outputFile string) error {
+func (i *TagIndex) ImportAndSave(inputFile string) error {
 	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
 		sigolo.Error("Input file must be an .osm or .pbf file")
 		os.Exit(1)
@@ -152,7 +152,7 @@ func (i *TagIndex) ImportAndSave(inputFile string, outputFile string) error {
 	i.Print()
 	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
 
-	return i.SaveToFile(outputFile)
+	return i.SaveToFile(TagIndexFilename)
 }
 
 // GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.

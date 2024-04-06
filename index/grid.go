@@ -27,9 +27,13 @@ type GridIndex struct {
 	BaseFolder string
 }
 
-func LoadGridIndexFromFile(filename string, tagIndex *TagIndex) (*GridIndex, error) {
-	//TODO implement me
-	panic("implement me")
+func LoadGridIndex(baseFolder string, tagIndex *TagIndex) *GridIndex {
+	return &GridIndex{
+		TagIndex:   tagIndex,
+		CellWidth:  1,
+		CellHeight: 1,
+		BaseFolder: baseFolder,
+	}
 }
 
 func (g *GridIndex) Import(inputFile string) error {

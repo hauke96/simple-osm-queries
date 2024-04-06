@@ -17,7 +17,7 @@ func Import(inputFile string, indexBaseFolder string) error {
 	tagIndex := &index.TagIndex{
 		BaseFolder: indexBaseFolder,
 	}
-	err := tagIndex.ImportAndSave(inputFile, "tag-index")
+	err := tagIndex.ImportAndSave(inputFile)
 	if err != nil {
 		return err
 	}
