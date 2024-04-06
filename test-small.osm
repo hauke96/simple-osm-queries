@@ -1,15 +1,15 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <osm version='0.6' generator='JOSM'>
-  <node id='1' action='modify' visible='true' lat='53.587' lon='9.9330'>
+  <node id='1' version='1' action='modify' visible='true' lat='53.587' lon='9.9330'>
     <tag k='height' v='10.5' />
     <tag k='natural' v='tree' />
   </node>
-  <node id='2' action='modify' visible='true' lat='53.587' lon='9.9331'>
+  <node id='2' version='1' action='modify' visible='true' lat='53.587' lon='9.9331'>
     <tag k='amenity' v='bench' />
     <tag k='backrest' v='no' />
     <tag k='name' v='Testbank' />
   </node>
-  <node id='3' action='modify' visible='true' lat='53.587' lon='9.9332'>
+  <node id='3' version='1' action='modify' visible='true' lat='53.587' lon='9.9332'>
     <tag k='amenity' v='bench' />
     <tag k='backrest' v='yes' />
     <tag k='material' v='wood' />
