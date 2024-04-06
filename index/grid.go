@@ -215,7 +215,7 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) *EncodedFeature {
 	}
 }
 
-func (g *GridIndex) Get(bbox BBOX) chan []EncodedFeature {
+func (g *GridIndex) Get(bbox *orb.Bound) chan []EncodedFeature {
 	//TODO implement me
 	panic("implement me")
 }

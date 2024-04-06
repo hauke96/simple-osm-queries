@@ -14,3 +14,26 @@ type EncodedFeature struct {
 	// the keys bit-string.
 	values []int
 }
+
+func (f *EncodedFeature) HasTag(keyIndex int, valueIndex int) bool {
+	bin := keyIndex / 8      // Element of the array
+	idxInBin := keyIndex % 8 // Bit position within the byte
+	isKeySet := f.keys[bin]&(1<<idxInBin) == 0
+	if !isKeySet {
+		return false
+	}
+
+	// Go through all bits to count the number of 1's.
+	// TODO This can probably be optimised by preprocessing this (i.e. map from keyIndex to position in values array)
+	valueIndexPosition := 0
+	for i := 0; i < keyIndex; i++ {
+		bin = i / 8      // Element of the array
+		idxInBin = i % 8 // Bit position within the byte
+		if f.keys[bin]&(1<<idxInBin) == 0 {
+			// Key at "i" is set -> store its value
+			valueIndexPosition++
+		}
+	}
+
+	return f.values[valueIndexPosition] == valueIndex
+}

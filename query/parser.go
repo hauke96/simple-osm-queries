@@ -2,6 +2,7 @@ package query
 
 import (
 	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb"
 	"github.com/pkg/errors"
 	"soq/index"
 	"soq/util"
@@ -185,17 +186,20 @@ func (p *Parser) parseLocationExpression() (LocationExpression, error) {
 
 func (p *Parser) parseBboxLocationExpression() (LocationExpression, error) {
 	// Expect four numbers for the BBOX
-	var coordinates = [4]int{}
+	var coordinates = [4]float64{}
 	for i := 0; i < 4; i++ {
 		token := p.moveToNextToken()
-		value, err := strconv.Atoi(token.lexeme)
+		value, err := strconv.ParseFloat(token.lexeme, 64)
 		if token.kind != Number || err != nil {
 			return nil, errors.Errorf("Expected number as argument %d but found kind=%d with lexeme=%s", i+1, token.kind, token.lexeme)
 		}
 		coordinates[i] = value
 	}
 
-	return &BboxLocationExpression{coordinates: coordinates}, nil
+	return &BboxLocationExpression{bbox: &orb.Bound{
+		Min: orb.Point{coordinates[0], coordinates[1]},
+		Max: orb.Point{coordinates[2], coordinates[3]},
+	}}, nil
 }
 
 func (p *Parser) parseObjectType() (ObjectType, error) {
@@ -319,7 +323,7 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			return nil, err
 		}
 
-		expression = &NegatedStatement{
+		expression = &NegatedFilterExpression{
 			baseExpression: expression,
 			operator:       Not,
 		}

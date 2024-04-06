@@ -1,11 +1,8 @@
 package index
 
+import "github.com/paulmach/orb"
+
 type GeometryIndex interface {
 	Import(filename string) error
-	Get(bbox BBOX) chan []EncodedFeature
-}
-
-type BBOX struct {
-	X1, Y1 int // lower-left corner
-	X2, Y2 int // upper-right corner
+	Get(bbox *orb.Bound) []EncodedFeature
 }
