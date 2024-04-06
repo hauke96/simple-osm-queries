@@ -55,7 +55,7 @@ func LoadTagIndexFromFile(filename string) (*TagIndex, error) {
 		lineCounter++
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err = scanner.Err(); err != nil {
 		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", filename)
 	}
 
@@ -68,14 +68,16 @@ func LoadTagIndexFromFile(filename string) (*TagIndex, error) {
 	return index, nil
 }
 
-func (i *TagIndex) Import(inputFile string) {
+func (i *TagIndex) Import(inputFile string) error {
 	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
 		sigolo.Error("Input file must be an .osm or .pbf file")
 		os.Exit(1)
 	}
 
 	f, err := os.Open(inputFile)
-	sigolo.FatalCheck(err)
+	if err != nil {
+		return errors.Wrapf(err, "Unable to open input file %s", inputFile)
+	}
 	defer f.Close()
 
 	var scanner osm.Scanner
@@ -147,8 +149,7 @@ func (i *TagIndex) Import(inputFile string) {
 	i.Print()
 	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
 
-	err = i.SaveToFile()
-	sigolo.FatalCheck(err)
+	return i.SaveToFile()
 }
 
 // GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.

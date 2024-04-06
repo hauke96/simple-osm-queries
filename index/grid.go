@@ -110,7 +110,11 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 
 func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (*os.File, error) {
 	filename := path.Join(g.indexFolder, objectType, strconv.Itoa(cellX), strconv.Itoa(cellY)+".cell")
-	return os.Open(filename)
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Unable to open cell file %s", filename)
+	}
+	return file, nil
 }
 
 func (g *GridIndex) writeNodeData(id osm.NodeID, feature *EncodedFeature, f io.Writer) error {

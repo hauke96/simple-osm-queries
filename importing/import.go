@@ -1,15 +1,10 @@
 package importing
 
 import (
-	"context"
 	"github.com/hauke96/sigolo/v2"
-	"github.com/paulmach/osm"
-	"github.com/paulmach/osm/osmpbf"
-	"github.com/paulmach/osm/osmxml"
 	"os"
 	"soq/index"
 	"strings"
-	"time"
 )
 
 func Import(inputFile string) {
@@ -18,72 +13,9 @@ func Import(inputFile string) {
 		os.Exit(1)
 	}
 
-	f, err := os.Open(inputFile)
-	sigolo.FatalCheck(err)
-	defer f.Close()
+	tagIndex := &index.TagIndex{}
+	tagIndex.Import(inputFile)
 
-	var scanner osm.Scanner
-	if strings.HasSuffix(inputFile, ".osm") {
-		scanner = osmxml.New(context.Background(), f)
-	} else if strings.HasSuffix(inputFile, ".pbf") {
-		scanner = osmpbf.New(context.Background(), f, 1)
-	}
-	defer scanner.Close()
-
-	sigolo.Debug("Start processing tags from input data")
-	importStartTime := time.Now()
-
-	// TODO Use maps to quickly find keys and tags
-	var keyMap []string     // [key-index] -> key-string
-	var valueMap [][]string // [key-index][value-index] -> value-string
-
-	var tagIndex *index.TagIndex
-	for scanner.Scan() {
-		obj := scanner.Object()
-		switch osmObj := obj.(type) {
-		case *osm.Node:
-			for _, tag := range osmObj.Tags {
-				// Search for the given key in the key map to get its index
-				keyIndex := -1
-				for i, k := range keyMap {
-					if k == tag.Key {
-						keyIndex = i
-						break
-					}
-				}
-
-				if keyIndex != -1 {
-					// Key already exists and so does its value map. Check is value already appeared and if not, add it.
-					containsValue := false
-					for _, value := range valueMap[keyIndex] {
-						if value == tag.Value {
-							containsValue = true
-							break
-						}
-					}
-					if !containsValue {
-						// Value not yet seen -> Add to value-map
-						valueMap[keyIndex] = append(valueMap[keyIndex], tag.Value)
-					}
-				} else {
-					// Key appeared for the first time -> Create maps and add entry
-					keyMap = append(keyMap, tag.Key)
-					valueMap = append(valueMap, []string{tag.Value})
-				}
-			}
-
-			tagIndex = index.NewTagIndex(keyMap, valueMap)
-		}
-		// TODO Implement way handling
-		//case *osm.Way:
-		// TODO Implement relation handling
-		//case *osm.Relation:
-	}
-
-	importDuration := time.Since(importStartTime)
-	tagIndex.Print()
-	sigolo.Debugf("Created indices from OSM data in %s", importDuration)
-
-	err = tagIndex.SaveToFile()
-	sigolo.FatalCheck(err)
+	gridIndex := &index.GridIndex{}
+	gridIndex.Import(inputFile)
 }
