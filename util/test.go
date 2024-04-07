@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"github.com/hauke96/sigolo/v2"
+	"math"
 	"reflect"
 	"regexp"
 	"strings"
@@ -29,6 +30,12 @@ func AssertEqual(t *testing.T, expected interface{}, actual interface{}) {
 			sigolo.Errorb(1, "Expect to be equal.\nExpected: %+v\n----------\nActual  : %+v\n", expected, actual)
 			t.Fail()
 		}
+	}
+}
+
+func AssertApprox[T float32 | float64](t *testing.T, expected T, actual T, accuracy T) {
+	if math.Abs(float64(expected-actual)) > float64(accuracy) {
+		t.Fail()
 	}
 }
 
