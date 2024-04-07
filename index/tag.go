@@ -96,9 +96,10 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	sigolo.Debug("Start processing tags from input data")
 	importStartTime := time.Now()
 
-	// TODO Use maps to quickly find keys and tags
-	var keyMap []string     // [key-index] -> key-string
-	var valueMap [][]string // [key-index][value-index] -> value-string
+	var keyMap []string                  // [key-index] -> key-string
+	keyReverseMap := map[string]int{}    // Helper map: key-string -> key-index
+	var valueMap [][]string              // [key-index][value-index] -> value-string
+	var valueReverseMap []map[string]int // Helper map: value-string -> value-index in value[key-index]-array
 
 	for scanner.Scan() {
 		obj := scanner.Object()
@@ -106,31 +107,25 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 		case *osm.Node:
 			for _, tag := range osmObj.Tags {
 				// Search for the given key in the key map to get its index
-				keyIndex := -1
-				for i, k := range keyMap {
-					if k == tag.Key {
-						keyIndex = i
-						break
-					}
-				}
+				keyIndex, keyAlreadyStored := keyReverseMap[tag.Key]
 
-				if keyIndex != -1 {
-					// Key already exists and so does its value map. Check is value already appeared and if not, add it.
-					containsValue := false
-					for _, value := range valueMap[keyIndex] {
-						if value == tag.Value {
-							containsValue = true
-							break
-						}
-					}
+				if keyAlreadyStored {
+					// Key already exists and so does its value map. Check if value already appeared and if not, add it.
+					_, containsValue := valueReverseMap[keyIndex][tag.Value]
 					if !containsValue {
 						// Value not yet seen -> Add to value-map
 						valueMap[keyIndex] = append(valueMap[keyIndex], tag.Value)
+						valueReverseMap[keyIndex][tag.Value] = len(valueMap) - 1
 					}
 				} else {
 					// Key appeared for the first time -> Create maps and add entry
 					keyMap = append(keyMap, tag.Key)
+					keyIndex = len(keyMap) - 1
+					keyReverseMap[tag.Key] = keyIndex
+
 					valueMap = append(valueMap, []string{tag.Value})
+					valueReverseMap = append(valueReverseMap, map[string]int{})
+					valueReverseMap[keyIndex][tag.Value] = 0
 				}
 			}
 		}
