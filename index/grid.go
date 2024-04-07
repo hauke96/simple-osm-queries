@@ -246,7 +246,7 @@ func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []EncodedFeatu
 	maxCellX, maxCellY := g.getCellIdForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
 	sigolo.Infof("minX=%d, maxX=%d", minCellX, maxCellX)
 
-	resultChannel := make(chan []EncodedFeature, 100)
+	resultChannel := make(chan []EncodedFeature, 10)
 
 	numThreads := 3
 	var wg sync.WaitGroup
@@ -285,34 +285,35 @@ func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []EncodedFeatu
 func (g *GridIndex) getFeaturesForCells(output chan []EncodedFeature, wg *sync.WaitGroup, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
-			features, err := g.readFeaturesFromCell(cellX, cellY, objectType)
+			err := g.readFeaturesFromCell(output, cellX, cellY, objectType)
 			if err != nil {
 				sigolo.FatalCheck(err)
 			}
-			output <- features
 		}
 	}
 	wg.Done()
 }
 
-func (g *GridIndex) readFeaturesFromCell(cellX int, cellY int, objectType string) ([]EncodedFeature, error) {
+// readFeaturesFromCell reads all features from the specified cell and writes them periodically to the output channel.
+func (g *GridIndex) readFeaturesFromCell(output chan []EncodedFeature, cellX int, cellY int, objectType string) error {
 	cellFolderName := path.Join(g.BaseFolder, objectType, strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
 
 	if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
 		sigolo.Debugf("Cell file %s does not exist, I'll return an empty feature list", cellFileName)
-		return []EncodedFeature{}, nil
+		return nil
 	} else if err != nil {
-		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
+		return errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
 	}
 
 	sigolo.Tracef("Read cell file %s", cellFileName)
 	data, err := os.ReadFile(cellFileName)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, objectType)
+		return errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, objectType)
 	}
 
-	var result []EncodedFeature
+	outputBuffer := make([]EncodedFeature, 1000)
+	currentBufferPos := 0
 
 	for pos := 0; pos < len(data); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
@@ -336,14 +337,22 @@ func (g *GridIndex) readFeaturesFromCell(cellX int, cellY int, objectType string
 			encodedValues[i] = int(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16)
 		}
 
-		result = append(result, EncodedFeature{
+		outputBuffer[currentBufferPos] = EncodedFeature{
 			Geometry: &orb.Point{float64(lon), float64(lat)},
 			keys:     encodedKeys,
 			values:   encodedValues,
-		})
+		}
+
+		if currentBufferPos == len(outputBuffer)-1 {
+			output <- outputBuffer
+			outputBuffer = make([]EncodedFeature, len(outputBuffer))
+			currentBufferPos = 0
+		}
 
 		pos += 24 + encodedKeyBytes + encodedValuesBytes
 	}
 
-	return result, nil
+	output <- outputBuffer
+
+	return nil
 }
