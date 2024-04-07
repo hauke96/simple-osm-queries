@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"github.com/hauke96/sigolo/v2"
@@ -21,11 +22,12 @@ import (
 const GridIndexFolder = "grid-index"
 
 type GridIndex struct {
-	TagIndex            *TagIndex
-	CellWidth           float64
-	CellHeight          float64
-	BaseFolder          string
-	openFileHandleCache map[string]*os.File
+	TagIndex         *TagIndex
+	CellWidth        float64
+	CellHeight       float64
+	BaseFolder       string
+	cacheFileHandles map[string]*os.File
+	cacheFileWriters map[string]*bufio.Writer
 }
 
 func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, tagIndex *TagIndex) *GridIndex {
@@ -66,7 +68,8 @@ func (g *GridIndex) Import(inputFile string) error {
 	var feature *EncodedFeature
 	var cellX, cellY int
 
-	g.openFileHandleCache = map[string]*os.File{}
+	g.cacheFileHandles = map[string]*os.File{}
+	g.cacheFileWriters = map[string]*bufio.Writer{}
 
 	for scanner.Scan() {
 		obj := scanner.Object()
@@ -86,9 +89,14 @@ func (g *GridIndex) Import(inputFile string) error {
 		}
 	}
 
-	for filename, file := range g.openFileHandleCache {
+	for filename, file := range g.cacheFileHandles {
 		if file != nil {
 			sigolo.Tracef("Close cell file %s", file.Name())
+
+			writer := g.cacheFileWriters[filename]
+			err = writer.Flush()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
+
 			err = file.Close()
 			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
 		} else {
@@ -103,7 +111,7 @@ func (g *GridIndex) Import(inputFile string) error {
 }
 
 func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, feature *EncodedFeature) error {
-	var f *os.File
+	var f io.Writer
 	var err error
 
 	sigolo.Tracef("Write OSM object to cell x=%d, y=%d, obj=%#v", cellX, cellY, obj.ObjectID())
@@ -116,7 +124,7 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 		}
 		err = g.writeNodeData(osmObj.ID, feature, f)
 		if err != nil {
-			return errors.Wrapf(err, "Unable to write node %d to cell file %s", osmObj.ID, f.Name())
+			return errors.Wrapf(err, "Unable to write node %d to cell x=%d, y=%d", osmObj.ID, cellX, cellY)
 		}
 		return nil
 	}
@@ -128,22 +136,23 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 	return nil
 }
 
-func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (*os.File, error) {
+func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Writer, error) {
 	// Not filepath.Join because in this case it's slower than simple concatenation
 	cellFolderName := g.BaseFolder + "/" + objectType + "/" + strconv.Itoa(cellX)
 	cellFileName := cellFolderName + "/" + strconv.Itoa(cellY) + ".cell"
 
-	var file *os.File
+	var writer *bufio.Writer
 	var cached bool
 	var err error
 
-	file, cached = g.openFileHandleCache[cellFileName]
+	writer, cached = g.cacheFileWriters[cellFileName]
 	if cached {
 		sigolo.Tracef("Cell file %s already exist and cached", cellFileName)
-		return file, nil
+		return writer, nil
 	}
 
 	// Cell file not cached
+	var file *os.File
 
 	if _, err = os.Stat(cellFileName); err == nil {
 		// Cell file does exist -> open it
@@ -152,7 +161,6 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (*os.Fi
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
 		}
-		g.openFileHandleCache[cellFileName] = file
 	} else if errors.Is(err, os.ErrNotExist) {
 		// Cell file does NOT exist -> create its folder (if needed) and the file itself
 
@@ -171,12 +179,16 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (*os.Fi
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to create new cell file %s", cellFileName)
 		}
-		g.openFileHandleCache[cellFileName] = file
 	} else {
 		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
 	}
 
-	return file, nil
+	g.cacheFileHandles[cellFileName] = file
+
+	writer = bufio.NewWriter(file)
+	g.cacheFileWriters[cellFileName] = writer
+
+	return writer, nil
 }
 
 func (g *GridIndex) writeNodeData(id osm.NodeID, feature *EncodedFeature, f io.Writer) error {
