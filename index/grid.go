@@ -159,18 +159,31 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (*os.Fi
 func (g *GridIndex) writeNodeData(id osm.NodeID, feature *EncodedFeature, f io.Writer) error {
 	/*
 		Entry format:
+		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
 		Names: | osmId | lon | lat | num. keys | num. values |   encodedKeys   |   encodedValues   |
-		Bytes: |   8   |  8  |  8  |     4     |      4      | <num. keys> / 8 | <num. values> * 4 |
+		Bytes: |   8   |  4  |  4  |     4     |      4      | <num. keys> / 8 | <num. values> * 3 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(feature.keys)"). The encodedValue part, however,
 		is an int-array, therefore, we need the multiplication with 4.
 	*/
-	encodedKeyBytes := len(feature.keys)         // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(feature.values) * 4 // Int array and int = 4 bytes
 
-	byteCount := 8 + 8 + 8 + 4 + 4 // = 32
+	// The number of key-bins to store is determined by the bin with the highest index that is not empty (i.e. all 0s).
+	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
+	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
+	// by a factor of ten!
+	numKeys := 0
+	for i := 0; i < len(feature.keys); i++ {
+		if feature.keys[i] != 0 {
+			numKeys = i
+		}
+	}
+
+	encodedKeyBytes := numKeys                   // Is already a byte-array -> no division by 8 needed
+	encodedValueBytes := len(feature.values) * 3 // Int array and int = 4 bytes
+
+	byteCount := 8 + 4 + 4 + 4 + 4 // = 24
 	byteCount += encodedKeyBytes
 	byteCount += encodedValueBytes
 
@@ -179,16 +192,20 @@ func (g *GridIndex) writeNodeData(id osm.NodeID, feature *EncodedFeature, f io.W
 	point := feature.Geometry.(orb.Point)
 
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
-	binary.LittleEndian.PutUint64(data[8:], math.Float64bits(point.Lon()))
-	binary.LittleEndian.PutUint64(data[16:], math.Float64bits(point.Lat()))
-	binary.LittleEndian.PutUint32(data[24:], uint32(len(feature.keys)))
-	binary.LittleEndian.PutUint32(data[28:], uint32(len(feature.values)))
-	copy(data[32:], feature.keys[:])
+	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(point.Lon())))
+	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(point.Lat())))
+	binary.LittleEndian.PutUint32(data[16:], uint32(numKeys))
+	binary.LittleEndian.PutUint32(data[20:], uint32(len(feature.values)))
+
+	copy(data[24:], feature.keys[:])
 	for i, v := range feature.values {
-		binary.LittleEndian.PutUint32(data[32+encodedKeyBytes+i*4:], uint32(v))
+		b := data[24+encodedKeyBytes+i*3:]
+		b[0] = byte(v)
+		b[1] = byte(v >> 8)
+		b[2] = byte(v >> 16)
 	}
 
-	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d", id, point, byteCount, len(feature.keys), len(feature.values))
+	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d", id, point, byteCount, numKeys, len(feature.values))
 
 	_, err := f.Write(data)
 	if err != nil {
@@ -299,34 +316,33 @@ func (g *GridIndex) readFeaturesFromCell(cellX int, cellY int, objectType string
 
 	for pos := 0; pos < len(data); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
-		sigolo.Tracef("Read feature from pos=%d", pos)
+		osmId := binary.LittleEndian.Uint64(data[pos+0:])
+		lon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+8:]))
+		lat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
+		numKeys := int(binary.LittleEndian.Uint32(data[pos+16:]))
+		numValues := int(binary.LittleEndian.Uint32(data[pos+20:]))
 
-		// OSM-ID currently not needed:
-		// osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		lon := math.Float64frombits(binary.LittleEndian.Uint64(data[pos+8:]))
-		lat := math.Float64frombits(binary.LittleEndian.Uint64(data[pos+16:]))
-		numKeys := int(binary.LittleEndian.Uint32(data[pos+24:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+28:]))
-		sigolo.Tracef("  lon=%f, lat=%f, numKeys=%d, numValues=%d", lon, lat, numKeys, numValues)
+		sigolo.Tracef("Read feature pos=%d, id=%d, lon=%f, lat=%f, numKeys=%d, numValues=%d", pos, osmId, lon, lat, numKeys, numValues)
 
 		encodedKeyBytes := numKeys          // Division since a bit-string is stored (each key got one bit) and +1 because the plain division on integers is a floor operation.
-		encodedValuesBytes := numValues * 4 // Multiplication since each value is an int with 4 bytes
+		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 4 bytes
 
 		encodedKeys := make([]byte, numKeys)
 		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos+32:])
+		copy(encodedKeys[:], data[pos+24:])
 
 		for i := 0; i < numValues; i++ {
-			encodedValues[i] = int(binary.LittleEndian.Uint32(data[pos+32+encodedKeyBytes+i*4:]))
+			b := data[(pos + 24 + encodedKeyBytes + i*3):]
+			encodedValues[i] = int(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16)
 		}
 
 		result = append(result, EncodedFeature{
-			Geometry: &orb.Point{lon, lat},
+			Geometry: &orb.Point{float64(lon), float64(lat)},
 			keys:     encodedKeys,
 			values:   encodedValues,
 		})
 
-		pos += 32 + encodedKeyBytes + encodedValuesBytes
+		pos += 24 + encodedKeyBytes + encodedValuesBytes
 	}
 
 	return result, nil

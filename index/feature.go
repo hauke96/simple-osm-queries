@@ -22,7 +22,13 @@ type EncodedFeature struct {
 }
 
 func (f *EncodedFeature) HasKey(keyIndex int) bool {
-	bin := keyIndex / 8      // Element of the array
+	bin := keyIndex / 8 // Element of the array
+
+	// In case a key is requested that not even exists in the current bin, then if course the key is not set.
+	if bin > len(f.keys)-1 {
+		return false
+	}
+
 	idxInBin := keyIndex % 8 // Bit position within the byte
 	return f.keys[bin]&(1<<idxInBin) != 0
 }
