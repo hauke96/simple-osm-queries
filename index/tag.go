@@ -56,7 +56,7 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 
 		key := splitLine[0]
 		values := splitLine[1]
-		sigolo.Tracef("Found key=%s with values=%s", key, values)
+		sigolo.Tracef("Found key=%s with %d values", key, len(values))
 
 		keyMap = append(keyMap, key)
 		valueMap = append(valueMap, strings.Split(values, "|"))
@@ -73,7 +73,7 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 		keyMap:     keyMap,
 		valueMap:   valueMap,
 	}
-	index.Print()
+	//index.Print()
 
 	return index, nil
 }
@@ -104,7 +104,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	var keyMap []string                  // [key-index] -> key-string
 	keyReverseMap := map[string]int{}    // Helper map: key-string -> key-index
 	var valueMap [][]string              // [key-index][value-index] -> value-string
-	var valueReverseMap []map[string]int // Helper map: value-string -> value-index in value[key-index]-array
+	var valueReverseMap []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
 
 	for scanner.Scan() {
 		obj := scanner.Object()
@@ -147,13 +147,20 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 		valueMap[i] = values
 	}
 
+	// Update the newly sorted value reverse map. Otherwise the value indices are all mixed up
+	for keyIndex, _ := range keyMap {
+		for valueIndex, value := range valueMap[keyIndex] {
+			valueReverseMap[keyIndex][value] = valueIndex
+		}
+	}
+
 	i.keyMap = keyMap
 	i.keyReverseMap = keyReverseMap
 	i.valueMap = valueMap
 	i.valueReverseMap = valueReverseMap
 
 	importDuration := time.Since(importStartTime)
-	i.Print()
+	//i.Print()
 	sigolo.Debugf("Created tag-index from OSM data in %s", importDuration)
 
 	return i.SaveToFile(TagIndexFilename)
@@ -208,8 +215,8 @@ func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 
 	encodedKeys := make([]byte, len(i.keyMap)/8+1)
 
-	// Contains the values for each key or nil if the key is not set. The empty places will be removed below.
-	tempEncodedValues := make([]*int, len(encodedKeys))
+	// Contains the values for each keyIndex, or nil if the key is not set. The empty places will be removed below.
+	tempEncodedValues := make([]*int, len(encodedKeys)*8)
 
 	for _, tag := range tags {
 		keyIndex := i.keyReverseMap[tag.Key]
@@ -219,7 +226,7 @@ func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 		bin := keyIndex / 8      // Element of the array
 		idxInBin := keyIndex % 8 // Bit position within the byte
 		encodedKeys[bin] |= 1 << idxInBin
-		tempEncodedValues[bin] = &valueIndex
+		tempEncodedValues[keyIndex] = &valueIndex
 	}
 
 	// Now we know all keys that are set and can determine the order of the values for the array.

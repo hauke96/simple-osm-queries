@@ -19,11 +19,11 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 		BaseFolder: "foobar",
 	}
 
-	geometry := orb.Point{1.23, 2.34}
+	geometry := &orb.Point{1.23, 2.34}
 	feature := &EncodedFeature{
 		Geometry: geometry,
-		keys:     []byte{73},     // LittleEndian: 1001 0010
-		values:   []int{5, 1, 9}, // One value per "1" in "keys"
+		keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
+		values:   []int{5, 1, 9},   // One value per "1" in "keys"
 	}
 	osmId := osm.NodeID(123)
 
@@ -41,8 +41,8 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 	util.AssertApprox(t, geometry.Lon(), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[8:]))), 0.00001)
 	util.AssertApprox(t, geometry.Lat(), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[12:]))), 0.00001)
 
-	util.AssertEqual(t, uint32(len(feature.keys)), binary.LittleEndian.Uint32(data[16:]))
-	util.AssertEqual(t, uint32(len(feature.values)), binary.LittleEndian.Uint32(data[20:]))
+	util.AssertEqual(t, uint32(1), binary.LittleEndian.Uint32(data[16:]))
+	util.AssertEqual(t, uint32(3), binary.LittleEndian.Uint32(data[20:]))
 
 	util.AssertEqual(t, feature.keys[0], data[24])
 
@@ -54,4 +54,54 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 	util.AssertEqual(t, feature.values[2], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
 
 	util.AssertEqual(t, 34, len(data))
+}
+
+func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
+	// Arrange
+	gridIndex := &GridIndex{
+		TagIndex:   nil,
+		CellWidth:  10,
+		CellHeight: 10,
+		BaseFolder: "foobar",
+	}
+
+	geometry := &orb.Point{1.23, 2.34}
+	originalFeature := &EncodedFeature{
+		Geometry: geometry,
+		keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
+		values:   []int{5, 1, 9},   // One value per "1" in "keys"
+	}
+	osmId := osm.NodeID(123)
+
+	f := bytes.NewBuffer([]byte{})
+
+	err := gridIndex.writeNodeData(osmId, originalFeature, f)
+	util.AssertNil(t, err)
+
+	outputChannel := make(chan []*EncodedFeature)
+	var result []*EncodedFeature
+
+	// Act
+	go func() {
+		for features := range outputChannel {
+			result = append(result, features...)
+		}
+	}()
+	gridIndex.readFeaturesFromCellData(outputChannel, f.Bytes())
+	close(outputChannel)
+
+	// Assert
+	util.AssertNotNil(t, result[0])
+	for i := 1; i < len(result); i++ {
+		if result[i] != nil {
+			t.Fail()
+		}
+	}
+
+	feature := result[0]
+	util.AssertEqual(t, 1, len(feature.keys))
+	util.AssertEqual(t, originalFeature.keys[0], feature.keys[0])
+	util.AssertEqual(t, originalFeature.values, feature.values)
+	util.AssertApprox(t, originalFeature.Geometry.(*orb.Point).Lon(), feature.Geometry.(*orb.Point).Lon(), 0.0001)
+	util.AssertApprox(t, originalFeature.Geometry.(*orb.Point).Lat(), feature.Geometry.(*orb.Point).Lat(), 0.0001)
 }
