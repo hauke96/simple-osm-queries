@@ -15,6 +15,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -223,23 +224,58 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) *EncodedFeature {
 	}
 }
 
-func (g *GridIndex) Get(bbox *orb.Bound, objectType string) ([]EncodedFeature, error) {
+func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []EncodedFeature, error) {
 	minCellX, minCellY := g.getCellIdForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
 	maxCellX, maxCellY := g.getCellIdForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
+	sigolo.Infof("minX=%d, maxX=%d", minCellX, maxCellX)
 
-	var result []EncodedFeature
+	resultChannel := make(chan []EncodedFeature, 100)
 
+	numThreads := 3
+	var wg sync.WaitGroup
+	wg.Add(numThreads)
+	go func() {
+		cellColumns := maxCellX - minCellX + 1 // min and max are inclusive, therefore +1
+		threadColumns := cellColumns / numThreads
+
+		for i := 0; i < numThreads; i++ {
+			minColX := minCellX + i*threadColumns
+			maxColX := minCellX + (i+1)*threadColumns
+			if i != 0 {
+				// To prevent overlapping columns
+				minColX++
+			}
+			if i == numThreads-1 {
+				// Last column: Make sure it goes til the requested end
+				maxColX = maxCellX
+			}
+			sigolo.Infof("from=%d, to=%d", minColX, maxColX)
+			go g.getFeaturesForCells(resultChannel, &wg, minColX, maxColX, minCellY, maxCellY, objectType)
+		}
+
+		// min and max are inclusive but we don't want to query a columns twice, therefore +1
+		//go g.getFeaturesForCells(resultChannel, &wg, minCellX+(cellColumns/2+1), maxCellX, minCellY, maxCellY, objectType)
+	}()
+
+	go func() {
+		wg.Wait()
+		close(resultChannel)
+	}()
+
+	return resultChannel, nil
+}
+
+func (g *GridIndex) getFeaturesForCells(output chan []EncodedFeature, wg *sync.WaitGroup, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
-			cells, err := g.readFeaturesFromCell(cellX, cellY, objectType)
+			features, err := g.readFeaturesFromCell(cellX, cellY, objectType)
 			if err != nil {
-				return nil, err
+				sigolo.FatalCheck(err)
 			}
-			result = append(result, cells...)
+			output <- features
 		}
 	}
-
-	return result, nil
+	wg.Done()
 }
 
 func (g *GridIndex) readFeaturesFromCell(cellX int, cellY int, objectType string) ([]EncodedFeature, error) {

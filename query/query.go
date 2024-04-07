@@ -93,18 +93,20 @@ func (q *Query) Execute() ([]index.EncodedFeature, error) {
 	for _, statement := range q.topLevelStatements {
 		statement.Print(0)
 
-		features, err := statement.GetFeatures(q.geometryIndex)
+		featuresChannel, err := statement.GetFeatures(q.geometryIndex)
 		if err != nil {
 			return nil, err
 		}
 
-		sigolo.Tracef("Read %d features", len(features))
+		for features := range featuresChannel {
+			sigolo.Tracef("Received %d features", len(features))
 
-		for _, feature := range features {
-			sigolo.Trace("----- next feature -----")
-			feature.Print()
-			if statement.Applies(&feature) {
-				result = append(result, feature)
+			for _, feature := range features {
+				sigolo.Trace("----- next feature -----")
+				feature.Print()
+				if statement.Applies(&feature) {
+					result = append(result, feature)
+				}
 			}
 		}
 	}
@@ -125,7 +127,7 @@ type Statement struct {
 	filter     FilterExpression
 }
 
-func (f Statement) GetFeatures(geometryIndex index.GeometryIndex) ([]index.EncodedFeature, error) {
+func (f Statement) GetFeatures(geometryIndex index.GeometryIndex) (chan []index.EncodedFeature, error) {
 	return f.location.GetFeatures(geometryIndex, f.objectType)
 }
 
@@ -146,7 +148,7 @@ func (f Statement) Print(indent int) {
 */
 
 type LocationExpression interface {
-	GetFeatures(geometryIndex index.GeometryIndex, objectType ObjectType) ([]index.EncodedFeature, error)
+	GetFeatures(geometryIndex index.GeometryIndex, objectType ObjectType) (chan []index.EncodedFeature, error)
 	IsWithin(feature *index.EncodedFeature) bool
 	Print(indent int)
 }
@@ -155,7 +157,7 @@ type BboxLocationExpression struct {
 	bbox *orb.Bound
 }
 
-func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, objectType ObjectType) ([]index.EncodedFeature, error) {
+func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, objectType ObjectType) (chan []index.EncodedFeature, error) {
 	// TODO Find a better solution than ".string()" for object types
 	return geometryIndex.Get(b.bbox, objectType.string())
 }

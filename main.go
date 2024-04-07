@@ -27,7 +27,7 @@ var cli struct {
 }
 
 var indexBaseFolder = "soq-index"
-var defaultCellSize = 1.0
+var defaultCellSize = 0.1
 
 type VersionFlag string
 
