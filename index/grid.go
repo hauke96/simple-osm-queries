@@ -21,10 +21,11 @@ import (
 const GridIndexFolder = "grid-index"
 
 type GridIndex struct {
-	TagIndex   *TagIndex
-	CellWidth  float64
-	CellHeight float64
-	BaseFolder string
+	TagIndex            *TagIndex
+	CellWidth           float64
+	CellHeight          float64
+	BaseFolder          string
+	openFileHandleCache map[string]*os.File
 }
 
 func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, tagIndex *TagIndex) *GridIndex {
@@ -65,6 +66,8 @@ func (g *GridIndex) Import(inputFile string) error {
 	var feature *EncodedFeature
 	var cellX, cellY int
 
+	g.openFileHandleCache = map[string]*os.File{}
+
 	for scanner.Scan() {
 		obj := scanner.Object()
 		switch osmObj := obj.(type) {
@@ -83,6 +86,16 @@ func (g *GridIndex) Import(inputFile string) error {
 		}
 	}
 
+	for filename, file := range g.openFileHandleCache {
+		if file != nil {
+			sigolo.Tracef("Close cell file %s", file.Name())
+			err = file.Close()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
+		} else {
+			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
+		}
+	}
+
 	importDuration := time.Since(importStartTime)
 	sigolo.Debugf("Created OSM object index from OSM data in %s", importDuration)
 
@@ -93,17 +106,7 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 	var f *os.File
 	var err error
 
-	sigolo.Tracef("Write OSM object to cell x=%d, y=%d, obj=%s", cellX, cellY, obj.ObjectID().String())
-
-	defer func() {
-		if f != nil {
-			sigolo.Tracef("Close cell file %s for object x=%d, y=%d, obj=%s", f.Name(), cellX, cellY, obj.ObjectID().String())
-			err = f.Close()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", f.Name()))
-		} else {
-			sigolo.Tracef("No cell file to close (x=%d, y=%d, obj=%s), there's probably an error opening/creating it", cellX, cellY, obj.ObjectID().String())
-		}
-	}()
+	sigolo.Tracef("Write OSM object to cell x=%d, y=%d, obj=%#v", cellX, cellY, obj.ObjectID())
 
 	switch osmObj := obj.(type) {
 	case *osm.Node:
@@ -126,28 +129,49 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 }
 
 func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (*os.File, error) {
-	cellFolderName := path.Join(g.BaseFolder, objectType, strconv.Itoa(cellX))
-	err := os.MkdirAll(cellFolderName, os.ModePerm)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Unable to create cell folder %s for cellY=%d", cellFolderName, cellY)
-	}
-
-	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
+	// Not filepath.Join because in this case it's slower than simple concatenation
+	cellFolderName := g.BaseFolder + "/" + objectType + "/" + strconv.Itoa(cellX)
+	cellFileName := cellFolderName + "/" + strconv.Itoa(cellY) + ".cell"
 
 	var file *os.File
+	var cached bool
+	var err error
+
+	file, cached = g.openFileHandleCache[cellFileName]
+	if cached {
+		sigolo.Tracef("Cell file %s already exist and cached", cellFileName)
+		return file, nil
+	}
+
+	// Cell file not cached
 
 	if _, err = os.Stat(cellFileName); err == nil {
-		sigolo.Tracef("Cell file %s already exist, I'll open it", cellFileName)
+		// Cell file does exist -> open it
+		sigolo.Debugf("Cell file %s already exist but is not cached, I'll open it", cellFileName)
 		file, err = os.OpenFile(cellFileName, os.O_APPEND|os.O_RDWR, 0666)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
 		}
+		g.openFileHandleCache[cellFileName] = file
 	} else if errors.Is(err, os.ErrNotExist) {
+		// Cell file does NOT exist -> create its folder (if needed) and the file itself
+
+		// Ensure the folder exists
+		if _, err = os.Stat(cellFolderName); os.IsNotExist(err) {
+			sigolo.Debugf("Cell folder %s doesn't exist, I'll create it", cellFolderName)
+			err = os.MkdirAll(cellFolderName, os.ModePerm)
+			if err != nil {
+				return nil, errors.Wrapf(err, "Unable to create cell folder %s for cellY=%d", cellFolderName, cellY)
+			}
+		}
+
+		// Create cell file
 		sigolo.Debugf("Cell file %s does not exist, I'll create it", cellFileName)
 		file, err = os.Create(cellFileName)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to create new cell file %s", cellFileName)
 		}
+		g.openFileHandleCache[cellFileName] = file
 	} else {
 		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
 	}

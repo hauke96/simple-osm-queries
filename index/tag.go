@@ -24,6 +24,11 @@ type TagIndex struct {
 	BaseFolder string
 	keyMap     []string   // The index value of a key is the position in this array.
 	valueMap   [][]string // Array index is here the key index. I.e. valueMap[key] contains the list of value strings.
+
+	// Only used during import. These are not persisted and will be nil during query phase (i.e. after reading the tag-
+	// index from disk).
+	keyReverseMap   map[string]int   // Helper map: key-string -> key-index
+	valueReverseMap []map[string]int // Helper map: value-string -> value-index in value[key-index]-array
 }
 
 func LoadTagIndex(baseFolder string) (*TagIndex, error) {
@@ -143,7 +148,9 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	}
 
 	i.keyMap = keyMap
+	i.keyReverseMap = keyReverseMap
 	i.valueMap = valueMap
+	i.valueReverseMap = valueReverseMap
 
 	importDuration := time.Since(importStartTime)
 	i.Print()
@@ -195,29 +202,34 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 
 func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 	// See EncodedFeature for details on the array that are created here.
+	if len(tags) == 0 {
+		return []byte{}, []int{}
+	}
 
 	encodedKeys := make([]byte, len(i.keyMap)/8+1)
-	bitPosToValue := map[int]int{} // Position in bit-string to numeric representation of value
+
+	// Contains the values for each key or nil if the key is not set. The empty places will be removed below.
+	tempEncodedValues := make([]*int, len(encodedKeys))
+
 	for _, tag := range tags {
-		keyIndex, valueIndex := i.GetIndicesFromKeyValueStrings(tag.Key, tag.Value)
+		keyIndex := i.keyReverseMap[tag.Key]
+		valueIndex := i.valueReverseMap[keyIndex][tag.Value]
 
 		// Set 1 for the given key because it's set
 		bin := keyIndex / 8      // Element of the array
 		idxInBin := keyIndex % 8 // Bit position within the byte
 		encodedKeys[bin] |= 1 << idxInBin
-
-		// Store encoded value for later
-		bitPosToValue[keyIndex] = valueIndex
+		tempEncodedValues[bin] = &valueIndex
 	}
 
 	// Now we know all keys that are set and can determine the order of the values for the array.
-	var encodedValues []int
-	for pos := 0; pos < len(i.keyMap); pos++ {
-		bin := pos / 8      // Element of the array
-		idxInBin := pos % 8 // Bit position within the byte
-		if encodedKeys[bin]&(1<<idxInBin) != 0 {
+	encodedValues := make([]int, len(tags))
+	encodedValuesCounter := 0
+	for pos := 0; pos < len(tempEncodedValues); pos++ {
+		if tempEncodedValues[pos] != nil {
 			// Key at "pos" is set -> store its value
-			encodedValues = append(encodedValues, bitPosToValue[pos])
+			encodedValues[encodedValuesCounter] = *tempEncodedValues[pos]
+			encodedValuesCounter++
 		}
 	}
 
