@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+soq
 
 # Test binary, built with `go test -c`
 *.test
@@ -14,8 +15,13 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
-# OSM files
+# Profiling
+profiling.prof
+profile*
+
+# Geodata files
 *.osm.pbf
+*.geojson
 
 # Index files
 soq-index
