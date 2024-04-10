@@ -9,6 +9,8 @@ import (
 )
 
 type EncodedFeature struct {
+	ID uint64
+
 	Geometry orb.Geometry // TODO Own geometry for easier (de)serialization?
 
 	// A bit-string defining which keys are set and which aren't. A 1 at index i says that the key with numeric
@@ -77,7 +79,7 @@ func (f *EncodedFeature) Print() {
 	sigolo.Tracef("  values=%v", f.values)
 }
 
-func WriteFeaturesAsGeoJson(encodedFeatures []EncodedFeature, tagIndex *TagIndex) error {
+func WriteFeaturesAsGeoJson(encodedFeatures []*EncodedFeature, tagIndex *TagIndex) error {
 	file, err := os.Create("output.geojson")
 	if err != nil {
 		return err

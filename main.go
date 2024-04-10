@@ -27,7 +27,7 @@ var cli struct {
 }
 
 var indexBaseFolder = "soq-index"
-var defaultCellSize = 1.0
+var defaultCellSize = 0.05
 
 type VersionFlag string
 
@@ -81,20 +81,20 @@ func main() {
 		geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, tagIndex)
 
 		q, err := query.ParseQueryString(`
-// this is a comment
-bbox(0.95,5.45,15,64.55).nodes{ amenity=bench}
+//bbox(9.99549,53.55688,9.99569,53.55701)
+//bbox(9.9713,53.5354,10.01711,53.58268)
+bbox(9.9713,53.5354,10.0160,53.5608)
+.nodes{
+	amenity=bench
+	// AND seats=3
+}
 `, tagIndex, geometryIndex)
 		sigolo.FatalCheck(err)
-		//query.ParseQueryString(`// this is a comment
-		//
-		//bbox(1,  2,3,
-		//4).nodes{   amenity
-		//=bench}`)
 
 		features, err := q.Execute()
 		sigolo.FatalCheck(err)
 
-		sigolo.Debugf("Found %d features", len(features))
+		sigolo.Infof("Found %d features", len(features))
 
 		err = index.WriteFeaturesAsGeoJson(features, tagIndex)
 		sigolo.FatalCheck(err)

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func AssertEqual(t *testing.T, expected interface{}, actual interface{}) {
+func AssertEqual(t *testing.T, expected any, actual any) {
 	expectedIsString := false
 	actualIsString := false
 
@@ -74,16 +74,16 @@ func assertEqualStrings(t *testing.T, expected string, actual string) {
 	t.Fail()
 }
 
-func AssertNil(t *testing.T, value interface{}) {
-	if !reflect.DeepEqual(nil, value) {
-		sigolo.Errorb(1, "Expect to be 'nil' but was: %+v", value)
+func AssertNil(t *testing.T, value any) {
+	if value != nil && !reflect.ValueOf(value).IsNil() {
+		sigolo.Errorb(1, "Expect to be 'nil' but was: %#v", value)
 		t.Fail()
 	}
 }
 
-func AssertNotNil(t *testing.T, value interface{}) {
-	if nil == value {
-		sigolo.Errorb(1, "Expect NOT to be 'nil' but was: %+v", value)
+func AssertNotNil(t *testing.T, value any) {
+	if value == nil || reflect.ValueOf(value).IsNil() {
+		sigolo.Errorb(1, "Expect NOT to be 'nil' but was: %#v", value)
 		t.Fail()
 	}
 }
