@@ -75,14 +75,14 @@ func assertEqualStrings(t *testing.T, expected string, actual string) {
 }
 
 func AssertNil(t *testing.T, value any) {
-	if !reflect.DeepEqual(nil, value) {
+	if value != nil && !reflect.ValueOf(value).IsNil() {
 		sigolo.Errorb(1, "Expect to be 'nil' but was: %#v", value)
 		t.Fail()
 	}
 }
 
 func AssertNotNil(t *testing.T, value any) {
-	if nil == value {
+	if value == nil || reflect.ValueOf(value).IsNil() {
 		sigolo.Errorb(1, "Expect NOT to be 'nil' but was: %#v", value)
 		t.Fail()
 	}

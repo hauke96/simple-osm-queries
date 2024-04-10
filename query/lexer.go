@@ -21,18 +21,18 @@ var (
 	numberChars = []rune{'1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '.'}
 )
 
-// char returns the rune at the current location or the number 0 if there is no next char.
+// char returns the rune at the current location or the rune '-1' if there is no next char.
 func (l *Lexer) char() rune {
 	if l.index >= len(l.input) {
-		return 0
+		return -1
 	}
 	return l.input[l.index]
 }
 
-// nextChar returns the next rune, so the one after the rune char() returns, or the number 0 if there is no next char.
+// nextChar returns the next rune, so the one after the rune char() returns, or the rune '-1' if there is no next char.
 func (l *Lexer) nextChar() rune {
 	if l.index+1 >= len(l.input) {
-		return 0
+		return -1
 	}
 	return l.input[l.index+1]
 }
@@ -44,8 +44,12 @@ func (l *Lexer) read() ([]*Token, error) {
 		if err != nil {
 			return nil, err
 		}
-		l.tracef("Found token kind=%d, pos=%d, lexeme=\"%s\"", token.kind, token.startPosition, token.lexeme)
-		tokens = append(tokens, token)
+		if token != nil {
+			l.tracef("Found token kind=%d, pos=%d, lexeme=\"%s\"", token.kind, token.startPosition, token.lexeme)
+			tokens = append(tokens, token)
+		} else {
+			l.tracef("Did not found a next token. This happens when a comment is at the end of the text. If this is not the case, than this might indicate a bug.")
+		}
 	}
 	return tokens, nil
 }
@@ -74,7 +78,7 @@ func (l *Lexer) nextToken() (*Token, error) {
 			if err != nil {
 				return nil, err
 			}
-			continue
+			return nil, nil
 		}
 
 		// Single-char token
@@ -106,26 +110,26 @@ func (l *Lexer) nextToken() (*Token, error) {
 
 		// Operators
 		switch char {
-		case '=':
-			return l.currentSingleCharToken(OperatorEqual), nil
+		case '!':
+			if l.nextChar() == '=' {
+				token := l.currentMultiCharToken(OperatorNotEqual, 2)
+				return token, nil
+			}
+			return l.currentSingleCharToken(OperatorNot), nil
 		case '<':
 			if l.nextChar() == '=' {
-				l.index++
-				return l.currentSingleCharToken(OperatorLowerEqual), nil
+				token := l.currentMultiCharToken(OperatorLowerEqual, 2)
+				return token, nil
 			}
 			return l.currentSingleCharToken(OperatorLower), nil
 		case '>':
 			if l.nextChar() == '=' {
-				l.index++
-				return l.currentSingleCharToken(OperatorGreaterEqual), nil
+				token := l.currentMultiCharToken(OperatorGreaterEqual, 2)
+				return token, nil
 			}
 			return l.currentSingleCharToken(OperatorGreater), nil
-		case '!':
-			if l.nextChar() == '=' {
-				l.index++
-				return l.currentSingleCharToken(OperatorNotEqual), nil
-			}
-			return l.currentSingleCharToken(OperatorNot), nil
+		case '=':
+			return l.currentSingleCharToken(OperatorEqual), nil
 		}
 
 		return nil, errors.Errorf("Unexpected character '%c' at index %d", char, l.index)
@@ -139,12 +143,13 @@ func (l *Lexer) skipComment() error {
 	l.index++
 	if l.index >= len(l.input) || l.char() != '/' {
 		// Text ended or next rune is not '/'
-		return errors.Errorf("Unexpected '%c' at index %d", l.char(), l.index-1)
+		l.index--
+		return errors.Errorf("Unexpected '%c' at index %d", l.char(), l.index)
 	}
 	l.tracef("Found comment start")
 
 	for ; l.index < len(l.input); l.index++ {
-		if l.char() == '\n' || l.char() == '\n' {
+		if l.char() == '\n' || l.char() == '\r' {
 			return nil
 		}
 		l.tracef("Skip in comment")
@@ -164,6 +169,17 @@ func (l *Lexer) currentSingleCharToken(tokenKind TokenKind) *Token {
 	return token
 }
 
+func (l *Lexer) currentMultiCharToken(tokenKind TokenKind, chars int) *Token {
+	token := &Token{
+		kind:          tokenKind,
+		lexeme:        string(l.input[l.index : l.index+chars]),
+		startPosition: l.index,
+	}
+	l.index += chars
+	return token
+}
+
+// currentKeyword returns the keyword starting at the current index.
 func (l *Lexer) currentKeyword() *Token {
 	lexeme := ""
 	startIndex := l.index

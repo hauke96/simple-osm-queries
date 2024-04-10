@@ -59,7 +59,17 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	// Arrange
 	gridIndex := &GridIndex{
-		TagIndex:   nil,
+		TagIndex: &TagIndex{
+			BaseFolder: "",
+			keyMap:     []string{"k1", "k2", "k3"},
+			valueMap: [][]string{
+				{"v1_1"},
+				{"v2_1", "v2_2"},
+				{"v3_1", "v3_2"},
+			},
+			keyReverseMap:   nil,
+			valueReverseMap: nil,
+		},
 		CellWidth:  10,
 		CellHeight: 10,
 		BaseFolder: "foobar",
@@ -67,9 +77,10 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 
 	geometry := &orb.Point{1.23, 2.34}
 	originalFeature := &EncodedFeature{
+		ID:       123,
 		Geometry: geometry,
 		keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
-		values:   []int{5, 1, 9},   // One value per "1" in "keys"
+		values:   []int{0, 1, 0},   // One value per "1" in "keys"
 	}
 	osmId := osm.NodeID(123)
 
