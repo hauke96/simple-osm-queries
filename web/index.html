@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Simple OSM Queries</title>
+        <script src="https://cdn.jsdelivr.net/npm/ol@v8.2.0/dist/ol.js"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v8.2.0/ol.css">
+        <style>
+            :root {
+                --col-primary-light: #e3f2fd;
+                --col-primary: #2196f3;
+                --col-gray: #9e9e9e;
+                --col-gray-light: #e0e0e0;
+            }
+
+            html, body, .map {
+                margin: 0;
+                height: 100%;
+                width: 100%;
+                font-family: sans-serif;
+            }
+
+            body {
+                display: flex;
+                flex-direction: row;
+            }
+
+            button {
+                width: 150px;
+                height: 2.5em;
+                border: 1px solid var(--col-gray);
+                background: var(--col-primary-light);
+            }
+
+            button:hover:enabled {
+                border: 1px solid var(--col-primary);
+            }
+
+            button:disabled, button[disabled] {
+                background: var(--col-gray-light);
+            }
+
+            .sidepanel {
+                display: flex;
+                flex-direction: column;
+                padding: 1em;
+                min-width: 500px;
+                width: 33%;
+            }
+
+            .button-container {
+                display: flex;
+                flex-direction: row;
+                justify-content: space-between;
+            }
+
+            #query-input {
+                margin-bottom: 1em;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="sidepanel">
+            <h1>Query editor</h1>
+            <textarea id="query-input" rows="25"></textarea>
+            <div class="button-container">
+                <div>
+                    <button id="copy-extent-button">Copy current bbox</button>
+                </div>
+                <div>
+                    <button id="export-button">Save as GeoJSON</button>
+                    <button id="send-button">Send</button>
+                </div>
+            </div>
+        </div>
+        <div id="map" class="map"></div>
+    </body>
+
+    <script type="text/javascript">
+        // Set default values
+        document.getElementById('export-button').disabled = true;
+        document.getElementById('query-input').value = "//bbox(9.9713,53.5354,10.01711,53.58268)\n" +
+            "bbox({{bbox}}).nodes{\n" +
+            "  amenity=bench AND seats=*\n" +
+            "}";
+
+        const dataLayer = new ol.layer.Vector({
+            source: new ol.source.Vector({
+                format: new ol.format.GeoJSON()
+            }),
+            zIndex: 10,
+            visible: true
+        });
+        let lastQueryResponseGeoJSON = "";
+
+        var map = new ol.Map({
+            target: 'map',
+            layers: [
+                new ol.layer.Tile({
+                    source: new ol.source.OSM()
+                }),
+                dataLayer,
+            ],
+            view: new ol.View({
+                center: ol.proj.fromLonLat([9.9889, 53.5492]),
+                zoom: 15
+            })
+        });
+
+        function getCurrentBbox() {
+            return ol.proj.transformExtent(map.getView().calculateExtent(), "EPSG:3857", "EPSG:4326")
+        }
+
+        document.getElementById("send-button").addEventListener("click", () => {
+            let query = document.getElementById('query-input').value;
+            query = query.replace("{{bbox}}", ""+getCurrentBbox());
+            console.log("Send query:", query);
+
+            fetch("./query", {
+                method: "POST",
+                body: query,
+                headers: {
+                    "Content-type": "application/text; charset=UTF-8"
+                }
+            })
+                .then((response) => response.text())
+                .then(responseText => {
+                    console.log("Response", responseText);
+                    const features = new ol.format.GeoJSON({featureProjection: 'EPSG:3857'}).readFeatures(responseText);
+                    console.log("Features", features);
+
+                    dataLayer.getSource().clear();
+                    dataLayer.getSource().addFeatures(features);
+
+                    lastQueryResponseGeoJSON = responseText;
+                    document.getElementById('export-button').disabled = false;
+                });
+        });
+
+        document.getElementById("export-button").addEventListener("click", () => {
+            const link = document.createElement("a");
+            const file = new Blob([lastQueryResponseGeoJSON], {type: 'application/json'});
+            link.href = URL.createObjectURL(file);
+            link.download = "output.geojson";
+            link.click();
+            URL.revokeObjectURL(link.href);
+        });
+
+        document.getElementById("copy-extent-button").addEventListener("click", () => {
+            console.log(getCurrentBbox());
+            navigator.clipboard.writeText(bbox);
+        });
+    </script>
+</html>
