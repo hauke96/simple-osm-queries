@@ -245,6 +245,20 @@ func (f TagFilterExpression) Print(indent int) {
 	sigolo.Debugf("%s%s: %d%s%d", spacing(indent), "TagFilterExpression", f.key, f.operator.string(), f.value)
 }
 
+type KeyFilterExpression struct {
+	key         int
+	shouldBeSet bool
+}
+
+func (f KeyFilterExpression) Applies(feature *index.EncodedFeature) bool {
+	sigolo.Tracef("TagFilterExpression: HasKey(%d)=%v?", f.key, f.shouldBeSet)
+	return feature.HasKey(f.key) == f.shouldBeSet
+}
+
+func (f KeyFilterExpression) Print(indent int) {
+	sigolo.Debugf("%s%s: %d (souldBeSet=%v)", spacing(indent), "KeyFilterExpression", f.key, f.shouldBeSet)
+}
+
 func spacing(indent int) string {
 	return strings.Repeat(" ", indent)
 }

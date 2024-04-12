@@ -139,6 +139,64 @@ func TestLexer_nextToken(t *testing.T) {
 	util.AssertEqual(t, 19, l.index)
 }
 
+func TestLexer_nextToken_singleCharTokens(t *testing.T) {
+	// Arrange
+	sigolo.SetDefaultLogLevel(sigolo.LOG_TRACE)
+	l := &Lexer{
+		input: []rune("(){}*."),
+		index: 0,
+	}
+
+	// Act & Assert
+	token, err := l.nextToken()
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, token)
+	util.AssertEqual(t, TokenKindOpeningParenthesis, token.kind)
+	util.AssertEqual(t, "(", token.lexeme)
+	util.AssertEqual(t, 0, token.startPosition)
+	util.AssertEqual(t, 1, l.index)
+
+	token, err = l.nextToken()
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, token)
+	util.AssertEqual(t, TokenKindClosingParenthesis, token.kind)
+	util.AssertEqual(t, ")", token.lexeme)
+	util.AssertEqual(t, 1, token.startPosition)
+	util.AssertEqual(t, 2, l.index)
+
+	token, err = l.nextToken()
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, token)
+	util.AssertEqual(t, TokenKindOpeningBraces, token.kind)
+	util.AssertEqual(t, "{", token.lexeme)
+	util.AssertEqual(t, 2, token.startPosition)
+	util.AssertEqual(t, 3, l.index)
+
+	token, err = l.nextToken()
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, token)
+	util.AssertEqual(t, TokenKindClosingBraces, token.kind)
+	util.AssertEqual(t, "}", token.lexeme)
+	util.AssertEqual(t, 3, token.startPosition)
+	util.AssertEqual(t, 4, l.index)
+
+	token, err = l.nextToken()
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, token)
+	util.AssertEqual(t, TokenKindWildcard, token.kind)
+	util.AssertEqual(t, "*", token.lexeme)
+	util.AssertEqual(t, 4, token.startPosition)
+	util.AssertEqual(t, 5, l.index)
+
+	token, err = l.nextToken()
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, token)
+	util.AssertEqual(t, TokenKindExpressionSeparator, token.kind)
+	util.AssertEqual(t, ".", token.lexeme)
+	util.AssertEqual(t, 5, token.startPosition)
+	util.AssertEqual(t, 6, l.index)
+}
+
 func TestLexer_nextToken_unexpectedCharacter(t *testing.T) {
 	// Arrange
 	sigolo.SetDefaultLogLevel(sigolo.LOG_TRACE)
@@ -203,6 +261,28 @@ func TestLexer_nextToken_operators(t *testing.T) {
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
 	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<", startPosition: 10}, token)
+}
+
+func TestLexer_nextToken_wildcardOperator(t *testing.T) {
+	// Arrange
+	sigolo.SetDefaultLogLevel(sigolo.LOG_TRACE)
+	l := &Lexer{
+		input: []rune("a=*"),
+		index: 0,
+	}
+
+	// Act & Assert
+	token, err := l.nextToken()
+	util.AssertNil(t, err)
+	util.AssertEqual(t, &Token{kind: TokenKindKeyword, lexeme: "a", startPosition: 0}, token)
+
+	token, err = l.nextToken()
+	util.AssertNil(t, err)
+	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "=", startPosition: 1}, token)
+
+	token, err = l.nextToken()
+	util.AssertNil(t, err)
+	util.AssertEqual(t, &Token{kind: TokenKindWildcard, lexeme: "*", startPosition: 2}, token)
 }
 
 func TestLexer_read_simple(t *testing.T) {

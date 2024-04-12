@@ -417,7 +417,7 @@ func (g *GridIndex) checkValidity(feature *EncodedFeature) {
 	for keyIndex := 0; keyIndex < len(feature.keys)*8; keyIndex++ {
 		if feature.HasKey(keyIndex) {
 			valueIndex := feature.GetValueIndex(keyIndex)
-			if valueIndex > len(g.TagIndex.valueMap[numberOfSetKeys])-1 {
+			if valueIndex > len(g.TagIndex.valueMap[keyIndex])-1 {
 				sigolo.Fatalf("Invalid key value found in feature %d: keyIndex=%d, valueIndex=%d, allowedMaxValueIndex=%d", feature.ID, keyIndex, valueIndex, len(g.TagIndex.valueMap[keyIndex])-1)
 			}
 			numberOfSetKeys++

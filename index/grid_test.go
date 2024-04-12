@@ -62,10 +62,14 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 		TagIndex: &TagIndex{
 			BaseFolder: "",
 			keyMap:     []string{"k1", "k2", "k3"},
-			valueMap: [][]string{
-				{"v1_1"},
-				{"v2_1", "v2_2"},
-				{"v3_1", "v3_2"},
+			valueMap: [][]string{ // Indices must match the bit-string on the feature: 1001 0010
+				{"v1_1"}, // Index 0
+				{},
+				{},
+				{"v2_1", "v2_2"}, // Index 3
+				{},
+				{},
+				{"v3_1", "v3_2"}, // Index 6
 			},
 			keyReverseMap:   nil,
 			valueReverseMap: nil,

@@ -152,16 +152,6 @@ func (p *Parser) parseLocationExpression() (LocationExpression, error) {
 		return nil, errors.Errorf("Expected location expression at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
-	// Then a "(" is expected
-	expressionStartPosition := token.startPosition
-	parenthesisToken := p.moveToNextToken()
-	if parenthesisToken == nil {
-		return nil, errors.Errorf("Expected '(' at index %d but token stream ended", expressionStartPosition)
-	}
-	if parenthesisToken.kind != TokenKindOpeningParenthesis {
-		return nil, errors.Errorf("Expected '(' at index %d but found kind=%d with lexeme=%s", parenthesisToken.startPosition, parenthesisToken.kind, parenthesisToken.lexeme)
-	}
-
 	var locationExpression LocationExpression
 	var err error
 
@@ -176,12 +166,6 @@ func (p *Parser) parseLocationExpression() (LocationExpression, error) {
 		return nil, err
 	}
 
-	// Then a "(" is expected
-	token = p.moveToNextToken()
-	if token.kind != TokenKindClosingParenthesis {
-		return nil, errors.Errorf("Expected ')' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
-	}
-
 	return locationExpression, nil
 }
 
@@ -189,6 +173,16 @@ func (p *Parser) parseBboxLocationExpression() (*BboxLocationExpression, error) 
 	token := p.currentToken()
 	if token.kind != TokenKindKeyword && token.lexeme != "bbox" {
 		return nil, errors.Errorf("Error parsing BBOX-Expression: Expected start at bbox-token at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
+	}
+
+	// Then a "(" is expected
+	expressionStartPosition := token.startPosition
+	parenthesisToken := p.moveToNextToken()
+	if parenthesisToken == nil {
+		return nil, errors.Errorf("Expected '(' at index %d but token stream ended", expressionStartPosition)
+	}
+	if parenthesisToken.kind != TokenKindOpeningParenthesis {
+		return nil, errors.Errorf("Expected '(' at index %d but found kind=%d with lexeme=%s", parenthesisToken.startPosition, parenthesisToken.kind, parenthesisToken.lexeme)
 	}
 
 	// Expect four numbers for the BBOX
@@ -200,6 +194,12 @@ func (p *Parser) parseBboxLocationExpression() (*BboxLocationExpression, error) 
 			return nil, errors.Errorf("Expected number as argument %d but found kind=%d with lexeme=%s", i+1, token.kind, token.lexeme)
 		}
 		coordinates[i] = value
+	}
+
+	// Then a "(" is expected
+	token = p.moveToNextToken()
+	if token.kind != TokenKindClosingParenthesis {
+		return nil, errors.Errorf("Expected ')' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
 	return &BboxLocationExpression{bbox: &orb.Bound{
@@ -362,16 +362,28 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			if token == nil {
 				return nil, errors.Errorf("Expected value after key '%s' but token stream ended", key+binaryOperatorLexeme)
 			}
-			if token.kind != TokenKindKeyword && token.kind != TokenKindNumber && token.kind != TokenKindString {
-				return nil, errors.Errorf("Expected value after key '%s' but found kind=%d with lexeme=%s", key+binaryOperatorLexeme, token.kind, token.lexeme)
+			if token.kind != TokenKindKeyword && token.kind != TokenKindNumber && token.kind != TokenKindString && token.kind != TokenKindWildcard {
+				return nil, errors.Errorf("Expected value after key '%s' but found kind=%d with lexeme=%s at pos=%d", key+binaryOperatorLexeme, token.kind, token.lexeme, token.startPosition)
 			}
 			value := token.lexeme
 
-			keyIndex, valueIndex := p.tagIndex.GetIndicesFromKeyValueStrings(key, value)
-			expression = &TagFilterExpression{
-				key:      keyIndex,
-				value:    valueIndex,
-				operator: binaryOperator,
+			if token.kind == TokenKindWildcard {
+				if binaryOperator != BinOpEqual && binaryOperator != BinOpNotEqual {
+					return nil, errors.Errorf("Expected '=' or '!=' operator when using wildcard but found kind=%d with lexeme=%s at pos=%d", token.kind, token.lexeme, token.startPosition)
+				}
+
+				keyIndex := p.tagIndex.GetKeyIndexFromKeyString(key)
+				expression = &KeyFilterExpression{
+					key:         keyIndex,
+					shouldBeSet: binaryOperator == BinOpEqual,
+				}
+			} else {
+				keyIndex, valueIndex := p.tagIndex.GetIndicesFromKeyValueStrings(key, value)
+				expression = &TagFilterExpression{
+					key:      keyIndex,
+					value:    valueIndex,
+					operator: binaryOperator,
+				}
 			}
 		}
 	}

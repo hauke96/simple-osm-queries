@@ -93,9 +93,8 @@ func (l *Lexer) nextToken() (*Token, error) {
 			return l.currentSingleCharToken(TokenKindClosingBraces), nil
 		case '.':
 			return l.currentSingleCharToken(TokenKindExpressionSeparator), nil
-			// TODO I think this token kind is not necessary:
-			//case ',':
-			//	return l.currentSingleCharToken(ParameterSeparator), nil
+		case '*':
+			return l.currentSingleCharToken(TokenKindWildcard), nil
 		}
 
 		// Keywords and identifier (i.e. token consisting of multi-char words)

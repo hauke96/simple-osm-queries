@@ -85,7 +85,7 @@ func main() {
 //bbox(9.9713,53.5354,10.01711,53.58268)
 bbox(9.9713,53.5354,10.0160,53.5608)
 .nodes{
-	amenity=bench
+	amenity=*
 	// AND seats=3
 }
 `, tagIndex, geometryIndex)

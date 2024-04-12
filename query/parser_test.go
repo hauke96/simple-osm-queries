@@ -39,11 +39,13 @@ func TestParser_parseBboxLocationExpression(t *testing.T) {
 	parser := &Parser{
 		token: []*Token{
 			{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 0},
-			{kind: TokenKindNumber, lexeme: "1.1", startPosition: 4},
-			{kind: TokenKindNumber, lexeme: "2.2", startPosition: 8},
-			{kind: TokenKindNumber, lexeme: "3", startPosition: 12},
-			{kind: TokenKindNumber, lexeme: "4.567", startPosition: 14},
-			{kind: TokenKindKeyword, lexeme: "foobar", startPosition: 20},
+			{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 4},
+			{kind: TokenKindNumber, lexeme: "1.1", startPosition: 5},
+			{kind: TokenKindNumber, lexeme: "2.2", startPosition: 9},
+			{kind: TokenKindNumber, lexeme: "3", startPosition: 13},
+			{kind: TokenKindNumber, lexeme: "4.567", startPosition: 15},
+			{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 21},
+			{kind: TokenKindKeyword, lexeme: "foobar", startPosition: 22},
 		},
 		index: 0,
 	}
@@ -59,7 +61,39 @@ func TestParser_parseBboxLocationExpression(t *testing.T) {
 		Max: orb.Point{3, 4.567},
 	}
 	util.AssertEqual(t, expectedBbox, expression.bbox)
-	util.AssertEqual(t, 4, parser.index)
+	util.AssertEqual(t, 6, parser.index)
+}
+
+func TestParser_parseLocationExpression(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 0},
+			{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 4},
+			{kind: TokenKindNumber, lexeme: "1.1", startPosition: 5},
+			{kind: TokenKindNumber, lexeme: "2.2", startPosition: 9},
+			{kind: TokenKindNumber, lexeme: "3", startPosition: 13},
+			{kind: TokenKindNumber, lexeme: "4.567", startPosition: 15},
+			{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 21},
+			{kind: TokenKindKeyword, lexeme: "foobar", startPosition: 22},
+		},
+		index: 0,
+	}
+
+	// Act
+	expression, err := parser.parseLocationExpression()
+
+	// Assert
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, expression)
+	bboxExpression, isBboxExpression := expression.(*BboxLocationExpression)
+	util.AssertTrue(t, isBboxExpression)
+	expectedBbox := &orb.Bound{
+		Min: orb.Point{1.1, 2.2},
+		Max: orb.Point{3, 4.567},
+	}
+	util.AssertEqual(t, expectedBbox, bboxExpression.bbox)
+	util.AssertEqual(t, 6, parser.index)
 }
 
 func TestParser_parseBboxLocationExpression_invalidNumberTokens(t *testing.T) {
@@ -67,10 +101,12 @@ func TestParser_parseBboxLocationExpression_invalidNumberTokens(t *testing.T) {
 	parser := &Parser{
 		token: []*Token{
 			{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 0},
-			{kind: TokenKindNumber, lexeme: "1.1", startPosition: 4},
-			{kind: TokenKindNumber, lexeme: "2.2", startPosition: 8},
-			{kind: TokenKindNumber, lexeme: "3", startPosition: 12},
-			{kind: TokenKindKeyword, lexeme: "foobar", startPosition: 14},
+			{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 4},
+			{kind: TokenKindNumber, lexeme: "1.1", startPosition: 5},
+			{kind: TokenKindNumber, lexeme: "2.2", startPosition: 9},
+			{kind: TokenKindNumber, lexeme: "3", startPosition: 13},
+			{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 14},
+			{kind: TokenKindKeyword, lexeme: "foobar", startPosition: 15},
 		},
 		index: 0,
 	}
@@ -81,7 +117,7 @@ func TestParser_parseBboxLocationExpression_invalidNumberTokens(t *testing.T) {
 	// Assert
 	util.AssertNotNil(t, err)
 	util.AssertNil(t, expression)
-	util.AssertEqual(t, 4, parser.index)
+	util.AssertEqual(t, 5, parser.index)
 }
 
 func TestParser_parseBboxLocationExpression_notStartingAtBboxToken(t *testing.T) {
@@ -198,6 +234,33 @@ func TestParser_parseNextExpression_simpleTagFilter(t *testing.T) {
 	util.AssertEqual(t, 1, tagFilterExpression.key)
 	util.AssertEqual(t, 1, tagFilterExpression.value)
 	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
+}
+
+func TestParser_parseNextExpression_simpleKeyFilter(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: TokenKindKeyword, lexeme: "a", startPosition: 0},
+			{kind: TokenKindOperator, lexeme: "=", startPosition: 1},
+			{kind: TokenKindWildcard, lexeme: "*", startPosition: 2},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"foo", "a"},
+			[][]string{{"bar"}, {"blubb", "b"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, expression)
+	keyFilterExpression, isKeyFilterExpression := expression.(*KeyFilterExpression)
+	util.AssertTrue(t, isKeyFilterExpression)
+	util.AssertEqual(t, 1, keyFilterExpression.key)
+	util.AssertEqual(t, true, keyFilterExpression.shouldBeSet)
 }
 
 func TestParser_parseNextExpression_invalidTagFilter(t *testing.T) {
