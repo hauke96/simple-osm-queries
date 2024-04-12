@@ -237,8 +237,27 @@ type TagFilterExpression struct {
 }
 
 func (f TagFilterExpression) Applies(feature *index.EncodedFeature) bool {
-	sigolo.Tracef("TagFilterExpression: HasTag(%d, %d)?", f.key, f.value)
-	return feature.HasTag(f.key, f.value)
+	sigolo.Tracef("TagFilterExpression: %d%s%d", f.key, f.operator.string(), f.value)
+	if !feature.HasKey(f.key) {
+		return false
+	}
+
+	switch f.operator {
+	case BinOpEqual:
+		return feature.HasTag(f.key, f.value)
+	case BinOpNotEqual:
+		return !feature.HasTag(f.key, f.value)
+	case BinOpGreater:
+		return feature.GetValueIndex(f.key) > f.value
+	case BinOpGreaterEqual:
+		return feature.GetValueIndex(f.key) >= f.value
+	case BinOpLower:
+		return feature.GetValueIndex(f.key) < f.value
+	case BinOpLowerEqual:
+		return feature.GetValueIndex(f.key) <= f.value
+	default:
+		return false
+	}
 }
 
 func (f TagFilterExpression) Print(indent int) {
