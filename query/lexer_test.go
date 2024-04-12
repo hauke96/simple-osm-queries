@@ -174,35 +174,35 @@ func TestLexer_nextToken_operators(t *testing.T) {
 	// Act & Assert
 	token, err := l.nextToken()
 	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: OperatorEqual, lexeme: "=", startPosition: 0}, token)
+	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "=", startPosition: 0}, token)
 
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: OperatorNotEqual, lexeme: "!=", startPosition: 1}, token)
+	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "!=", startPosition: 1}, token)
 
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: OperatorGreater, lexeme: ">", startPosition: 3}, token)
+	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: ">", startPosition: 3}, token)
 
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: OperatorGreaterEqual, lexeme: ">=", startPosition: 4}, token)
+	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: ">=", startPosition: 4}, token)
 
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: OperatorLower, lexeme: "<", startPosition: 6}, token)
+	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<", startPosition: 6}, token)
 
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: OperatorLowerEqual, lexeme: "<=", startPosition: 7}, token)
+	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<=", startPosition: 7}, token)
 
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: OperatorNot, lexeme: "!", startPosition: 9}, token)
+	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "!", startPosition: 9}, token)
 
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: OperatorLower, lexeme: "<", startPosition: 10}, token)
+	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<", startPosition: 10}, token)
 }
 
 func TestLexer_read_simple(t *testing.T) {

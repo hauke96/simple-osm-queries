@@ -260,7 +260,7 @@ func (p *Parser) parseNextFilterExpressions() (FilterExpression, error) {
 				expression = &LogicalFilterExpression{
 					statementA: expression,
 					statementB: secondExpression,
-					operator:   And,
+					operator:   LogicOpAnd,
 				}
 			case "OR":
 				// Enter recursion to create correct hierarchy of AND/OR operators
@@ -273,7 +273,7 @@ func (p *Parser) parseNextFilterExpressions() (FilterExpression, error) {
 				expression = &LogicalFilterExpression{
 					statementA: expression,
 					statementB: secondExpression,
-					operator:   Or,
+					operator:   LogicOpOr,
 				}
 			default:
 				return nil, errors.Errorf("Unexpected keyword '%s' at position %d, expected 'AND' or 'OR'", token.lexeme, token.startPosition)
@@ -302,7 +302,11 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 		if token.kind != TokenKindClosingParenthesis {
 			return nil, errors.Errorf("Expected ')' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 		}
-	case OperatorNot:
+	case TokenKindOperator:
+		if token.lexeme != "!" {
+			return nil, errors.Errorf("Expected '!' to start a new expression (at position %d) but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
+		}
+
 		negationPosition := token.startPosition
 
 		token = p.moveToNextToken()
@@ -377,22 +381,22 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 
 func (p *Parser) parseBinaryOperator(previousLexeme string, previousLexemePos int) (BinaryOperator, error) {
 	token := p.currentToken()
-	if token == nil {
+	if token == nil || token.kind != TokenKindOperator {
 		return BinOpInvalid, errors.Errorf("Expected binary operator after '%s' (position %d) but token stream ended", previousLexeme, previousLexemePos)
 	}
 
-	switch token.kind {
-	case OperatorEqual:
+	switch token.lexeme {
+	case "=":
 		return BinOpEqual, nil
-	case OperatorNotEqual:
+	case "!=":
 		return BinOpNotEqual, nil
-	case OperatorGreater:
+	case ">":
 		return BinOpGreater, nil
-	case OperatorGreaterEqual:
+	case ">=":
 		return BinOpGreaterEqual, nil
-	case OperatorLower:
+	case "<":
 		return BinOpLower, nil
-	case OperatorLowerEqual:
+	case "<=":
 		return BinOpLowerEqual, nil
 	default:
 		return BinOpInvalid, errors.Errorf("Expected binary operator (e.g. '>=') after '%s' (position %d) but found kind=%d with lexeme=%s", previousLexeme, previousLexemePos, token.kind, token.lexeme)

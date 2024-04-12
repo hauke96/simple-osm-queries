@@ -16,13 +16,6 @@ const (
 	TokenKindClosingBraces
 
 	TokenKindOperator // TODO Use this instead of the fine-grained operators. The parser will figure out what concrete operator this is. No need to do this twice
-	OperatorEqual
-	OperatorNotEqual
-	OperatorNot
-	OperatorGreater
-	OperatorGreaterEqual
-	OperatorLower
-	OperatorLowerEqual
 )
 
 type Token struct {

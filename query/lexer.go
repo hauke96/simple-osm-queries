@@ -112,24 +112,24 @@ func (l *Lexer) nextToken() (*Token, error) {
 		switch char {
 		case '!':
 			if l.nextChar() == '=' {
-				token := l.currentMultiCharToken(OperatorNotEqual, 2)
+				token := l.currentMultiCharToken(TokenKindOperator, 2)
 				return token, nil
 			}
-			return l.currentSingleCharToken(OperatorNot), nil
+			return l.currentSingleCharToken(TokenKindOperator), nil
 		case '<':
 			if l.nextChar() == '=' {
-				token := l.currentMultiCharToken(OperatorLowerEqual, 2)
+				token := l.currentMultiCharToken(TokenKindOperator, 2)
 				return token, nil
 			}
-			return l.currentSingleCharToken(OperatorLower), nil
+			return l.currentSingleCharToken(TokenKindOperator), nil
 		case '>':
 			if l.nextChar() == '=' {
-				token := l.currentMultiCharToken(OperatorGreaterEqual, 2)
+				token := l.currentMultiCharToken(TokenKindOperator, 2)
 				return token, nil
 			}
-			return l.currentSingleCharToken(OperatorGreater), nil
+			return l.currentSingleCharToken(TokenKindOperator), nil
 		case '=':
-			return l.currentSingleCharToken(OperatorEqual), nil
+			return l.currentSingleCharToken(TokenKindOperator), nil
 		}
 
 		return nil, errors.Errorf("Unexpected character '%c' at index %d", char, l.index)
