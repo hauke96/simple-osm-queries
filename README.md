@@ -2,6 +2,25 @@
 
 Proof of concept of a tool to query OSM data, which is simple in its implementation as well as its usage.
 
+## Usage
+
+### Import
+
+Usage: `go run . import your-file.osm.pbf`
+
+Performance comparison: The `hamburg-latest.osm.pbf` (~46 MB) takes ~10s and the `germany-latest.osm.pbf` (~4.1 GB) takes ~25min.
+
+### Query
+
+TODO
+
+### Server
+
+Usage: `go run . server`
+
+This starts an HTTP server on Port 8080. Use [localhost:8080/app](http://localhost:8080/app) to access a simple web-interface.
+HTTP POST requests with the query as body go to [localhost:8080/query](http://localhost:8080/query) and return GeoJSON.
+
 ## Query syntax
 
 Queries consist of filter statements of the following form: `<location-specifier>.<object-type>{ <tag-filter> }`.

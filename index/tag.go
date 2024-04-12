@@ -113,7 +113,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	}
 	defer scanner.Close()
 
-	sigolo.Debug("Start processing tags from input data")
+	sigolo.Info("Start processing tags from input data")
 	importStartTime := time.Now()
 
 	var keyMap []string                  // [key-index] -> key-string
@@ -171,7 +171,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 
 	importDuration := time.Since(importStartTime)
 	//i.Print()
-	sigolo.Debugf("Created tag-index from OSM data in %s", importDuration)
+	sigolo.Infof("Created tag-index from OSM data in %s", importDuration)
 
 	return i.SaveToFile(TagIndexFilename)
 }

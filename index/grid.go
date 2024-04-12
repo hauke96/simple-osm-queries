@@ -63,7 +63,7 @@ func (g *GridIndex) Import(inputFile string) error {
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", g.BaseFolder)
 	}
 
-	sigolo.Debug("Start processing geometries from input data")
+	sigolo.Info("Start processing geometries from input data")
 	importStartTime := time.Now()
 
 	var feature *EncodedFeature
@@ -106,7 +106,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	}
 
 	importDuration := time.Since(importStartTime)
-	sigolo.Debugf("Created OSM object index from OSM data in %s", importDuration)
+	sigolo.Infof("Created OSM object index from OSM data in %s", importDuration)
 
 	return nil
 }
