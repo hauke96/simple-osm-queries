@@ -3,18 +3,19 @@ package query
 type TokenKind int
 
 const (
-	Keyword TokenKind = iota
-	Number
-	String // TODO
+	TokenKindKeyword TokenKind = iota
+	TokenKindNumber
+	TokenKindString // TODO
 
-	ExpressionSeparator
+	TokenKindExpressionSeparator
 	//ParameterSeparator
 
-	OpeningParenthesis
-	ClosingParenthesis
-	OpeningBraces
-	ClosingBraces
+	TokenKindOpeningParenthesis
+	TokenKindClosingParenthesis
+	TokenKindOpeningBraces
+	TokenKindClosingBraces
 
+	TokenKindOperator // TODO Use this instead of the fine-grained operators. The parser will figure out what concrete operator this is. No need to do this twice
 	OperatorEqual
 	OperatorNotEqual
 	OperatorNot

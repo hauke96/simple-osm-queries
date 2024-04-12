@@ -11,8 +11,8 @@ func TestParser_currentAndNextToken(t *testing.T) {
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
-			{kind: Keyword, lexeme: "bbox", startPosition: 0},
-			{kind: Number, lexeme: "123", startPosition: 4},
+			{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 0},
+			{kind: TokenKindNumber, lexeme: "123", startPosition: 4},
 		},
 		index: 0,
 	}
@@ -38,12 +38,12 @@ func TestParser_parseBboxLocationExpression(t *testing.T) {
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
-			{kind: Keyword, lexeme: "bbox", startPosition: 0},
-			{kind: Number, lexeme: "1.1", startPosition: 4},
-			{kind: Number, lexeme: "2.2", startPosition: 8},
-			{kind: Number, lexeme: "3", startPosition: 12},
-			{kind: Number, lexeme: "4.567", startPosition: 14},
-			{kind: Keyword, lexeme: "foobar", startPosition: 20},
+			{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 0},
+			{kind: TokenKindNumber, lexeme: "1.1", startPosition: 4},
+			{kind: TokenKindNumber, lexeme: "2.2", startPosition: 8},
+			{kind: TokenKindNumber, lexeme: "3", startPosition: 12},
+			{kind: TokenKindNumber, lexeme: "4.567", startPosition: 14},
+			{kind: TokenKindKeyword, lexeme: "foobar", startPosition: 20},
 		},
 		index: 0,
 	}
@@ -66,11 +66,11 @@ func TestParser_parseBboxLocationExpression_invalidNumberTokens(t *testing.T) {
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
-			{kind: Keyword, lexeme: "bbox", startPosition: 0},
-			{kind: Number, lexeme: "1.1", startPosition: 4},
-			{kind: Number, lexeme: "2.2", startPosition: 8},
-			{kind: Number, lexeme: "3", startPosition: 12},
-			{kind: Keyword, lexeme: "foobar", startPosition: 14},
+			{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 0},
+			{kind: TokenKindNumber, lexeme: "1.1", startPosition: 4},
+			{kind: TokenKindNumber, lexeme: "2.2", startPosition: 8},
+			{kind: TokenKindNumber, lexeme: "3", startPosition: 12},
+			{kind: TokenKindKeyword, lexeme: "foobar", startPosition: 14},
 		},
 		index: 0,
 	}
@@ -88,12 +88,12 @@ func TestParser_parseBboxLocationExpression_notStartingAtBboxToken(t *testing.T)
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
-			{kind: Keyword, lexeme: "bbox", startPosition: 0},
-			{kind: Number, lexeme: "1.1", startPosition: 4},
-			{kind: Number, lexeme: "2.2", startPosition: 8},
-			{kind: Number, lexeme: "3", startPosition: 12},
-			{kind: Number, lexeme: "4.567", startPosition: 14},
-			{kind: Keyword, lexeme: "foobar", startPosition: 20},
+			{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 0},
+			{kind: TokenKindNumber, lexeme: "1.1", startPosition: 4},
+			{kind: TokenKindNumber, lexeme: "2.2", startPosition: 8},
+			{kind: TokenKindNumber, lexeme: "3", startPosition: 12},
+			{kind: TokenKindNumber, lexeme: "4.567", startPosition: 14},
+			{kind: TokenKindKeyword, lexeme: "foobar", startPosition: 20},
 		},
 		index: 0,
 	}
@@ -112,8 +112,8 @@ func TestParser_parseOsmObjectType(t *testing.T) {
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
-			{kind: Keyword, lexeme: "nodes", startPosition: 0},
-			{kind: Keyword, lexeme: "foo", startPosition: 0},
+			{kind: TokenKindKeyword, lexeme: "nodes", startPosition: 0},
+			{kind: TokenKindKeyword, lexeme: "foo", startPosition: 0},
 		},
 		index: 0,
 	}
@@ -123,7 +123,7 @@ func TestParser_parseOsmObjectType(t *testing.T) {
 
 	// Assert
 	util.AssertNil(t, err)
-	util.AssertEqual(t, Node, objectType)
+	util.AssertEqual(t, OsmObjNode, objectType)
 	util.AssertEqual(t, 0, parser.index)
 }
 
@@ -144,41 +144,41 @@ func TestParser_parseBinaryOperator(t *testing.T) {
 	// Act & Assert
 	operator, err := parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, Equal, operator)
+	util.AssertEqual(t, BinOpEqual, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, NotEqual, operator)
+	util.AssertEqual(t, BinOpNotEqual, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, Greater, operator)
+	util.AssertEqual(t, BinOpGreater, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, GreaterEqual, operator)
+	util.AssertEqual(t, BinOpGreaterEqual, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, Lower, operator)
+	util.AssertEqual(t, BinOpLower, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, LowerEqual, operator)
+	util.AssertEqual(t, BinOpLowerEqual, operator)
 }
 
 func TestParser_parseNextExpression_simpleTagFilter(t *testing.T) {
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
-			{kind: Keyword, lexeme: "a", startPosition: 0},
+			{kind: TokenKindKeyword, lexeme: "a", startPosition: 0},
 			{kind: OperatorEqual, lexeme: "=", startPosition: 1},
-			{kind: Keyword, lexeme: "b", startPosition: 2},
+			{kind: TokenKindKeyword, lexeme: "b", startPosition: 2},
 		},
 		index: -1, // Because of "moveToNextToken()" call in parser function
 		tagIndex: index.NewTagIndex(
@@ -197,14 +197,14 @@ func TestParser_parseNextExpression_simpleTagFilter(t *testing.T) {
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 1, tagFilterExpression.key)
 	util.AssertEqual(t, 1, tagFilterExpression.value)
-	util.AssertEqual(t, Equal, tagFilterExpression.operator)
+	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
 }
 
 func TestParser_parseNextExpression_invalidTagFilter(t *testing.T) {
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
-			{kind: Keyword, lexeme: "a", startPosition: 0},
+			{kind: TokenKindKeyword, lexeme: "a", startPosition: 0},
 			{kind: OperatorEqual, lexeme: "=", startPosition: 1},
 			{kind: OperatorLower, lexeme: "<", startPosition: 2},
 		},
@@ -228,11 +228,11 @@ func TestParser_parseNextExpression_negatedTagFilter(t *testing.T) {
 	parser := &Parser{
 		token: []*Token{
 			{kind: OperatorNot, lexeme: "!", startPosition: 0},
-			{kind: OpeningParenthesis, lexeme: "(", startPosition: 1},
-			{kind: Keyword, lexeme: "a", startPosition: 2},
+			{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 1},
+			{kind: TokenKindKeyword, lexeme: "a", startPosition: 2},
 			{kind: OperatorEqual, lexeme: "=", startPosition: 3},
-			{kind: Keyword, lexeme: "b", startPosition: 4},
-			{kind: ClosingParenthesis, lexeme: ")", startPosition: 5},
+			{kind: TokenKindKeyword, lexeme: "b", startPosition: 4},
+			{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 5},
 		},
 		index: -1, // Because of "moveToNextToken()" call in parser function
 		tagIndex: index.NewTagIndex(
@@ -256,7 +256,7 @@ func TestParser_parseNextExpression_negatedTagFilter(t *testing.T) {
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 1, tagFilterExpression.key)
 	util.AssertEqual(t, 1, tagFilterExpression.value)
-	util.AssertEqual(t, Equal, tagFilterExpression.operator)
+	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
 }
 
 func TestParser_parseNextExpression_invalidNegatedTagFilter(t *testing.T) {
@@ -264,9 +264,9 @@ func TestParser_parseNextExpression_invalidNegatedTagFilter(t *testing.T) {
 	parser := &Parser{
 		token: []*Token{
 			{kind: OperatorNot, lexeme: "!", startPosition: 0},
-			{kind: Keyword, lexeme: "a", startPosition: 1},
+			{kind: TokenKindKeyword, lexeme: "a", startPosition: 1},
 			{kind: OperatorEqual, lexeme: "=", startPosition: 2},
-			{kind: Keyword, lexeme: "b", startPosition: 3},
+			{kind: TokenKindKeyword, lexeme: "b", startPosition: 3},
 		},
 		index: -1, // Because of "moveToNextToken()" call in parser function
 		tagIndex: index.NewTagIndex(
@@ -288,10 +288,10 @@ func TestParser_parseNextExpression_invalidExpressionInsideNegatedTagFilter(t *t
 	parser := &Parser{
 		token: []*Token{
 			{kind: OperatorNot, lexeme: "!", startPosition: 0},
-			{kind: OpeningParenthesis, lexeme: "(", startPosition: 1},
-			{kind: Keyword, lexeme: "a", startPosition: 2},
-			{kind: Keyword, lexeme: "b", startPosition: 3},
-			{kind: ClosingParenthesis, lexeme: ")", startPosition: 4},
+			{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 1},
+			{kind: TokenKindKeyword, lexeme: "a", startPosition: 2},
+			{kind: TokenKindKeyword, lexeme: "b", startPosition: 3},
+			{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 4},
 		},
 		index: -1, // Because of "moveToNextToken()" call in parser function
 		tagIndex: index.NewTagIndex(
@@ -312,11 +312,11 @@ func TestParser_parseNextExpression_expressionInsideParentheses(t *testing.T) {
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
-			{kind: OpeningParenthesis, lexeme: "(", startPosition: 0},
-			{kind: Keyword, lexeme: "a", startPosition: 1},
+			{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 0},
+			{kind: TokenKindKeyword, lexeme: "a", startPosition: 1},
 			{kind: OperatorEqual, lexeme: "=", startPosition: 2},
-			{kind: Keyword, lexeme: "b", startPosition: 3},
-			{kind: ClosingParenthesis, lexeme: ")", startPosition: 4},
+			{kind: TokenKindKeyword, lexeme: "b", startPosition: 3},
+			{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 4},
 		},
 		index: -1, // Because of "moveToNextToken()" call in parser function
 		tagIndex: index.NewTagIndex(
@@ -335,18 +335,18 @@ func TestParser_parseNextExpression_expressionInsideParentheses(t *testing.T) {
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 1, tagFilterExpression.key)
 	util.AssertEqual(t, 1, tagFilterExpression.value)
-	util.AssertEqual(t, Equal, tagFilterExpression.operator)
+	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
 }
 
 func TestParser_parseNextExpression_expressionInsideParenthesesMissinClose(t *testing.T) {
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
-			{kind: OpeningParenthesis, lexeme: "(", startPosition: 0},
-			{kind: Keyword, lexeme: "a", startPosition: 1},
+			{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 0},
+			{kind: TokenKindKeyword, lexeme: "a", startPosition: 1},
 			{kind: OperatorEqual, lexeme: "=", startPosition: 2},
-			{kind: Keyword, lexeme: "b", startPosition: 3},
-			{kind: Keyword, lexeme: "foo", startPosition: 4},
+			{kind: TokenKindKeyword, lexeme: "b", startPosition: 3},
+			{kind: TokenKindKeyword, lexeme: "foo", startPosition: 4},
 		},
 		index: -1, // Because of "moveToNextToken()" call in parser function
 		tagIndex: index.NewTagIndex(
@@ -375,10 +375,10 @@ func TestParser_parseBinaryOperator_invalidAndNotExistingToken(t *testing.T) {
 	// Act & Assert
 	operator, err := parser.parseBinaryOperator("previous", -123)
 	util.AssertNotNil(t, err)
-	util.AssertEqual(t, Invalid, operator)
+	util.AssertEqual(t, BinOpInvalid, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNotNil(t, err)
-	util.AssertEqual(t, Invalid, operator)
+	util.AssertEqual(t, BinOpInvalid, operator)
 }

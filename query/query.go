@@ -10,51 +10,51 @@ import (
 	"time"
 )
 
-type ObjectType int
+type OsmObjectType int
 
 const (
-	Node ObjectType = iota
-	Way
-	Relation
+	OsmObjNode OsmObjectType = iota
+	OsmObjWay
+	OsmObjRelation
 )
 
-func (o ObjectType) string() string {
+func (o OsmObjectType) string() string {
 	switch o {
-	case Node:
+	case OsmObjNode:
 		return "node"
-	case Way:
+	case OsmObjWay:
 		return "way"
-	case Relation:
+	case OsmObjRelation:
 		return "relation"
 	}
-	return fmt.Sprintf("[!UNKNOWN ObjectType %d]", o)
+	return fmt.Sprintf("[!UNKNOWN OsmObjectType %d]", o)
 }
 
 type BinaryOperator int
 
 const (
-	Invalid BinaryOperator = iota
-	Equal
-	NotEqual
-	Greater
-	GreaterEqual
-	Lower
-	LowerEqual
+	BinOpInvalid BinaryOperator = iota
+	BinOpEqual
+	BinOpNotEqual
+	BinOpGreater
+	BinOpGreaterEqual
+	BinOpLower
+	BinOpLowerEqual
 )
 
 func (o BinaryOperator) string() string {
 	switch o {
-	case Equal:
+	case BinOpEqual:
 		return "="
-	case NotEqual:
+	case BinOpNotEqual:
 		return "!="
-	case Greater:
+	case BinOpGreater:
 		return ">"
-	case GreaterEqual:
+	case BinOpGreaterEqual:
 		return ">="
-	case Lower:
+	case BinOpLower:
 		return "<"
-	case LowerEqual:
+	case BinOpLowerEqual:
 		return "<="
 	}
 	return fmt.Sprintf("[!UNKNOWN BinaryOperator %d]", o)
@@ -63,18 +63,18 @@ func (o BinaryOperator) string() string {
 type LogicalOperator int
 
 const (
-	And LogicalOperator = iota
-	Or
-	Not
+	LogicOpAnd LogicalOperator = iota
+	LogicOpOr
+	LogicOpNot
 )
 
 func (o LogicalOperator) string() string {
 	switch o {
-	case And:
+	case LogicOpAnd:
 		return "AND"
-	case Or:
+	case LogicOpOr:
 		return "OR"
-	case Not:
+	case LogicOpNot:
 		return "NOT"
 	}
 	return fmt.Sprintf("[!UNKNOWN LogicalOperator %d]", o)
@@ -126,7 +126,7 @@ func (q *Query) Execute() ([]*index.EncodedFeature, error) {
 
 type Statement struct {
 	location   LocationExpression
-	objectType ObjectType
+	objectType OsmObjectType
 	filter     FilterExpression
 }
 
@@ -151,7 +151,7 @@ func (f Statement) Print(indent int) {
 */
 
 type LocationExpression interface {
-	GetFeatures(geometryIndex index.GeometryIndex, objectType ObjectType) (chan []*index.EncodedFeature, error)
+	GetFeatures(geometryIndex index.GeometryIndex, objectType OsmObjectType) (chan []*index.EncodedFeature, error)
 	IsWithin(feature *index.EncodedFeature) bool
 	Print(indent int)
 }
@@ -160,7 +160,7 @@ type BboxLocationExpression struct {
 	bbox *orb.Bound
 }
 
-func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, objectType ObjectType) (chan []*index.EncodedFeature, error) {
+func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, objectType OsmObjectType) (chan []*index.EncodedFeature, error) {
 	// TODO Find a better solution than ".string()" for object types
 	return geometryIndex.Get(b.bbox, objectType.string())
 }
@@ -203,7 +203,7 @@ func (f NegatedFilterExpression) Applies(feature *index.EncodedFeature) bool {
 }
 
 func (f NegatedFilterExpression) Print(indent int) {
-	sigolo.Debugf("%s%s", spacing(indent), Not.string())
+	sigolo.Debugf("%s%s", spacing(indent), LogicOpNot.string())
 	f.baseExpression.Print(indent + 2)
 }
 
@@ -216,9 +216,9 @@ type LogicalFilterExpression struct {
 func (f LogicalFilterExpression) Applies(feature *index.EncodedFeature) bool {
 	sigolo.Tracef("LogicalFilterExpression: Operator %d", f.operator)
 	switch f.operator {
-	case Or:
+	case LogicOpOr:
 		return f.statementA.Applies(feature) || f.statementB.Applies(feature)
-	case And:
+	case LogicOpAnd:
 		return f.statementA.Applies(feature) && f.statementB.Applies(feature)
 	}
 	panic(errors.Errorf("Unknown or unsupported logical operator %d", f.operator))

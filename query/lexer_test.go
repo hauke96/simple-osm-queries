@@ -76,7 +76,7 @@ func TestLexer_currentKeyword(t *testing.T) {
 
 	// Assert
 	util.AssertNotNil(t, token)
-	util.AssertEqual(t, Keyword, token.kind)
+	util.AssertEqual(t, TokenKindKeyword, token.kind)
 	util.AssertEqual(t, "bbox", token.lexeme)
 	util.AssertEqual(t, 0, token.startPosition)
 	util.AssertEqual(t, 4, l.index)
@@ -95,7 +95,7 @@ func TestLexer_currentNumber(t *testing.T) {
 
 	// Assert
 	util.AssertNotNil(t, token)
-	util.AssertEqual(t, Number, token.kind)
+	util.AssertEqual(t, TokenKindNumber, token.kind)
 	util.AssertEqual(t, "123", token.lexeme)
 	util.AssertEqual(t, 0, token.startPosition)
 	util.AssertEqual(t, 3, l.index)
@@ -117,7 +117,7 @@ func TestLexer_nextToken(t *testing.T) {
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, token)
-	util.AssertEqual(t, Keyword, token.kind)
+	util.AssertEqual(t, TokenKindKeyword, token.kind)
 	util.AssertEqual(t, "bbox", token.lexeme)
 	util.AssertEqual(t, 13, token.startPosition)
 	util.AssertEqual(t, 17, l.index)
@@ -125,7 +125,7 @@ func TestLexer_nextToken(t *testing.T) {
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, token)
-	util.AssertEqual(t, OpeningParenthesis, token.kind)
+	util.AssertEqual(t, TokenKindOpeningParenthesis, token.kind)
 	util.AssertEqual(t, "(", token.lexeme)
 	util.AssertEqual(t, 17, token.startPosition)
 	util.AssertEqual(t, 18, l.index)
@@ -133,7 +133,7 @@ func TestLexer_nextToken(t *testing.T) {
 	token, err = l.nextToken()
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, token)
-	util.AssertEqual(t, Number, token.kind)
+	util.AssertEqual(t, TokenKindNumber, token.kind)
 	util.AssertEqual(t, "1", token.lexeme)
 	util.AssertEqual(t, 18, token.startPosition)
 	util.AssertEqual(t, 19, l.index)
@@ -221,13 +221,13 @@ func TestLexer_read_simple(t *testing.T) {
 	util.AssertNotNil(t, tokens)
 	util.AssertEqual(t, 7, len(tokens))
 
-	util.AssertEqual(t, &Token{kind: Keyword, lexeme: "bbox", startPosition: 12}, tokens[0])
-	util.AssertEqual(t, &Token{kind: OpeningParenthesis, lexeme: "(", startPosition: 16}, tokens[1])
-	util.AssertEqual(t, &Token{kind: Number, lexeme: "1", startPosition: 17}, tokens[2])
-	util.AssertEqual(t, &Token{kind: Number, lexeme: "2", startPosition: 19}, tokens[3])
-	util.AssertEqual(t, &Token{kind: Number, lexeme: "3", startPosition: 21}, tokens[4])
-	util.AssertEqual(t, &Token{kind: Number, lexeme: "4.56", startPosition: 23}, tokens[5])
-	util.AssertEqual(t, &Token{kind: ClosingParenthesis, lexeme: ")", startPosition: 27}, tokens[6])
+	util.AssertEqual(t, &Token{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 12}, tokens[0])
+	util.AssertEqual(t, &Token{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 16}, tokens[1])
+	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "1", startPosition: 17}, tokens[2])
+	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "2", startPosition: 19}, tokens[3])
+	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "3", startPosition: 21}, tokens[4])
+	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "4.56", startPosition: 23}, tokens[5])
+	util.AssertEqual(t, &Token{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 27}, tokens[6])
 }
 
 func TestLexer_read_commentAfterToken(t *testing.T) {
@@ -246,8 +246,8 @@ func TestLexer_read_commentAfterToken(t *testing.T) {
 	util.AssertNotNil(t, tokens)
 	util.AssertEqual(t, 2, len(tokens))
 
-	util.AssertEqual(t, &Token{kind: Number, lexeme: "123", startPosition: 0}, tokens[0])
-	util.AssertEqual(t, &Token{kind: Number, lexeme: "234", startPosition: 17}, tokens[1])
+	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "123", startPosition: 0}, tokens[0])
+	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "234", startPosition: 17}, tokens[1])
 }
 
 func TestLexer_read_commentAfterClosingBlock(t *testing.T) {
@@ -266,7 +266,7 @@ func TestLexer_read_commentAfterClosingBlock(t *testing.T) {
 	util.AssertNotNil(t, tokens)
 	util.AssertEqual(t, 3, len(tokens))
 
-	util.AssertEqual(t, &Token{kind: OpeningBraces, lexeme: "{", startPosition: 0}, tokens[0])
-	util.AssertEqual(t, &Token{kind: Number, lexeme: "123", startPosition: 2}, tokens[1])
-	util.AssertEqual(t, &Token{kind: ClosingBraces, lexeme: "}", startPosition: 6}, tokens[2])
+	util.AssertEqual(t, &Token{kind: TokenKindOpeningBraces, lexeme: "{", startPosition: 0}, tokens[0])
+	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "123", startPosition: 2}, tokens[1])
+	util.AssertEqual(t, &Token{kind: TokenKindClosingBraces, lexeme: "}", startPosition: 6}, tokens[2])
 }

@@ -84,15 +84,15 @@ func (l *Lexer) nextToken() (*Token, error) {
 		// Single-char token
 		switch char {
 		case '(':
-			return l.currentSingleCharToken(OpeningParenthesis), nil
+			return l.currentSingleCharToken(TokenKindOpeningParenthesis), nil
 		case ')':
-			return l.currentSingleCharToken(ClosingParenthesis), nil
+			return l.currentSingleCharToken(TokenKindClosingParenthesis), nil
 		case '{':
-			return l.currentSingleCharToken(OpeningBraces), nil
+			return l.currentSingleCharToken(TokenKindOpeningBraces), nil
 		case '}':
-			return l.currentSingleCharToken(ClosingBraces), nil
+			return l.currentSingleCharToken(TokenKindClosingBraces), nil
 		case '.':
-			return l.currentSingleCharToken(ExpressionSeparator), nil
+			return l.currentSingleCharToken(TokenKindExpressionSeparator), nil
 			// TODO I think this token kind is not necessary:
 			//case ',':
 			//	return l.currentSingleCharToken(ParameterSeparator), nil
@@ -190,7 +190,7 @@ func (l *Lexer) currentKeyword() *Token {
 	}
 
 	return &Token{
-		kind:          Keyword,
+		kind:          TokenKindKeyword,
 		lexeme:        lexeme,
 		startPosition: startIndex,
 	}
@@ -206,7 +206,7 @@ func (l *Lexer) currentNumber() *Token {
 	}
 
 	return &Token{
-		kind:          Number,
+		kind:          TokenKindNumber,
 		lexeme:        lexeme,
 		startPosition: startIndex,
 	}
