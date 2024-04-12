@@ -78,6 +78,21 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 	return index, nil
 }
 
+func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
+	index := &TagIndex{
+		keyMap:   keyMap,
+		valueMap: valueMap,
+	}
+
+	index.keyReverseMap = map[string]int{}
+	for i, k := range index.keyMap {
+		index.keyReverseMap[k] = i
+	}
+	index.updateValueReverseMap()
+
+	return index
+}
+
 func (i *TagIndex) ImportAndSave(inputFile string) error {
 	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
 		sigolo.Error("Input file must be an .osm or .pbf file")
@@ -148,16 +163,11 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	}
 
 	// Update the newly sorted value reverse map. Otherwise the value indices are all mixed up
-	for keyIndex, _ := range keyMap {
-		for valueIndex, value := range valueMap[keyIndex] {
-			valueReverseMap[keyIndex][value] = valueIndex
-		}
-	}
 
 	i.keyMap = keyMap
 	i.keyReverseMap = keyReverseMap
 	i.valueMap = valueMap
-	i.valueReverseMap = valueReverseMap
+	i.updateValueReverseMap()
 
 	importDuration := time.Since(importStartTime)
 	//i.Print()
@@ -290,5 +300,15 @@ func (i *TagIndex) Print() {
 		sigolo.Tracef("Tag-index:\n%+v", buffer.String())
 	} else {
 		sigolo.Tracef("Error writing tag-index to string: %v", err)
+	}
+}
+
+func (i *TagIndex) updateValueReverseMap() {
+	i.valueReverseMap = make([]map[string]int, len(i.keyMap))
+	for keyIndex, _ := range i.keyMap {
+		i.valueReverseMap[keyIndex] = map[string]int{}
+		for valueIndex, value := range i.valueMap[keyIndex] {
+			i.valueReverseMap[keyIndex][value] = valueIndex
+		}
 	}
 }

@@ -9,8 +9,9 @@
 *.dylib
 soq
 
-# Test binary, built with `go test -c`
+# Testing files
 *.test
+coverage.html
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out

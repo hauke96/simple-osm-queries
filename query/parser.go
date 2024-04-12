@@ -104,7 +104,8 @@ func (p *Parser) parseStatement() (*Statement, error) {
 	}
 
 	// Then object type
-	objectType, err := p.parseObjectType()
+	p.moveToNextToken()
+	objectType, err := p.parseOsmObjectType()
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +121,7 @@ func (p *Parser) parseStatement() (*Statement, error) {
 	}
 
 	// Then a filter expression
-	filterExpression, err := p.parseFilterExpressions()
+	filterExpression, err := p.parseNextFilterExpressions()
 	if err != nil {
 		return nil, err
 	}
@@ -184,11 +185,16 @@ func (p *Parser) parseLocationExpression() (LocationExpression, error) {
 	return locationExpression, nil
 }
 
-func (p *Parser) parseBboxLocationExpression() (LocationExpression, error) {
+func (p *Parser) parseBboxLocationExpression() (*BboxLocationExpression, error) {
+	token := p.currentToken()
+	if token.kind != Keyword && token.lexeme != "bbox" {
+		return nil, errors.Errorf("Error parsing BBOX-Expression: Expected start at bbox-token at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
+	}
+
 	// Expect four numbers for the BBOX
 	var coordinates = [4]float64{}
 	for i := 0; i < 4; i++ {
-		token := p.moveToNextToken()
+		token = p.moveToNextToken()
 		value, err := strconv.ParseFloat(token.lexeme, 64)
 		if token.kind != Number || err != nil {
 			return nil, errors.Errorf("Expected number as argument %d but found kind=%d with lexeme=%s", i+1, token.kind, token.lexeme)
@@ -202,8 +208,8 @@ func (p *Parser) parseBboxLocationExpression() (LocationExpression, error) {
 	}}, nil
 }
 
-func (p *Parser) parseObjectType() (ObjectType, error) {
-	token := p.moveToNextToken()
+func (p *Parser) parseOsmObjectType() (ObjectType, error) {
+	token := p.currentToken()
 	if token.kind != Keyword {
 		return -1, errors.Errorf("Expected object type at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
@@ -216,15 +222,13 @@ func (p *Parser) parseObjectType() (ObjectType, error) {
 	return -1, errors.Errorf("Expected object type at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 }
 
-func (p *Parser) parseFilterExpressions() (FilterExpression, error) {
+func (p *Parser) parseNextFilterExpressions() (FilterExpression, error) {
 	expression, err := p.parseNextExpression()
 	if err != nil {
 		return nil, err
 	}
 
 	for {
-		//var nextExpression FilterExpression
-
 		lastToken := p.currentToken()
 		token := p.peekNextToken()
 		if token == nil {
@@ -233,11 +237,8 @@ func (p *Parser) parseFilterExpressions() (FilterExpression, error) {
 
 		// Closing parentheses and braces are handles by calling functions
 		if token.kind == ClosingBraces {
-			//expression = nextExpression
-			//p.moveToNextToken()
 			break
 		} else if token.kind == ClosingParenthesis {
-			//p.moveToNextToken()
 			break
 		}
 
@@ -264,7 +265,7 @@ func (p *Parser) parseFilterExpressions() (FilterExpression, error) {
 			case "OR":
 				// Enter recursion to create correct hierarchy of AND/OR operators
 				var secondExpression FilterExpression
-				secondExpression, err = p.parseFilterExpressions()
+				secondExpression, err = p.parseNextFilterExpressions()
 				if err != nil {
 					return nil, err
 				}
@@ -291,7 +292,7 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 	token := p.moveToNextToken()
 	switch token.kind {
 	case OpeningParenthesis:
-		expression, err = p.parseFilterExpressions()
+		expression, err = p.parseNextFilterExpressions()
 		if err != nil {
 			return nil, err
 		}
@@ -348,7 +349,8 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			keyPos := token.startPosition
 
 			// Parse operator (e.g. "=" in "highway=primary")
-			binaryOperator, err := p.parseBinaryOperator(token, key, keyPos)
+			p.moveToNextToken()
+			binaryOperator, err := p.parseBinaryOperator(key, keyPos)
 			if err != nil {
 				return nil, err
 			}
@@ -377,10 +379,10 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 	return expression, nil
 }
 
-func (p *Parser) parseBinaryOperator(token *Token, previousLexeme string, previousLexemePos int) (BinaryOperator, error) {
-	token = p.moveToNextToken()
+func (p *Parser) parseBinaryOperator(previousLexeme string, previousLexemePos int) (BinaryOperator, error) {
+	token := p.currentToken()
 	if token == nil {
-		return -1, errors.Errorf("Expected binary operator after '%s' (position %d) but token stream ended", previousLexeme, previousLexemePos)
+		return Invalid, errors.Errorf("Expected binary operator after '%s' (position %d) but token stream ended", previousLexeme, previousLexemePos)
 	}
 
 	switch token.kind {
@@ -397,6 +399,6 @@ func (p *Parser) parseBinaryOperator(token *Token, previousLexeme string, previo
 	case OperatorLowerEqual:
 		return LowerEqual, nil
 	default:
-		return -1, errors.Errorf("Expected binary operator (e.g. '>=') after '%s' (position %d) but found kind=%d with lexeme=%s", previousLexeme, previousLexemePos, token.kind, token.lexeme)
+		return Invalid, errors.Errorf("Expected binary operator (e.g. '>=') after '%s' (position %d) but found kind=%d with lexeme=%s", previousLexeme, previousLexemePos, token.kind, token.lexeme)
 	}
 }

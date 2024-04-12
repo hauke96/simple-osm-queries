@@ -32,12 +32,12 @@ Benches near a way:
 ```go
 // Get all nodes within this bbox, which ...
 bbox(1, 2, 3, 4).nodes{
-// ... are a bench or waste_basket AND ...
-(amenity = bench OR amenity = waste_basket) AND
-// ... have any highway-way within a 5m radius.
-this.buffer(5m).ways{
-highway = *
-}
+    // ... are a bench or waste_basket AND ...
+    (amenity = bench OR amenity = waste_basket) AND
+    // ... have any highway-way within a 5m radius.
+    this.buffer(5m).ways{
+        highway = *
+    }
 }
 ```
 
@@ -46,12 +46,12 @@ Same example but different way-filter:
 ```go
 // Get all nodes within this bbox, which ...
 bbox(1, 2, 3, 4).nodes{
-// ... are a bench or waste_basket AND ...
-(amenity = bench OR amenity = waste_basket) AND
-// ... all ways in a 5m radius are highway-ways.
-!this.buffer(5m).ways{
-highway!=*
-}
+    // ... are a bench or waste_basket AND ...
+    (amenity = bench OR amenity = waste_basket) AND
+    // ... all ways in a 5m radius are highway-ways.
+    !this.buffer(5m).ways{
+        highway!=*
+    }
 }
 ```
 
@@ -59,10 +59,10 @@ Get all nodes with a house number that are part of a building outline:
 
 ```go
 bbox(1, 2, 3, 4).nodes{
-addr:housenumber = * AND
-this.ways{
-building = *
-}
+    addr:housenumber = * AND
+    this.ways{
+        building = *
+    }
 }
 ```
 

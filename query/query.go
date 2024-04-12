@@ -33,7 +33,8 @@ func (o ObjectType) string() string {
 type BinaryOperator int
 
 const (
-	Equal BinaryOperator = iota
+	Invalid BinaryOperator = iota
+	Equal
 	NotEqual
 	Greater
 	GreaterEqual
