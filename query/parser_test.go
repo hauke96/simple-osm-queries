@@ -172,7 +172,7 @@ func TestParser_parseBinaryOperator(t *testing.T) {
 	util.AssertEqual(t, LowerEqual, operator)
 }
 
-func TestParser_parseNextExpression(t *testing.T) {
+func TestParser_parseNextExpression_simpleTagFilter(t *testing.T) {
 	// Arrange
 	parser := &Parser{
 		token: []*Token{
@@ -198,6 +198,169 @@ func TestParser_parseNextExpression(t *testing.T) {
 	util.AssertEqual(t, 1, tagFilterExpression.key)
 	util.AssertEqual(t, 1, tagFilterExpression.value)
 	util.AssertEqual(t, Equal, tagFilterExpression.operator)
+}
+
+func TestParser_parseNextExpression_invalidTagFilter(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: Keyword, lexeme: "a", startPosition: 0},
+			{kind: OperatorEqual, lexeme: "=", startPosition: 1},
+			{kind: OperatorLower, lexeme: "<", startPosition: 2},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"foo", "a"},
+			[][]string{{"bar"}, {"blubb", "b"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNotNil(t, err)
+	util.AssertNil(t, expression)
+}
+
+func TestParser_parseNextExpression_negatedTagFilter(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: OperatorNot, lexeme: "!", startPosition: 0},
+			{kind: OpeningParenthesis, lexeme: "(", startPosition: 1},
+			{kind: Keyword, lexeme: "a", startPosition: 2},
+			{kind: OperatorEqual, lexeme: "=", startPosition: 3},
+			{kind: Keyword, lexeme: "b", startPosition: 4},
+			{kind: ClosingParenthesis, lexeme: ")", startPosition: 5},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"foo", "a"},
+			[][]string{{"bar"}, {"blubb", "b"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, expression)
+
+	negatedTagFilterExpression, isNegatedTagFilterExpression := expression.(*NegatedFilterExpression)
+	util.AssertTrue(t, isNegatedTagFilterExpression)
+	util.AssertNotNil(t, negatedTagFilterExpression.baseExpression)
+
+	tagFilterExpression, isTagFilterExpression := negatedTagFilterExpression.baseExpression.(*TagFilterExpression)
+	util.AssertTrue(t, isTagFilterExpression)
+	util.AssertEqual(t, 1, tagFilterExpression.key)
+	util.AssertEqual(t, 1, tagFilterExpression.value)
+	util.AssertEqual(t, Equal, tagFilterExpression.operator)
+}
+
+func TestParser_parseNextExpression_invalidNegatedTagFilter(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: OperatorNot, lexeme: "!", startPosition: 0},
+			{kind: Keyword, lexeme: "a", startPosition: 1},
+			{kind: OperatorEqual, lexeme: "=", startPosition: 2},
+			{kind: Keyword, lexeme: "b", startPosition: 3},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"foo", "a"},
+			[][]string{{"bar"}, {"blubb", "b"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNotNil(t, err)
+	util.AssertNil(t, expression)
+}
+
+func TestParser_parseNextExpression_invalidExpressionInsideNegatedTagFilter(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: OperatorNot, lexeme: "!", startPosition: 0},
+			{kind: OpeningParenthesis, lexeme: "(", startPosition: 1},
+			{kind: Keyword, lexeme: "a", startPosition: 2},
+			{kind: Keyword, lexeme: "b", startPosition: 3},
+			{kind: ClosingParenthesis, lexeme: ")", startPosition: 4},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"foo", "a"},
+			[][]string{{"bar"}, {"blubb", "b"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNotNil(t, err)
+	util.AssertNil(t, expression)
+}
+
+func TestParser_parseNextExpression_expressionInsideParentheses(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: OpeningParenthesis, lexeme: "(", startPosition: 0},
+			{kind: Keyword, lexeme: "a", startPosition: 1},
+			{kind: OperatorEqual, lexeme: "=", startPosition: 2},
+			{kind: Keyword, lexeme: "b", startPosition: 3},
+			{kind: ClosingParenthesis, lexeme: ")", startPosition: 4},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"foo", "a"},
+			[][]string{{"bar"}, {"blubb", "b"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, expression)
+	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
+	util.AssertTrue(t, isTagFilterExpression)
+	util.AssertEqual(t, 1, tagFilterExpression.key)
+	util.AssertEqual(t, 1, tagFilterExpression.value)
+	util.AssertEqual(t, Equal, tagFilterExpression.operator)
+}
+
+func TestParser_parseNextExpression_expressionInsideParenthesesMissinClose(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: OpeningParenthesis, lexeme: "(", startPosition: 0},
+			{kind: Keyword, lexeme: "a", startPosition: 1},
+			{kind: OperatorEqual, lexeme: "=", startPosition: 2},
+			{kind: Keyword, lexeme: "b", startPosition: 3},
+			{kind: Keyword, lexeme: "foo", startPosition: 4},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"foo", "a"},
+			[][]string{{"bar"}, {"blubb", "b"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNotNil(t, err)
+	util.AssertNil(t, expression)
 }
 
 func TestParser_parseBinaryOperator_invalidAndNotExistingToken(t *testing.T) {

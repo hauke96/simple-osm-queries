@@ -310,11 +310,7 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			return nil, errors.Errorf("Expected start of new expression after '!' (at position %d) but token stream ended", negationPosition)
 		}
 
-		nextToken := p.peekNextToken()
-		if nextToken == nil {
-			return nil, errors.Errorf("Unexpected end of token stream after '%s' (at position %d), expected '(' or call of filter function", token.lexeme, token.startPosition)
-		}
-		if nextToken.kind != OpeningParenthesis {
+		if token.kind != OpeningParenthesis {
 			// TODO Add "this" keyword here, which is another possible token after "!"
 			return nil, errors.Errorf("Expected '(' after '!' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 		}
