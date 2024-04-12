@@ -9,6 +9,7 @@ import (
 	"soq/importing"
 	"soq/index"
 	"soq/query"
+	"soq/web"
 	"strings"
 )
 
@@ -23,6 +24,11 @@ var cli struct {
 	} `cmd:"" help:"Imports the given OSM file to use it in queries."`
 	Query struct {
 		Query string `help:"The query string." placeholder:"<query>" arg:""`
+	} `cmd:"" help:"Returns the OSM data for the given query."`
+	Server struct {
+		Port        string `help:"The port this server should listen to." short:"p"`
+		SslCertFile string `help: "The certificate file for SSL."`
+		SslKeyFile  string `help: "The key file for SSL."`
 	} `cmd:"" help:"Returns the OSM data for the given query."`
 }
 
@@ -96,8 +102,17 @@ bbox(9.9713,53.5354,10.0160,53.5608)
 
 		sigolo.Infof("Found %d features", len(features))
 
-		err = index.WriteFeaturesAsGeoJson(features, tagIndex)
+		err = index.WriteFeaturesAsGeoJsonFile(features, tagIndex)
 		sigolo.FatalCheck(err)
+	case "server":
+		sigolo.SetDefaultFormatFunctionAll(sigolo.LogDefaultStatic)
+		if cli.Server.SslCertFile != "" && cli.Server.SslKeyFile != "" {
+			sigolo.Infof("Start server with TLS support on port %s", cli.Server.Port)
+			web.StartServerTls(cli.Server.Port, cli.Server.SslCertFile, cli.Server.SslKeyFile, indexBaseFolder, defaultCellSize)
+		} else {
+			sigolo.Infof("Start server without TLS support on port %s", cli.Server.Port)
+			web.StartServer(cli.Server.Port, indexBaseFolder, defaultCellSize)
+		}
 	default:
 		sigolo.Errorf("Unknown command '%s'", ctx.Command())
 	}

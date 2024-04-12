@@ -4,7 +4,8 @@ go 1.22.1
 
 require (
 	github.com/alecthomas/kong v0.9.0
-	github.com/hauke96/sigolo/v2 v2.0.0-SNAPSHOT.7
+	github.com/gorilla/mux v1.8.1
+	github.com/hauke96/sigolo/v2 v2.0.0-SNAPSHOT.8
 	github.com/paulmach/orb v0.11.1
 	github.com/paulmach/osm v0.8.0
 	github.com/pkg/errors v0.9.1

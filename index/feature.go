@@ -5,6 +5,7 @@ import (
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geojson"
 	"github.com/pkg/errors"
+	"io"
 	"os"
 )
 
@@ -79,7 +80,7 @@ func (f *EncodedFeature) Print() {
 	sigolo.Tracef("  values=%v", f.values)
 }
 
-func WriteFeaturesAsGeoJson(encodedFeatures []*EncodedFeature, tagIndex *TagIndex) error {
+func WriteFeaturesAsGeoJsonFile(encodedFeatures []*EncodedFeature, tagIndex *TagIndex) error {
 	file, err := os.Create("output.geojson")
 	if err != nil {
 		return err
@@ -90,6 +91,10 @@ func WriteFeaturesAsGeoJson(encodedFeatures []*EncodedFeature, tagIndex *TagInde
 		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for GeoJSON file %s", file.Name()))
 	}()
 
+	return WriteFeaturesAsGeoJson(encodedFeatures, tagIndex, file)
+}
+
+func WriteFeaturesAsGeoJson(encodedFeatures []*EncodedFeature, tagIndex *TagIndex, writer io.Writer) error {
 	featureCollection := geojson.NewFeatureCollection()
 	for _, encodedFeature := range encodedFeatures {
 		feature := geojson.NewFeature(encodedFeature.Geometry)
@@ -115,7 +120,7 @@ func WriteFeaturesAsGeoJson(encodedFeatures []*EncodedFeature, tagIndex *TagInde
 		return err
 	}
 
-	_, err = file.Write(geojsonBytes)
+	_, err = writer.Write(geojsonBytes)
 	if err != nil {
 		return err
 	}
