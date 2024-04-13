@@ -12,8 +12,7 @@ import (
 	"io"
 	"os"
 	"path"
-	"sort"
-	"strconv"
+	"soq/util"
 	"strings"
 	"time"
 	"unicode"
@@ -172,8 +171,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	// Make sure the values are sorted so that comparison operators work. We can change the order as we want, because
 	// OSM objects are not yet stored, this happens in a separate index.
 	for i, values := range valueMap {
-		sort.Strings(values)
-		valueMap[i] = values
+		valueMap[i] = util.Sort(values)
 	}
 
 	// Update the newly sorted value reverse map. Otherwise the value indices are all mixed up
@@ -214,28 +212,19 @@ func (i *TagIndex) GetIndicesFromKeyValueStrings(key string, value string) (int,
 	return NotFound, NotFound
 }
 
-// GetNextLowerValueIndexForKey returns the next smaller value for the given key-index and value. The boolean is set
-// to "false" when a smaller value has been found. If the exact value exists, then the exact value will be returned with
-// the boolean set to "true".
-// TODO This is not optimal. Rewrite this when custom sorting algorithm is implemented.
+// GetNextLowerValueIndexForKey returns the next smaller value for the given key-index and value. A return value of -1
+// means, that the given value is lower than the lowest value for the given key. The boolean is set to "false" when a
+// smaller value has been found. If the exact value exists, then the exact value will be returned with the boolean set
+// to "true".
 func (i *TagIndex) GetNextLowerValueIndexForKey(key int, value string) (int, bool) {
-	valueNumeric := 0.0
-	if isNumber(value) {
-		valueNumeric, _ = strconv.ParseFloat(value, 64)
-	}
-
 	for idx, v := range i.valueMap[key] {
-		if !isNumber(v) {
-			continue
-		}
-
-		vNumeric, _ := strconv.ParseFloat(v, 64)
-		if vNumeric == valueNumeric {
-			// The exact value exists, so we return it.
+		if v == value {
 			return idx, true
-		} else if vNumeric > valueNumeric {
+		}
+		if util.IsLessThan(value, v) {
 			// This is the first value from the map that is larger than the given one -> the previous value is therefore
-			// the next lower one for the given parameter.
+			// the next lower one for the given parameter. This returns -1 is the given value is lower than the lowest
+			// value for the given key.
 			return idx - 1, false
 		}
 	}

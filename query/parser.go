@@ -307,25 +307,9 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			return nil, errors.Errorf("Expected '!' to start a new expression (at position %d) but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 		}
 
-		negationPosition := token.startPosition
-
-		token = p.moveToNextToken()
-		if token == nil {
-			return nil, errors.Errorf("Expected start of new expression after '!' (at position %d) but token stream ended", negationPosition)
-		}
-
-		if token.kind != TokenKindOpeningParenthesis {
-			// TODO Add "this" keyword here, which is another possible token after "!"
-			return nil, errors.Errorf("Expected '(' after '!' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
-		}
-
-		expression, err = p.parseNextExpression()
+		expression, err = p.parseNegatedExpression(token, expression, err)
 		if err != nil {
 			return nil, err
-		}
-
-		expression = &NegatedFilterExpression{
-			baseExpression: expression,
 		}
 	case TokenKindKeyword:
 		if token.lexeme == "this" {
@@ -387,7 +371,15 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 					if valueIndex == index.NotFound {
 						// There is no lower value, the valueToken already contains a value lower than the lowest value
 						// in the tag index.
-						// TODO
+						valueIndex = 0
+						if binaryOperator == BinOpGreater {
+							// Example: "width>-1"  ->  "width>=0"
+							binaryOperator = BinOpGreaterEqual
+						} else if binaryOperator == BinOpLowerEqual {
+							// Example: "width<=-1"  ->  "width<0"
+							binaryOperator = BinOpLower
+						}
+						// All other operators are ok, they do not distort/falsify the result of the expression.
 					} else {
 						// We found the next lower value for the given valueToken. We now might have to adjust the
 						// binary operator so that the meaning of the expression is still correct.
@@ -411,6 +403,30 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 		}
 	}
 
+	return expression, nil
+}
+
+func (p *Parser) parseNegatedExpression(token *Token, expression FilterExpression, err error) (FilterExpression, error) {
+	negationPosition := token.startPosition
+
+	token = p.moveToNextToken()
+	if token == nil {
+		return nil, errors.Errorf("Expected start of new expression after '!' (at position %d) but token stream ended", negationPosition)
+	}
+
+	if token.kind != TokenKindOpeningParenthesis {
+		// TODO Add "this" keyword here, which is another possible token after "!"
+		return nil, errors.Errorf("Expected '(' after '!' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
+	}
+
+	expression, err = p.parseNextExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	expression = &NegatedFilterExpression{
+		baseExpression: expression,
+	}
 	return expression, nil
 }
 

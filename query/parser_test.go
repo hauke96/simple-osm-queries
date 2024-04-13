@@ -450,7 +450,7 @@ func TestParser_parseNextExpression_determineNextSmallerValue_greaterThanOperato
 	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 0, tagFilterExpression.key)
-	util.AssertEqual(t, 2, tagFilterExpression.value)
+	util.AssertEqual(t, 1, tagFilterExpression.value)
 	util.AssertEqual(t, BinOpGreater, tagFilterExpression.operator)
 }
 
