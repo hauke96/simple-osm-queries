@@ -25,6 +25,10 @@
                 flex-direction: row;
             }
 
+            h1 {
+                margin-top: 0;
+            }
+
             button {
                 width: 150px;
                 height: 2.5em;
@@ -54,12 +58,12 @@
                 justify-content: space-between;
             }
 
-            #query-input {
-                margin-bottom: 1em;
+            .label {
+                align-self: flex-end;
             }
 
-            #loading-label {
-                align-self: flex-end;
+            .error {
+                color: red;
             }
         </style>
     </head>
@@ -67,7 +71,6 @@
     <body>
         <div class="sidepanel">
             <h1>Query editor</h1>
-            <textarea id="query-input" rows="25"></textarea>
             <div class="button-container">
                 <div>
                     <button id="copy-extent-button">Copy current bbox</button>
@@ -77,7 +80,10 @@
                     <button id="send-button">Send</button>
                 </div>
             </div>
-            <p id="loading-label">Loading ...</p>
+            <p id="loading-label" class="label">Loading ...</p>
+            <p id="error-internal-label" class="label error">Internal error during request</p>
+            <p id="error-request-label" class="label error">Request failed, the query is probably wrong</p>
+            <textarea id="query-input" rows="25"></textarea>
         </div>
         <div id="map" class="map"></div>
     </body>
@@ -85,7 +91,9 @@
     <script type="text/javascript">
         // Set default values
         document.getElementById('export-button').disabled = true;
-        document.getElementById('loading-label').style.display = "none";
+        document.getElementById('loading-label').style.visibility = "hidden";
+        document.getElementById('error-internal-label').style.visibility = "collapse";
+        document.getElementById('error-request-label').style.visibility = "collapse";
         document.getElementById('query-input').value = "//bbox(9.9713,53.5354,10.01711,53.58268)\n" +
             "bbox({{bbox}}).nodes{\n" +
             "  amenity=bench AND seats=*\n" +
@@ -121,7 +129,9 @@
         document.getElementById("send-button").addEventListener("click", () => {
             document.getElementById('export-button').disabled = true;
             document.getElementById('send-button').disabled = true;
-            document.getElementById('loading-label').style.display = "unset";
+            document.getElementById('loading-label').style.visibility = "visible";
+            document.getElementById('error-internal-label').style.visibility = "collapse";
+            document.getElementById('error-request-label').style.visibility = "collapse";
 
             let query = document.getElementById('query-input').value;
             query = query.replace("{{bbox}}", ""+getCurrentBbox());
@@ -146,7 +156,20 @@
                     lastQueryResponseGeoJSON = responseText;
                     document.getElementById('export-button').disabled = false;
                     document.getElementById('send-button').disabled = false;
-                    document.getElementById('loading-label').style.display = "none";
+                    document.getElementById('loading-label').style.visibility = "hidden";
+                    document.getElementById('error-internal-label').style.visibility = "collapse";
+                    document.getElementById('error-request-label').style.visibility = "collapse";
+                })
+                .catch(err => {
+                    console.error(err);
+                    document.getElementById('export-button').disabled = false;
+                    document.getElementById('send-button').disabled = false;
+                    document.getElementById('loading-label').style.visibility = "collapse";
+                    if(err.status >= 400 && err.status < 500 ) {
+                        document.getElementById('error-request-label').style.visibility = "visible";
+                    }else {
+                        document.getElementById('error-internal-label').style.visibility = "visible";
+                    }
                 });
         });
 
