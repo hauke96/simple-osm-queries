@@ -328,77 +328,9 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 		} else {
 			// General keyword, meaning a new expression starts, such as "highway=primary".
 
-			// We're on the key (e.g. "highway" in "highway=primary")
-			key := token.lexeme
-			keyPos := token.startPosition
-			keyIndex := p.tagIndex.GetKeyIndexFromKeyString(key)
-
-			// Parse operator (e.g. "=" in "highway=primary")
-			p.moveToNextToken()
-			binaryOperator, err := p.parseBinaryOperator(key, keyPos)
+			expression, err = p.parseNormalExpression(token, expression)
 			if err != nil {
 				return nil, err
-			}
-			binaryOperatorToken := p.currentToken()
-
-			// Parse value (e.g. "primary" in "highway=primary")
-			valueToken := p.moveToNextToken()
-			if valueToken == nil {
-				return nil, errors.Errorf("Expected value after key '%s' but token stream ended", key+binaryOperatorToken.lexeme)
-			}
-			if valueToken.kind != TokenKindKeyword && valueToken.kind != TokenKindNumber && valueToken.kind != TokenKindString && valueToken.kind != TokenKindWildcard {
-				return nil, errors.Errorf("Expected value after key '%s' but found kind=%d with lexeme=%s at pos=%d", key+binaryOperatorToken.lexeme, valueToken.kind, valueToken.lexeme, valueToken.startPosition)
-			}
-
-			if valueToken.kind == TokenKindWildcard {
-				if binaryOperator != BinOpEqual && binaryOperator != BinOpNotEqual {
-					return nil, errors.Errorf("Expected '=' or '!=' operator when using wildcard but found kind=%d with lexeme=%s at pos=%d", valueToken.kind, valueToken.lexeme, valueToken.startPosition)
-				}
-
-				expression = &KeyFilterExpression{
-					key:         keyIndex,
-					shouldBeSet: binaryOperator == BinOpEqual,
-				}
-			} else {
-				_, valueIndex := p.tagIndex.GetIndicesFromKeyValueStrings(key, valueToken.lexeme)
-
-				if valueIndex == index.NotFound && binaryOperator.isComparisonOperator() {
-					// Search for next smaller value and adjust binary operator. It can happen that we search for e.g.
-					// "width>=2.5" but the exact value "2.5" doesn't exist. Then we have to adjust the expression to
-					// "width>2" in case "2" is the next lower existing value for "2.5".
-					valueIndex, _ = p.tagIndex.GetNextLowerValueIndexForKey(keyIndex, valueToken.lexeme)
-
-					if valueIndex == index.NotFound {
-						// There is no lower value, the valueToken already contains a value lower than the lowest value
-						// in the tag index.
-						valueIndex = 0
-						if binaryOperator == BinOpGreater {
-							// Example: "width>-1"  ->  "width>=0"
-							binaryOperator = BinOpGreaterEqual
-						} else if binaryOperator == BinOpLowerEqual {
-							// Example: "width<=-1"  ->  "width<0"
-							binaryOperator = BinOpLower
-						}
-						// All other operators are ok, they do not distort/falsify the result of the expression.
-					} else {
-						// We found the next lower value for the given valueToken. We now might have to adjust the
-						// binary operator so that the meaning of the expression is still correct.
-						if binaryOperator == BinOpGreaterEqual {
-							// Example: "width>=2.5"  ->  "width>2"
-							binaryOperator = BinOpGreater
-						} else if binaryOperator == BinOpLower {
-							// Example: "width<2.5"  ->  "width<=2"
-							binaryOperator = BinOpLowerEqual
-						}
-						// All other operators are ok, they do not distort/falsify the result of the expression.
-					}
-				}
-
-				expression = &TagFilterExpression{
-					key:      keyIndex,
-					value:    valueIndex,
-					operator: binaryOperator,
-				}
 			}
 		}
 	}
@@ -428,6 +360,81 @@ func (p *Parser) parseNegatedExpression(token *Token, expression FilterExpressio
 		baseExpression: expression,
 	}
 	return expression, nil
+}
+
+func (p *Parser) parseNormalExpression(token *Token, expression FilterExpression) (FilterExpression, error) {
+	// We're on the key (e.g. "highway" in "highway=primary")
+	key := token.lexeme
+	keyPos := token.startPosition
+	keyIndex := p.tagIndex.GetKeyIndexFromKeyString(key)
+
+	// Parse operator (e.g. "=" in "highway=primary")
+	p.moveToNextToken()
+	binaryOperator, err := p.parseBinaryOperator(key, keyPos)
+	if err != nil {
+		return nil, err
+	}
+	binaryOperatorToken := p.currentToken()
+
+	// Parse value (e.g. "primary" in "highway=primary")
+	valueToken := p.moveToNextToken()
+	if valueToken == nil {
+		return nil, errors.Errorf("Expected value after key '%s' but token stream ended", key+binaryOperatorToken.lexeme)
+	}
+	if valueToken.kind != TokenKindKeyword && valueToken.kind != TokenKindNumber && valueToken.kind != TokenKindString && valueToken.kind != TokenKindWildcard {
+		return nil, errors.Errorf("Expected value after key '%s' but found kind=%d with lexeme=%s at pos=%d", key+binaryOperatorToken.lexeme, valueToken.kind, valueToken.lexeme, valueToken.startPosition)
+	}
+
+	if valueToken.kind == TokenKindWildcard {
+		if binaryOperator != BinOpEqual && binaryOperator != BinOpNotEqual {
+			return nil, errors.Errorf("Expected '=' or '!=' operator when using wildcard but found kind=%d with lexeme=%s at pos=%d", valueToken.kind, valueToken.lexeme, valueToken.startPosition)
+		}
+
+		return &KeyFilterExpression{
+			key:         keyIndex,
+			shouldBeSet: binaryOperator == BinOpEqual,
+		}, nil
+	} else {
+		_, valueIndex := p.tagIndex.GetIndicesFromKeyValueStrings(key, valueToken.lexeme)
+
+		if valueIndex == index.NotFound && binaryOperator.isComparisonOperator() {
+			// Search for next smaller value and adjust binary operator. It can happen that we search for e.g.
+			// "width>=2.5" but the exact value "2.5" doesn't exist. Then we have to adjust the expression to
+			// "width>2" in case "2" is the next lower existing value for "2.5".
+			valueIndex, _ = p.tagIndex.GetNextLowerValueIndexForKey(keyIndex, valueToken.lexeme)
+
+			if valueIndex == index.NotFound {
+				// There is no lower value, the valueToken already contains a value lower than the lowest value
+				// in the tag index.
+				valueIndex = 0
+				if binaryOperator == BinOpGreater {
+					// Example: "width>-1"  ->  "width>=0"
+					binaryOperator = BinOpGreaterEqual
+				} else if binaryOperator == BinOpLowerEqual {
+					// Example: "width<=-1"  ->  "width<0"
+					binaryOperator = BinOpLower
+				}
+				// All other operators are ok, they do not distort/falsify the result of the expression.
+			} else {
+				// We found the next lower value for the given valueToken. We now might have to adjust the
+				// binary operator so that the meaning of the expression is still correct.
+				if binaryOperator == BinOpGreaterEqual {
+					// Example: "width>=2.5"  ->  "width>2"
+					binaryOperator = BinOpGreater
+				} else if binaryOperator == BinOpLower {
+					// Example: "width<2.5"  ->  "width<=2"
+					binaryOperator = BinOpLowerEqual
+				}
+				// All other operators are ok, they do not distort/falsify the result of the expression.
+			}
+		}
+
+		return &TagFilterExpression{
+			key:      keyIndex,
+			value:    valueIndex,
+			operator: binaryOperator,
+		}, nil
+	}
 }
 
 func (p *Parser) parseBinaryOperator(previousLexeme string, previousLexemePos int) (BinaryOperator, error) {
