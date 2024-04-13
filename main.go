@@ -106,11 +106,10 @@ bbox(9.9713,53.5354,10.0160,53.5608)
 		sigolo.FatalCheck(err)
 	case "server":
 		sigolo.SetDefaultFormatFunctionAll(sigolo.LogDefaultStatic)
+		sigolo.Info("Starting server ...")
 		if cli.Server.SslCertFile != "" && cli.Server.SslKeyFile != "" {
-			sigolo.Infof("Start server with TLS support on port %s", cli.Server.Port)
 			web.StartServerTls(cli.Server.Port, cli.Server.SslCertFile, cli.Server.SslKeyFile, indexBaseFolder, defaultCellSize)
 		} else {
-			sigolo.Infof("Start server without TLS support on port %s", cli.Server.Port)
 			web.StartServer(cli.Server.Port, indexBaseFolder, defaultCellSize)
 		}
 	default:

@@ -12,12 +12,14 @@ import (
 
 func StartServer(port string, indexBaseFolder string, defaultCellSize float64) {
 	r := initRouter(indexBaseFolder, defaultCellSize)
+	sigolo.Infof("Start server with TLS support on port %s", port)
 	err := http.ListenAndServe(":"+port, r)
 	sigolo.FatalCheck(err)
 }
 
 func StartServerTls(port string, certFile string, keyFile string, indexBaseFolder string, defaultCellSize float64) {
 	r := initRouter(indexBaseFolder, defaultCellSize)
+	sigolo.Infof("Start server without TLS support on port %s", port)
 	err := http.ListenAndServeTLS(":"+port, certFile, keyFile, r)
 	sigolo.FatalCheck(err)
 }
