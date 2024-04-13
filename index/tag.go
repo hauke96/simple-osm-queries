@@ -42,30 +42,42 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 
 	var keyMap []string
 	var valueMap [][]string
-	scanner := bufio.NewScanner(tagIndexFile)
-	buf := make([]byte, 0, 64*1024)   // 64k buffer
-	scanner.Buffer(buf, 10*1024*1024) // 10M max buffer size
+
+	reader := bufio.NewReader(tagIndexFile)
 	lineCounter := 0
-	for scanner.Scan() {
-		// 0 = key
-		// 1 = values separated by "|"
-		splitLine := strings.SplitN(scanner.Text(), "=", 2)
+	nextLinePartBytes, isPrefix, err := reader.ReadLine()
+	for err == nil {
+		lineBytes := make([]byte, len(nextLinePartBytes))
+		copy(lineBytes, nextLinePartBytes)
+
+		// The line might be very long and only the first part is returned. Therefore, we need to collect the rest of the line.
+		for isPrefix && err == nil {
+			nextLinePartBytes, isPrefix, err = reader.ReadLine()
+			lineBytes = append(lineBytes, nextLinePartBytes...)
+		}
+		line := string(lineBytes)
+
+		splitLine := strings.SplitN(line, "=", 2)
 		if len(splitLine) != 2 {
-			return nil, errors.Errorf("Wrong format of line %d: '=' expected separating key and value list", lineCounter)
+			lineStart := line
+			if len(lineStart) > 100 {
+				lineStart = lineStart[0:100]
+			}
+			return nil, errors.Errorf("Wrong format of line %d: '=' expected separating key and value list. Start of line was: %s", lineCounter, lineStart)
 		}
 
 		key := splitLine[0]
 		values := splitLine[1]
-		sigolo.Tracef("Found key=%s with %d values", key, len(values))
+		values = strings.ReplaceAll(values, "\\n", "\n")
+		values = strings.ReplaceAll(values, "$$EQUAL$$", "=")
+		valueEntries := strings.Split(values, "|")
+		sigolo.Tracef("Found key=%s with %d values", key, len(valueEntries))
 
 		keyMap = append(keyMap, key)
-		valueMap = append(valueMap, strings.Split(values, "|"))
+		valueMap = append(valueMap, valueEntries)
 
 		lineCounter++
-	}
-
-	if err = scanner.Err(); err != nil {
-		return nil, errors.Wrapf(err, "Error while scanning tag-index file %s", baseFolder)
+		nextLinePartBytes, isPrefix, err = reader.ReadLine()
 	}
 
 	index := &TagIndex{
@@ -279,7 +291,8 @@ func (i *TagIndex) SaveToFile(filename string) error {
 func (i *TagIndex) WriteAsString(f io.Writer) error {
 	for keyIndex, values := range i.valueMap {
 		valueString := strings.Join(values, "|")
-		valueString = strings.ReplaceAll(valueString, "\n", "\\n")
+		valueString = strings.ReplaceAll(valueString, "\n", "$$NEWLINE$$")
+		valueString = strings.ReplaceAll(valueString, "=", "$$EQUAL$$")
 
 		line := i.keyMap[keyIndex] + "=" + valueString + "\n"
 		_, err := f.Write([]byte(line))

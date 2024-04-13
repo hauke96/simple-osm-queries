@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"io"
 	"os"
+	"time"
 )
 
 type EncodedFeature struct {
@@ -95,6 +96,9 @@ func WriteFeaturesAsGeoJsonFile(encodedFeatures []*EncodedFeature, tagIndex *Tag
 }
 
 func WriteFeaturesAsGeoJson(encodedFeatures []*EncodedFeature, tagIndex *TagIndex, writer io.Writer) error {
+	sigolo.Info("Write features to GeoJSON")
+	writeStartTime := time.Now()
+
 	featureCollection := geojson.NewFeatureCollection()
 	for _, encodedFeature := range encodedFeatures {
 		feature := geojson.NewFeature(encodedFeature.Geometry)
@@ -124,6 +128,9 @@ func WriteFeaturesAsGeoJson(encodedFeatures []*EncodedFeature, tagIndex *TagInde
 	if err != nil {
 		return err
 	}
+
+	queryDuration := time.Since(writeStartTime)
+	sigolo.Infof("Finished writing in %s", queryDuration)
 
 	return nil
 }
