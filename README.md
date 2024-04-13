@@ -8,11 +8,19 @@ Proof of concept of a tool to query OSM data, which is simple in its implementat
 
 Usage: `go run . import your-file.osm.pbf`
 
-Performance comparison: The `hamburg-latest.osm.pbf` (~46 MB) takes ~10s and the `germany-latest.osm.pbf` (~4.1 GB) takes ~25min.
+Performance comparison (as of 2024-04-13; SSD + 10 year old Intel Xeon E3-1231 v3):
+* The index structure is 2.5 to 3 times as large as the raw `.osm.pbf` file.
+* The import takes longer the more data there is (s. numbers below) but on my machine runs with 2.5 to 4.5 MB/s.
+* Examples
+  * The `hamburg-latest.osm.pbf` (~46 MB) takes ~10 s, the cache will be ~125 MB large.
+  * The `germany-latest.osm.pbf` (~4.1 GB) takes ~25 min., the cache will be 11.1 GB large.
 
 ### Query
 
 TODO
+
+Performance comparison:
+* The query `bbox(1.640,45.489,19.198,57.807).nodes{ amenity=bench AND seats=* }` (whole Germany using `germany-latext.osm.pbf`) takes ~2.5 min. (SSD + 10 year old Intel Xeon E3-1231 v3). The same query takes ~1.5 min. using Overpass.
 
 ### Server
 
