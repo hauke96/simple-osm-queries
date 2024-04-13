@@ -135,37 +135,39 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	var valueReverseMap []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
 
 	for scanner.Scan() {
-		obj := scanner.Object()
-		switch osmObj := obj.(type) {
+		var tags osm.Tags
+		switch osmObj := scanner.Object().(type) {
 		case *osm.Node:
-			for _, tag := range osmObj.Tags {
-				// Search for the given key in the key map to get its index
-				keyIndex, keyAlreadyStored := keyReverseMap[tag.Key]
+			tags = osmObj.Tags
+		case *osm.Way:
+			tags = osmObj.Tags
+		case *osm.Relation:
+			tags = osmObj.Tags
+		}
 
-				if keyAlreadyStored {
-					// Key already exists and so does its value map. Check if value already appeared and if not, add it.
-					_, containsValue := valueReverseMap[keyIndex][tag.Value]
-					if !containsValue {
-						// Value not yet seen -> Add to value-map
-						valueMap[keyIndex] = append(valueMap[keyIndex], tag.Value)
-						valueReverseMap[keyIndex][tag.Value] = len(valueMap) - 1
-					}
-				} else {
-					// Key appeared for the first time -> Create maps and add entry
-					keyMap = append(keyMap, tag.Key)
-					keyIndex = len(keyMap) - 1
-					keyReverseMap[tag.Key] = keyIndex
+		for _, tag := range tags {
+			// Search for the given key in the key map to get its index
+			keyIndex, keyAlreadyStored := keyReverseMap[tag.Key]
 
-					valueMap = append(valueMap, []string{tag.Value})
-					valueReverseMap = append(valueReverseMap, map[string]int{})
-					valueReverseMap[keyIndex][tag.Value] = 0
+			if keyAlreadyStored {
+				// Key already exists and so does its value map. Check if value already appeared and if not, add it.
+				_, containsValue := valueReverseMap[keyIndex][tag.Value]
+				if !containsValue {
+					// Value not yet seen -> Add to value-map
+					valueMap[keyIndex] = append(valueMap[keyIndex], tag.Value)
+					valueReverseMap[keyIndex][tag.Value] = len(valueMap) - 1
 				}
+			} else {
+				// Key appeared for the first time -> Create maps and add entry
+				keyMap = append(keyMap, tag.Key)
+				keyIndex = len(keyMap) - 1
+				keyReverseMap[tag.Key] = keyIndex
+
+				valueMap = append(valueMap, []string{tag.Value})
+				valueReverseMap = append(valueReverseMap, map[string]int{})
+				valueReverseMap[keyIndex][tag.Value] = 0
 			}
 		}
-		// TODO Implement way handling
-		//case *osm.Way:
-		// TODO Implement relation handling
-		//case *osm.Relation:
 	}
 
 	// Make sure the values are sorted so that comparison operators work. We can change the order as we want, because
