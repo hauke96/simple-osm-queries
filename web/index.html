@@ -29,6 +29,11 @@
                 margin-top: 0;
             }
 
+            textarea {
+                height: 100%;
+                resize: none;
+            }
+
             button {
                 width: 150px;
                 height: 2.5em;
@@ -83,7 +88,7 @@
             <p id="loading-label" class="label">Loading ...</p>
             <p id="error-internal-label" class="label error">Internal error during request</p>
             <p id="error-request-label" class="label error">Request failed, the query is probably wrong</p>
-            <textarea id="query-input" rows="25"></textarea>
+            <textarea id="query-input"></textarea>
         </div>
         <div id="map" class="map"></div>
     </body>
@@ -134,7 +139,7 @@
             document.getElementById('error-request-label').style.visibility = "collapse";
 
             let query = document.getElementById('query-input').value;
-            query = query.replace("{{bbox}}", ""+getCurrentBbox());
+            query = query.replace("{{bbox}}", "" + getCurrentBbox());
             console.log("Send query:", query);
 
             fetch("./query", {
@@ -165,9 +170,9 @@
                     document.getElementById('export-button').disabled = false;
                     document.getElementById('send-button').disabled = false;
                     document.getElementById('loading-label').style.visibility = "collapse";
-                    if(err.status >= 400 && err.status < 500 ) {
+                    if (err.status >= 400 && err.status < 500) {
                         document.getElementById('error-request-label').style.visibility = "visible";
-                    }else {
+                    } else {
                         document.getElementById('error-internal-label').style.visibility = "visible";
                     }
                 });
