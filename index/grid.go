@@ -23,20 +23,22 @@ import (
 const GridIndexFolder = "grid-index"
 
 type GridIndex struct {
-	TagIndex         *TagIndex
-	CellWidth        float64
-	CellHeight       float64
-	BaseFolder       string
-	cacheFileHandles map[string]*os.File
-	cacheFileWriters map[string]*bufio.Writer
+	TagIndex             *TagIndex
+	CellWidth            float64
+	CellHeight           float64
+	BaseFolder           string
+	cacheFileHandles     map[string]*os.File
+	cacheFileWriters     map[string]*bufio.Writer
+	checkFeatureValidity bool
 }
 
-func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, tagIndex *TagIndex) *GridIndex {
+func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, checkFeatureValidity bool, tagIndex *TagIndex) *GridIndex {
 	return &GridIndex{
-		TagIndex:   tagIndex,
-		CellWidth:  cellWidth,
-		CellHeight: cellHeight,
-		BaseFolder: path.Join(indexBaseFolder, GridIndexFolder),
+		TagIndex:             tagIndex,
+		CellWidth:            cellWidth,
+		CellHeight:           cellHeight,
+		BaseFolder:           path.Join(indexBaseFolder, GridIndexFolder),
+		checkFeatureValidity: checkFeatureValidity,
 	}
 }
 
@@ -388,7 +390,10 @@ func (g *GridIndex) readFeaturesFromCellData(output chan []*EncodedFeature, data
 			keys:     encodedKeys,
 			values:   encodedValues,
 		}
-		g.checkValidity(feature)
+		if g.checkFeatureValidity {
+			sigolo.Debugf("Check validity of feature %d", feature.ID)
+			g.checkValidity(feature)
+		}
 
 		outputBuffer[currentBufferPos] = feature
 		currentBufferPos++

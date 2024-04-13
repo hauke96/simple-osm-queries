@@ -10,24 +10,24 @@ import (
 	"soq/query"
 )
 
-func StartServer(port string, indexBaseFolder string, defaultCellSize float64) {
-	r := initRouter(indexBaseFolder, defaultCellSize)
+func StartServer(port string, indexBaseFolder string, defaultCellSize float64, checkFeatureValidity bool) {
+	r := initRouter(indexBaseFolder, defaultCellSize, checkFeatureValidity)
 	sigolo.Infof("Start server with TLS support on port %s", port)
 	err := http.ListenAndServe(":"+port, r)
 	sigolo.FatalCheck(err)
 }
 
-func StartServerTls(port string, certFile string, keyFile string, indexBaseFolder string, defaultCellSize float64) {
-	r := initRouter(indexBaseFolder, defaultCellSize)
+func StartServerTls(port string, certFile string, keyFile string, indexBaseFolder string, defaultCellSize float64, checkFeatureValidity bool) {
+	r := initRouter(indexBaseFolder, defaultCellSize, checkFeatureValidity)
 	sigolo.Infof("Start server without TLS support on port %s", port)
 	err := http.ListenAndServeTLS(":"+port, certFile, keyFile, r)
 	sigolo.FatalCheck(err)
 }
 
-func initRouter(indexBaseFolder string, defaultCellSize float64) *mux.Router {
+func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureValidity bool) *mux.Router {
 	tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 	sigolo.FatalCheck(err)
-	geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, tagIndex)
+	geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, checkFeatureValidity, tagIndex)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/app", func(writer http.ResponseWriter, request *http.Request) {

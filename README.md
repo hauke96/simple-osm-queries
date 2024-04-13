@@ -20,7 +20,7 @@ Performance comparison (as of 2024-04-13; SSD + 10 year old Intel Xeon E3-1231 v
 TODO
 
 Performance comparison:
-* The query `bbox(1.640,45.489,19.198,57.807).nodes{ amenity=bench AND seats=* }` (whole Germany using `germany-latext.osm.pbf`) takes ~2.5 min. (SSD + 10 year old Intel Xeon E3-1231 v3). The same query takes ~1.5 min. using Overpass.
+* The query `bbox(1.640,45.489,19.198,57.807).nodes{ amenity=bench AND seats=* }` (whole Germany using `germany-latext.osm.pbf`) takes ~1:35 min. (SSD + 10 year old Intel Xeon E3-1231 v3), which is about the same using Overpass.
 
 ### Server
 

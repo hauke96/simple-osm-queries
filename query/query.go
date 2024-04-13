@@ -169,11 +169,13 @@ func (b *BboxLocationExpression) IsWithin(feature *index.EncodedFeature) bool {
 	if sigolo.ShouldLogTrace() {
 		sigolo.Tracef("BboxLocationExpression: IsWithin((%s), %v)", b.string(), feature.Geometry)
 	}
+
 	switch geometry := feature.Geometry.(type) {
 	case *orb.Point:
 		return b.bbox.Contains(*geometry)
 	}
-	return false
+
+	panic(errors.Errorf("Unknown or unsupported geometry type %s", feature.Geometry.GeoJSONType()))
 }
 
 func (b *BboxLocationExpression) Print(indent int) {
@@ -215,18 +217,21 @@ type LogicalFilterExpression struct {
 
 func (f LogicalFilterExpression) Applies(feature *index.EncodedFeature) bool {
 	sigolo.Tracef("LogicalFilterExpression: Operator %d", f.operator)
+
 	switch f.operator {
 	case LogicOpOr:
 		return f.statementA.Applies(feature) || f.statementB.Applies(feature)
 	case LogicOpAnd:
 		return f.statementA.Applies(feature) && f.statementB.Applies(feature)
 	}
+
 	panic(errors.Errorf("Unknown or unsupported logical operator %d", f.operator))
 }
 
 func (f LogicalFilterExpression) Print(indent int) {
-	sigolo.Debugf("%s%s", spacing(indent), f.operator.string())
+	sigolo.Debugf("%sLogicalFilter:", spacing(indent))
 	f.statementA.Print(indent + 2)
+	sigolo.Debugf("%sAND", spacing(indent))
 	f.statementB.Print(indent + 2)
 }
 
@@ -237,7 +242,10 @@ type TagFilterExpression struct {
 }
 
 func (f TagFilterExpression) Applies(feature *index.EncodedFeature) bool {
-	sigolo.Tracef("TagFilterExpression: %d%s%d", f.key, f.operator.string(), f.value)
+	if sigolo.ShouldLogTrace() {
+		sigolo.Tracef("TagFilterExpression: %d%s%d", f.key, f.operator.string(), f.value)
+	}
+
 	if !feature.HasKey(f.key) {
 		return false
 	}
@@ -270,7 +278,10 @@ type KeyFilterExpression struct {
 }
 
 func (f KeyFilterExpression) Applies(feature *index.EncodedFeature) bool {
-	sigolo.Tracef("TagFilterExpression: HasKey(%d)=%v?", f.key, f.shouldBeSet)
+	if sigolo.ShouldLogTrace() {
+		sigolo.Tracef("TagFilterExpression: HasKey(%d)=%v?", f.key, f.shouldBeSet)
+	}
+
 	return feature.HasKey(f.key) == f.shouldBeSet
 }
 

@@ -23,12 +23,14 @@ var cli struct {
 		Input string `help:"The input file. Either .osm or .osm.pbf." placeholder:"<input-file>" arg:"" type:"existingfile"`
 	} `cmd:"" help:"Imports the given OSM file to use it in queries."`
 	Query struct {
-		Query string `help:"The query string." placeholder:"<query>" arg:""`
+		Query                string `help:"The query string." placeholder:"<query>" arg:""`
+		CheckFeatureValidity bool   `help: "Check the technical validity of each feature. Decreases performance noticeably!"`
 	} `cmd:"" help:"Returns the OSM data for the given query."`
 	Server struct {
-		Port        string `help:"The port this server should listen to." short:"p"`
-		SslCertFile string `help: "The certificate file for SSL."`
-		SslKeyFile  string `help: "The key file for SSL."`
+		Port                 string `help:"The port this server should listen to." short:"p"`
+		SslCertFile          string `help: "The certificate file for SSL."`
+		SslKeyFile           string `help: "The key file for SSL."`
+		CheckFeatureValidity bool   `help: "Check the technical validity of each feature. Decreases performance noticeably!"`
 	} `cmd:"" help:"Returns the OSM data for the given query."`
 }
 
@@ -68,6 +70,8 @@ func main() {
 	}
 
 	if cli.DiagnosticsProfiling {
+		sigolo.Info("Activate CPU profiling")
+
 		f, err := os.Create("profiling.prof")
 		sigolo.FatalCheck(err)
 
@@ -84,7 +88,7 @@ func main() {
 		tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 		sigolo.FatalCheck(err)
 
-		geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, tagIndex)
+		geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, cli.Query.CheckFeatureValidity, tagIndex)
 
 		q, err := query.ParseQueryString(`
 //bbox(9.99549,53.55688,9.99569,53.55701)
@@ -108,9 +112,9 @@ bbox(9.9713,53.5354,10.0160,53.5608)
 		sigolo.SetDefaultFormatFunctionAll(sigolo.LogDefaultStatic)
 		sigolo.Info("Starting server ...")
 		if cli.Server.SslCertFile != "" && cli.Server.SslKeyFile != "" {
-			web.StartServerTls(cli.Server.Port, cli.Server.SslCertFile, cli.Server.SslKeyFile, indexBaseFolder, defaultCellSize)
+			web.StartServerTls(cli.Server.Port, cli.Server.SslCertFile, cli.Server.SslKeyFile, indexBaseFolder, defaultCellSize, cli.Server.CheckFeatureValidity)
 		} else {
-			web.StartServer(cli.Server.Port, indexBaseFolder, defaultCellSize)
+			web.StartServer(cli.Server.Port, indexBaseFolder, defaultCellSize, cli.Server.CheckFeatureValidity)
 		}
 	default:
 		sigolo.Errorf("Unknown command '%s'", ctx.Command())
