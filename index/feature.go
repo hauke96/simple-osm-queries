@@ -107,6 +107,7 @@ func WriteFeaturesAsGeoJson(encodedFeatures []*EncodedFeature, tagIndex *TagInde
 	for _, encodedFeature := range encodedFeatures {
 		feature := geojson.NewFeature(encodedFeature.Geometry)
 
+		feature.Properties["osm_id"] = encodedFeature.ID
 		for keyIndex := 0; keyIndex < len(encodedFeature.keys)*8; keyIndex++ {
 			if !encodedFeature.HasKey(keyIndex) {
 				continue

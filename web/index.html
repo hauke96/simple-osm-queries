@@ -34,6 +34,21 @@
                 resize: none;
             }
 
+            table {
+                width: 100%;
+                /*border: 1px solid lightgray;*/
+            }
+
+            th, td {
+                text-align: left;
+                padding: 0.25em;
+            }
+
+            table, th, td {
+                border: 1px solid #dddddd;
+                border-collapse: collapse;
+            }
+
             button {
                 width: 150px;
                 height: 2.5em;
@@ -70,10 +85,67 @@
             .error {
                 color: red;
             }
+
+            .ol-grayscale-layer {
+                filter: grayscale(50%);
+            }
+
+            .ol-popup {
+                position: absolute;
+                background-color: white;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+                padding: 1em;
+                /*border-radius: 10px;*/
+                border: 1px solid #bbbbbb;
+                bottom: 12px;
+                left: -50px;
+                min-width: 280px;
+            }
+
+            .ol-popup:after, .ol-popup:before {
+                top: 100%;
+                border: solid transparent;
+                content: " ";
+                height: 0;
+                width: 0;
+                position: absolute;
+                pointer-events: none;
+            }
+
+            .ol-popup:after {
+                border-top-color: white;
+                border-width: 10px;
+                left: 48px;
+                margin-left: -10px;
+            }
+
+            .ol-popup:before {
+                border-top-color: #cccccc;
+                border-width: 11px;
+                left: 48px;
+                margin-left: -11px;
+            }
+
+            .ol-popup-closer {
+                text-decoration: none;
+                position: absolute;
+                top: 4px;
+                right: 9px;
+            }
+
+            .ol-popup-closer:after {
+                content: "✕";
+                color: black;
+            }
         </style>
     </head>
 
     <body>
+        <div id="popup" class="ol-popup">
+            <a href="#" id="popup-closer" class="ol-popup-closer"></a>
+            <div id="popup-content"></div>
+        </div>
+
         <div class="sidepanel">
             <h1>Query editor</h1>
             <div class="button-container">
@@ -85,21 +157,35 @@
                     <button id="send-button">Send</button>
                 </div>
             </div>
+            <p id="info-label" class="label">Write your query below and click "Send" to execute it.</p>
             <p id="loading-label" class="label">Loading ...</p>
             <p id="error-internal-label" class="label error">Internal error during request</p>
             <p id="error-request-label" class="label error">Request failed, the query is probably wrong</p>
+
             <textarea id="query-input"></textarea>
         </div>
         <div id="map" class="map"></div>
     </body>
 
     <script type="text/javascript">
+        const container = document.getElementById("popup");
+        const content = document.getElementById("popup-content");
+        const closer = document.getElementById("popup-closer");
+        const overlay = new ol.Overlay({
+            element: container,
+            autoPan: {
+                animation: {
+                    duration: 250,
+                },
+            },
+        });
+
         // Set default values
-        document.getElementById('export-button').disabled = true;
-        document.getElementById('loading-label').style.visibility = "hidden";
-        document.getElementById('error-internal-label').style.visibility = "collapse";
-        document.getElementById('error-request-label').style.visibility = "collapse";
-        document.getElementById('query-input').value = "//bbox(9.9713,53.5354,10.01711,53.58268)\n" +
+        document.getElementById("export-button").disabled = true;
+        document.getElementById("loading-label").style.visibility = "collapse";
+        document.getElementById("error-internal-label").style.visibility = "collapse";
+        document.getElementById("error-request-label").style.visibility = "collapse";
+        document.getElementById("query-input").value = "//bbox(9.9713,53.5354,10.01711,53.58268)\n" +
             "bbox({{bbox}}).nodes{\n" +
             "  amenity=bench AND seats=*\n" +
             "}";
@@ -109,36 +195,95 @@
                 format: new ol.format.GeoJSON()
             }),
             zIndex: 10,
-            visible: true
+            visible: true,
+            style: new ol.style.Style({
+                image: new ol.style.Circle({
+                    fill: new ol.style.Fill({
+                        color: "#fff1766a",
+                    }),
+                    stroke: new ol.style.Stroke({
+                        color: "#e64a19",
+                        width: 1.5,
+                    }),
+                    radius: 7,
+                }),
+            })
         });
         let lastQueryResponseGeoJSON = "";
 
-        var map = new ol.Map({
-            target: 'map',
+        let map = new ol.Map({
+            target: "map",
             layers: [
                 new ol.layer.Tile({
-                    source: new ol.source.OSM()
+                    source: new ol.source.OSM(),
+                    className: "ol-grayscale-layer"
                 }),
                 dataLayer,
             ],
             view: new ol.View({
                 center: ol.proj.fromLonLat([9.9889, 53.5492]),
                 zoom: 15
-            })
+            }),
+            overlays: [overlay]
         });
+
+        /*
+        Selection of features
+         */
+        const selectedStyle = new ol.style.Style({
+            image: new ol.style.Circle({
+                fill: new ol.style.Fill({
+                    color: "#fff176",
+                }),
+                stroke: new ol.style.Stroke({
+                    color: "#0288d1",
+                    width: 3,
+                }),
+                radius: 8,
+            }),
+        });
+        const selectInteraction = new ol.interaction.Select({style: selectedStyle});
+        map.addInteraction(selectInteraction);
+        selectInteraction.on("select", function (evt) {
+            if (selectInteraction.getFeatures().getLength() === 0) {
+                overlay.setPosition(undefined);
+                closer.blur();
+                selectInteraction.getFeatures().clear();
+                return;
+            }
+
+            const feature = selectInteraction.getFeatures().item(0);
+            const coordinate = feature.getGeometry().getCoordinates();
+
+            let innerHTML = "<p>Object with ID " + feature.getProperties()["osm_id"] + ":</p>\n<table>\n<tr><th>Key</th><th>Value</th></tr>\n";
+            for (let p of Object.entries(feature.getProperties()).filter(p => p[0] != "geometry" && p[0] != "osm_id")) {
+                innerHTML += "<tr><td><a href='https://wiki.openstreetmap.org/wiki/Key:" + p[0] + "'>" + p[0] + "</a></td><td>" + p[1] + "</td></tr>\n";
+            }
+            innerHTML += "</table>";
+            content.innerHTML = innerHTML;
+
+            overlay.setPosition(coordinate);
+        });
+        closer.onclick = function () {
+            overlay.setPosition(undefined);
+            closer.blur();
+            selectInteraction.getFeatures().clear();
+            return false;
+        };
 
         function getCurrentBbox() {
             return ol.proj.transformExtent(map.getView().calculateExtent(), "EPSG:3857", "EPSG:4326")
         }
 
         document.getElementById("send-button").addEventListener("click", () => {
-            document.getElementById('export-button').disabled = true;
-            document.getElementById('send-button').disabled = true;
-            document.getElementById('loading-label').style.visibility = "visible";
-            document.getElementById('error-internal-label').style.visibility = "collapse";
-            document.getElementById('error-request-label').style.visibility = "collapse";
+            document.getElementById("export-button").disabled = true;
+            document.getElementById("send-button").disabled = true;
+            document.getElementById("loading-label").style.visibility = "visible";
+            document.getElementById("info-label").style.visibility = "collapse";
+            document.getElementById("error-internal-label").style.visibility = "collapse";
+            document.getElementById("error-request-label").style.visibility = "collapse";
 
-            let query = document.getElementById('query-input').value;
+            let query = document.getElementById("query-input").value;
             query = query.replace("{{bbox}}", "" + getCurrentBbox());
             console.log("Send query:", query);
 
@@ -151,36 +296,36 @@
             })
                 .then((response) => response.text())
                 .then(responseText => {
-                    console.log("Response", responseText);
-                    const features = new ol.format.GeoJSON({featureProjection: 'EPSG:3857'}).readFeatures(responseText);
-                    console.log("Features", features);
+                    const features = new ol.format.GeoJSON({featureProjection: "EPSG:3857"}).readFeatures(responseText);
 
                     dataLayer.getSource().clear();
                     dataLayer.getSource().addFeatures(features);
 
                     lastQueryResponseGeoJSON = responseText;
-                    document.getElementById('export-button').disabled = false;
-                    document.getElementById('send-button').disabled = false;
-                    document.getElementById('loading-label').style.visibility = "hidden";
-                    document.getElementById('error-internal-label').style.visibility = "collapse";
-                    document.getElementById('error-request-label').style.visibility = "collapse";
+                    document.getElementById("export-button").disabled = false;
+                    document.getElementById("send-button").disabled = false;
+                    document.getElementById("loading-label").style.visibility = "collapse";
+                    document.getElementById("error-internal-label").style.visibility = "collapse";
+                    document.getElementById("error-request-label").style.visibility = "collapse";
+                    document.getElementById("info-label").style.visibility = "visible";
+                    document.getElementById("info-label").textContent = "✓ Found " + features.length + " features."
                 })
                 .catch(err => {
                     console.error(err);
-                    document.getElementById('export-button').disabled = false;
-                    document.getElementById('send-button').disabled = false;
-                    document.getElementById('loading-label').style.visibility = "collapse";
+                    document.getElementById("export-button").disabled = false;
+                    document.getElementById("send-button").disabled = false;
+                    document.getElementById("loading-label").style.visibility = "collapse";
                     if (err.status >= 400 && err.status < 500) {
-                        document.getElementById('error-request-label').style.visibility = "visible";
+                        document.getElementById("error-request-label").style.visibility = "visible";
                     } else {
-                        document.getElementById('error-internal-label').style.visibility = "visible";
+                        document.getElementById("error-internal-label").style.visibility = "visible";
                     }
                 });
         });
 
         document.getElementById("export-button").addEventListener("click", () => {
             const link = document.createElement("a");
-            const file = new Blob([lastQueryResponseGeoJSON], {type: 'application/json'});
+            const file = new Blob([lastQueryResponseGeoJSON], {type: "application/json"});
             link.href = URL.createObjectURL(file);
             link.download = "output.geojson";
             link.click();
@@ -188,7 +333,6 @@
         });
 
         document.getElementById("copy-extent-button").addEventListener("click", () => {
-            console.log(getCurrentBbox());
             navigator.clipboard.writeText(bbox);
         });
     </script>
