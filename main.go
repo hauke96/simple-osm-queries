@@ -24,13 +24,13 @@ var cli struct {
 	} `cmd:"" help:"Imports the given OSM file to use it in queries."`
 	Query struct {
 		Query                string `help:"The query string." placeholder:"<query>" arg:""`
-		CheckFeatureValidity bool   `help: "Check the technical validity of each feature. Decreases performance noticeably!"`
+		CheckFeatureValidity bool   `help:"Check the technical validity of each feature. Decreases performance noticeably!"`
 	} `cmd:"" help:"Returns the OSM data for the given query."`
 	Server struct {
 		Port                 string `help:"The port this server should listen to." short:"p"`
-		SslCertFile          string `help: "The certificate file for SSL."`
-		SslKeyFile           string `help: "The key file for SSL."`
-		CheckFeatureValidity bool   `help: "Check the technical validity of each feature. Decreases performance noticeably!"`
+		SslCertFile          string `help:"The certificate file for SSL."`
+		SslKeyFile           string `help:"The key file for SSL."`
+		CheckFeatureValidity bool   `help:"Check the technical validity of each feature. Decreases performance noticeably!"`
 	} `cmd:"" help:"Returns the OSM data for the given query."`
 }
 

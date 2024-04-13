@@ -26,6 +26,10 @@ type EncodedFeature struct {
 }
 
 func (f *EncodedFeature) HasKey(keyIndex int) bool {
+	if keyIndex == -1 {
+		return false
+	}
+
 	bin := keyIndex / 8 // Element of the array
 
 	// In case a key is requested that not even exists in the current bin, then if course the key is not set.

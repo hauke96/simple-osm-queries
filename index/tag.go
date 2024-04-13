@@ -13,8 +13,10 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const TagIndexFilename = "tag-index"
@@ -212,6 +214,36 @@ func (i *TagIndex) GetIndicesFromKeyValueStrings(key string, value string) (int,
 	return NotFound, NotFound
 }
 
+// GetNextLowerValueIndexForKey returns the next smaller value for the given key-index and value. The boolean is set
+// to "false" when a smaller value has been found. If the exact value exists, then the exact value will be returned with
+// the boolean set to "true".
+// TODO This is not optimal. Rewrite this when custom sorting algorithm is implemented.
+func (i *TagIndex) GetNextLowerValueIndexForKey(key int, value string) (int, bool) {
+	valueNumeric := 0.0
+	if isNumber(value) {
+		valueNumeric, _ = strconv.ParseFloat(value, 64)
+	}
+
+	for idx, v := range i.valueMap[key] {
+		if !isNumber(v) {
+			continue
+		}
+
+		vNumeric, _ := strconv.ParseFloat(v, 64)
+		if vNumeric == valueNumeric {
+			// The exact value exists, so we return it.
+			return idx, true
+		} else if vNumeric > valueNumeric {
+			// This is the first value from the map that is larger than the given one -> the previous value is therefore
+			// the next lower one for the given parameter.
+			return idx - 1, false
+		}
+	}
+
+	// Found no larger one -> The largest value in the value map for the given key is the next smaller one for the given parameter.
+	return len(i.valueMap[key]) - 1, false
+}
+
 // GetKeyFromIndex returns the string representation of the given key index.
 func (i *TagIndex) GetKeyFromIndex(key int) string {
 	return i.keyMap[key]
@@ -324,4 +356,30 @@ func (i *TagIndex) updateValueReverseMap() {
 			i.valueReverseMap[keyIndex][value] = valueIndex
 		}
 	}
+}
+
+func isNumber(s string) bool {
+	containsDecimalPoint := false
+
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return false
+	}
+
+	for i, c := range s {
+		if c == '-' && i != 0 {
+			// A dash is only allowed at the beginning
+			return false
+		} else if c == '.' {
+			if containsDecimalPoint {
+				// Decimal point already found -> invalid since two decimal points do not make sense
+				return false
+			}
+			containsDecimalPoint = true
+		} else if !unicode.IsDigit(c) {
+			return false
+		}
+	}
+
+	return true
 }

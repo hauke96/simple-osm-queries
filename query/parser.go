@@ -347,6 +347,7 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			// We're on the key (e.g. "highway" in "highway=primary")
 			key := token.lexeme
 			keyPos := token.startPosition
+			keyIndex := p.tagIndex.GetKeyIndexFromKeyString(key)
 
 			// Parse operator (e.g. "=" in "highway=primary")
 			p.moveToNextToken()
@@ -354,31 +355,53 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			if err != nil {
 				return nil, err
 			}
-			token = p.currentToken()
-			binaryOperatorLexeme := token.lexeme
+			binaryOperatorToken := p.currentToken()
 
 			// Parse value (e.g. "primary" in "highway=primary")
-			token = p.moveToNextToken()
-			if token == nil {
-				return nil, errors.Errorf("Expected value after key '%s' but token stream ended", key+binaryOperatorLexeme)
+			valueToken := p.moveToNextToken()
+			if valueToken == nil {
+				return nil, errors.Errorf("Expected value after key '%s' but token stream ended", key+binaryOperatorToken.lexeme)
 			}
-			if token.kind != TokenKindKeyword && token.kind != TokenKindNumber && token.kind != TokenKindString && token.kind != TokenKindWildcard {
-				return nil, errors.Errorf("Expected value after key '%s' but found kind=%d with lexeme=%s at pos=%d", key+binaryOperatorLexeme, token.kind, token.lexeme, token.startPosition)
+			if valueToken.kind != TokenKindKeyword && valueToken.kind != TokenKindNumber && valueToken.kind != TokenKindString && valueToken.kind != TokenKindWildcard {
+				return nil, errors.Errorf("Expected value after key '%s' but found kind=%d with lexeme=%s at pos=%d", key+binaryOperatorToken.lexeme, valueToken.kind, valueToken.lexeme, valueToken.startPosition)
 			}
-			value := token.lexeme
 
-			if token.kind == TokenKindWildcard {
+			if valueToken.kind == TokenKindWildcard {
 				if binaryOperator != BinOpEqual && binaryOperator != BinOpNotEqual {
-					return nil, errors.Errorf("Expected '=' or '!=' operator when using wildcard but found kind=%d with lexeme=%s at pos=%d", token.kind, token.lexeme, token.startPosition)
+					return nil, errors.Errorf("Expected '=' or '!=' operator when using wildcard but found kind=%d with lexeme=%s at pos=%d", valueToken.kind, valueToken.lexeme, valueToken.startPosition)
 				}
 
-				keyIndex := p.tagIndex.GetKeyIndexFromKeyString(key)
 				expression = &KeyFilterExpression{
 					key:         keyIndex,
 					shouldBeSet: binaryOperator == BinOpEqual,
 				}
 			} else {
-				keyIndex, valueIndex := p.tagIndex.GetIndicesFromKeyValueStrings(key, value)
+				_, valueIndex := p.tagIndex.GetIndicesFromKeyValueStrings(key, valueToken.lexeme)
+
+				if valueIndex == index.NotFound && binaryOperator.isComparisonOperator() {
+					// Search for next smaller value and adjust binary operator. It can happen that we search for e.g.
+					// "width>=2.5" but the exact value "2.5" doesn't exist. Then we have to adjust the expression to
+					// "width>2" in case "2" is the next lower existing value for "2.5".
+					valueIndex, _ = p.tagIndex.GetNextLowerValueIndexForKey(keyIndex, valueToken.lexeme)
+
+					if valueIndex == index.NotFound {
+						// There is no lower value, the valueToken already contains a value lower than the lowest value
+						// in the tag index.
+						// TODO
+					} else {
+						// We found the next lower value for the given valueToken. We now might have to adjust the
+						// binary operator so that the meaning of the expression is still correct.
+						if binaryOperator == BinOpGreaterEqual {
+							// Example: "width>=2.5"  ->  "width>2"
+							binaryOperator = BinOpGreater
+						} else if binaryOperator == BinOpLower {
+							// Example: "width<2.5"  ->  "width<=2"
+							binaryOperator = BinOpLowerEqual
+						}
+						// All other operators are ok, they do not distort/falsify the result of the expression.
+					}
+				}
+
 				expression = &TagFilterExpression{
 					key:      keyIndex,
 					value:    valueIndex,

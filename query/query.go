@@ -60,6 +60,12 @@ func (o BinaryOperator) string() string {
 	return fmt.Sprintf("[!UNKNOWN BinaryOperator %d]", o)
 }
 
+// isComparisonOperator returns true for operators >, >=, < and <=. The = and != operators are considered "equality" but
+// not comparison operators.
+func (o BinaryOperator) isComparisonOperator() bool {
+	return o == BinOpGreater || o == BinOpGreaterEqual || o == BinOpLower || o == BinOpLowerEqual
+}
+
 type LogicalOperator int
 
 const (

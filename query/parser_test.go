@@ -426,6 +426,90 @@ func TestParser_parseNextExpression_expressionInsideParenthesesMissinClose(t *te
 	util.AssertNil(t, expression)
 }
 
+func TestParser_parseNextExpression_determineNextSmallerValue_greaterThanOperator(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: TokenKindKeyword, lexeme: "width", startPosition: 0},
+			{kind: TokenKindOperator, lexeme: ">=", startPosition: 5},
+			{kind: TokenKindNumber, lexeme: "2.5", startPosition: 7},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"width"},
+			[][]string{{"2", "2.2", "2.5test", "3"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, expression)
+	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
+	util.AssertTrue(t, isTagFilterExpression)
+	util.AssertEqual(t, 0, tagFilterExpression.key)
+	util.AssertEqual(t, 2, tagFilterExpression.value)
+	util.AssertEqual(t, BinOpGreater, tagFilterExpression.operator)
+}
+
+func TestParser_parseNextExpression_determineNextSmallerValue_lowerOperatorOnHugeValue(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: TokenKindKeyword, lexeme: "width", startPosition: 0},
+			{kind: TokenKindOperator, lexeme: "<", startPosition: 5},
+			{kind: TokenKindNumber, lexeme: "100", startPosition: 7},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"width"},
+			[][]string{{"2", "2.2", "3", "50test"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, expression)
+	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
+	util.AssertTrue(t, isTagFilterExpression)
+	util.AssertEqual(t, 0, tagFilterExpression.key)
+	util.AssertEqual(t, 3, tagFilterExpression.value)
+	util.AssertEqual(t, BinOpLowerEqual, tagFilterExpression.operator)
+}
+
+func TestParser_parseNextExpression_determineNextSmallerValue_equalOperator(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: TokenKindKeyword, lexeme: "width", startPosition: 0},
+			{kind: TokenKindOperator, lexeme: "=", startPosition: 5},
+			{kind: TokenKindNumber, lexeme: "2.5", startPosition: 6},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"width"},
+			[][]string{{"2", "2.2", "3"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, expression)
+	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
+	util.AssertTrue(t, isTagFilterExpression)
+	util.AssertEqual(t, 0, tagFilterExpression.key)
+	util.AssertEqual(t, -1, tagFilterExpression.value)
+	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
+}
+
 func TestParser_parseBinaryOperator_invalidAndNotExistingToken(t *testing.T) {
 	// Arrange
 	parser := &Parser{
