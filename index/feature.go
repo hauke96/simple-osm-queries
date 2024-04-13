@@ -4,6 +4,7 @@ import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geojson"
+	"github.com/paulmach/osm"
 	"github.com/pkg/errors"
 	"io"
 	"os"
@@ -23,6 +24,9 @@ type EncodedFeature struct {
 	// representation of the value. This means the amount of entries in this array is equal to the amount of ones in
 	// the keys bit-string.
 	values []int
+
+	// A list of all nodes of the way. These nodes only contain their ID, lat and lon.
+	nodes osm.WayNodes // TODO Refactor this to create an EncodedNode and EncodedWay. This EncodedFeature is then the superclass.
 }
 
 func (f *EncodedFeature) HasKey(keyIndex int) bool {

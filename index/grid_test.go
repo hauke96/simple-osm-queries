@@ -102,7 +102,7 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 			result = append(result, features...)
 		}
 	}()
-	gridIndex.readFeaturesFromCellData(outputChannel, f.Bytes())
+	gridIndex.readNodesFromCellData(outputChannel, f.Bytes())
 	close(outputChannel)
 
 	// Assert
