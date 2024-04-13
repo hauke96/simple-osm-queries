@@ -171,16 +171,10 @@
         const container = document.getElementById("popup");
         const content = document.getElementById("popup-content");
         const closer = document.getElementById("popup-closer");
-        const overlay = new ol.Overlay({
-            element: container,
-            autoPan: {
-                animation: {
-                    duration: 250,
-                },
-            },
-        });
 
-        // Set default values
+        /*
+        Set default values
+         */
         document.getElementById("export-button").disabled = true;
         document.getElementById("loading-label").style.visibility = "collapse";
         document.getElementById("error-internal-label").style.visibility = "collapse";
@@ -189,6 +183,18 @@
             "bbox({{bbox}}).nodes{\n" +
             "  amenity=bench AND seats=*\n" +
             "}";
+
+        /*
+        Create map
+         */
+        const overlay = new ol.Overlay({
+            element: container,
+            autoPan: {
+                animation: {
+                    duration: 0,
+                },
+            },
+        });
 
         const dataLayer = new ol.layer.Vector({
             source: new ol.source.Vector({
@@ -205,7 +211,7 @@
                         color: "#e64a19",
                         width: 1.5,
                     }),
-                    radius: 7,
+                    radius: 5,
                 }),
             })
         });
@@ -230,6 +236,13 @@
         /*
         Selection of features
          */
+        closer.onclick = function () {
+            overlay.setPosition(undefined);
+            closer.blur();
+            selectInteraction.getFeatures().clear();
+            return false;
+        };
+
         const selectedStyle = new ol.style.Style({
             image: new ol.style.Circle({
                 fill: new ol.style.Fill({
@@ -264,12 +277,6 @@
 
             overlay.setPosition(coordinate);
         });
-        closer.onclick = function () {
-            overlay.setPosition(undefined);
-            closer.blur();
-            selectInteraction.getFeatures().clear();
-            return false;
-        };
 
         function getCurrentBbox() {
             return ol.proj.transformExtent(map.getView().calculateExtent(), "EPSG:3857", "EPSG:4326")
