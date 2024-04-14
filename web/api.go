@@ -40,11 +40,11 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 
 		queryBytes, err := io.ReadAll(request.Body)
 		if err != nil {
-			sigolo.Errorf("Error reding HTTP body of request to '/query': %v", err)
+			sigolo.Errorf("Error reding HTTP body of request to '/query': %+v", err)
 			writer.WriteHeader(http.StatusInternalServerError)
 			_, err = writer.Write([]byte("Error reading HTTP body."))
 			if err != nil {
-				sigolo.Errorf("Error writing error response: %v", err)
+				sigolo.Errorf("Error writing error response: %+v", err)
 			}
 			return
 		}
@@ -61,22 +61,22 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 
 		queryObj, err := query.ParseQueryString(queryString, tagIndex, geometryIndex)
 		if err != nil {
-			sigolo.Errorf("Error parsing query: %v", err)
+			sigolo.Errorf("Error parsing query: %+v", err)
 			writer.WriteHeader(http.StatusBadRequest)
-			_, err = writer.Write([]byte(fmt.Sprintf("Error parsing query: %v", err)))
+			_, err = writer.Write([]byte(fmt.Sprintf("Error parsing query: %+v", err)))
 			if err != nil {
-				sigolo.Errorf("Error writing error response: %v", err)
+				sigolo.Errorf("Error writing error response: %+v", err)
 			}
 			return
 		}
 
 		features, err := queryObj.Execute(geometryIndex)
 		if err != nil {
-			sigolo.Errorf("Error executing query: %v", err)
+			sigolo.Errorf("Error executing query: %+v", err)
 			writer.WriteHeader(http.StatusInternalServerError)
-			_, err = writer.Write([]byte(fmt.Sprintf("Error executing query: %v", err)))
+			_, err = writer.Write([]byte(fmt.Sprintf("Error executing query: %+v", err)))
 			if err != nil {
-				sigolo.Errorf("Error writing error response: %v", err)
+				sigolo.Errorf("Error writing error response: %+v", err)
 			}
 			return
 		}
@@ -85,11 +85,11 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 
 		err = ownIo.WriteFeaturesAsGeoJson(features, tagIndex, writer)
 		if err != nil {
-			sigolo.Errorf("Error writing query result: %v", err)
+			sigolo.Errorf("Error writing query result: %+v", err)
 			writer.WriteHeader(http.StatusInternalServerError)
-			_, err = writer.Write([]byte(fmt.Sprintf("Error writing query result: %v", err)))
+			_, err = writer.Write([]byte(fmt.Sprintf("Error writing query result: %+v", err)))
 			if err != nil {
-				sigolo.Errorf("Error writing error response: %v", err)
+				sigolo.Errorf("Error writing error response: %+v", err)
 			}
 			return
 		}

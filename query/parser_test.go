@@ -2,6 +2,7 @@ package query
 
 import (
 	"github.com/paulmach/orb"
+	"soq/feature"
 	"soq/index"
 	"soq/util"
 	"testing"
@@ -159,7 +160,7 @@ func TestParser_parseOsmObjectType(t *testing.T) {
 
 	// Assert
 	util.AssertNil(t, err)
-	util.AssertEqual(t, OsmObjNode, objectType)
+	util.AssertEqual(t, feature.OsmObjNode, objectType)
 	util.AssertEqual(t, 0, parser.index)
 }
 

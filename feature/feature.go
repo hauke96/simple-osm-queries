@@ -7,6 +7,7 @@ import (
 )
 
 type EncodedFeature interface {
+	// TODO Refactor these functions, only keep those that are needed
 	GetID() uint64
 	GetGeometry() orb.Geometry
 	GetKeys() []byte
@@ -49,8 +50,8 @@ func featureHasKey(f EncodedFeature, keyIndex int) bool {
 	return f.GetKeys()[bin]&(1<<idxInBin) != 0
 }
 
-// FeatureGetValueIndex returns the value index (numerical representation of the actual value) for a given key index. This
-// function assumes that the key is set on the feature. Use HasKey to check this.
+// featureGetValueIndex returns the value index (numerical representation of the actual value) for a given key index. This
+// function assumes that the key is set on the feature. Use featureHasKey to check this.
 func featureGetValueIndex(f EncodedFeature, keyIndex int) int {
 	// Go through all bits to count the number of 1's.
 	// TODO This can probably be optimised by preprocessing this (i.e. map from keyIndex to position in values array)
@@ -97,35 +98,35 @@ type EncodedNodeFeature struct {
 	AbstractEncodedFeature
 }
 
-func (f EncodedNodeFeature) GetID() uint64 {
+func (f *EncodedNodeFeature) GetID() uint64 {
 	return f.ID
 }
 
-func (f EncodedNodeFeature) GetGeometry() orb.Geometry {
+func (f *EncodedNodeFeature) GetGeometry() orb.Geometry {
 	return f.Geometry
 }
 
-func (f EncodedNodeFeature) GetKeys() []byte {
+func (f *EncodedNodeFeature) GetKeys() []byte {
 	return f.Keys
 }
 
-func (f EncodedNodeFeature) GetValues() []int {
+func (f *EncodedNodeFeature) GetValues() []int {
 	return f.Values
 }
 
-func (f EncodedNodeFeature) HasKey(keyIndex int) bool {
+func (f *EncodedNodeFeature) HasKey(keyIndex int) bool {
 	return featureHasKey(f, keyIndex)
 }
 
-func (f EncodedNodeFeature) GetValueIndex(keyIndex int) int {
+func (f *EncodedNodeFeature) GetValueIndex(keyIndex int) int {
 	return featureGetValueIndex(f, keyIndex)
 }
 
-func (f EncodedNodeFeature) HasTag(keyIndex int, valueIndex int) bool {
+func (f *EncodedNodeFeature) HasTag(keyIndex int, valueIndex int) bool {
 	return featureHasTag(f, keyIndex, valueIndex)
 }
 
-func (f EncodedNodeFeature) Print() {
+func (f *EncodedNodeFeature) Print() {
 	featurePrint(f)
 }
 
@@ -136,38 +137,38 @@ type EncodedWayFeature struct {
 	Nodes osm.WayNodes
 }
 
-func (f EncodedWayFeature) GetNodes() osm.WayNodes {
+func (f *EncodedWayFeature) GetNodes() osm.WayNodes {
 	return f.Nodes
 }
 
-func (f EncodedWayFeature) GetID() uint64 {
+func (f *EncodedWayFeature) GetID() uint64 {
 	return f.ID
 }
 
-func (f EncodedWayFeature) GetGeometry() orb.Geometry {
+func (f *EncodedWayFeature) GetGeometry() orb.Geometry {
 	return f.Geometry
 }
 
-func (f EncodedWayFeature) GetKeys() []byte {
+func (f *EncodedWayFeature) GetKeys() []byte {
 	return f.Keys
 }
 
-func (f EncodedWayFeature) GetValues() []int {
+func (f *EncodedWayFeature) GetValues() []int {
 	return f.Values
 }
 
-func (f EncodedWayFeature) HasKey(keyIndex int) bool {
+func (f *EncodedWayFeature) HasKey(keyIndex int) bool {
 	return featureHasKey(f, keyIndex)
 }
 
-func (f EncodedWayFeature) GetValueIndex(keyIndex int) int {
+func (f *EncodedWayFeature) GetValueIndex(keyIndex int) int {
 	return featureGetValueIndex(f, keyIndex)
 }
 
-func (f EncodedWayFeature) HasTag(keyIndex int, valueIndex int) bool {
+func (f *EncodedWayFeature) HasTag(keyIndex int, valueIndex int) bool {
 	return featureHasTag(f, keyIndex, valueIndex)
 }
 
-func (f EncodedWayFeature) Print() {
+func (f *EncodedWayFeature) Print() {
 	featurePrint(f)
 }
