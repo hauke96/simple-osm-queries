@@ -236,6 +236,45 @@ func TestParser_parseNextExpression_simpleTagFilter(t *testing.T) {
 	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
 }
 
+func TestParser_parseNextExpression_simpleInnerStatement(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: TokenKindKeyword, lexeme: "this", startPosition: 0},
+			{kind: TokenKindExpressionSeparator, lexeme: ".", startPosition: 4},
+			{kind: TokenKindKeyword, lexeme: "ways", startPosition: 5},
+			{kind: TokenKindOpeningBraces, lexeme: "{", startPosition: 9},
+			{kind: TokenKindKeyword, lexeme: "a", startPosition: 10},
+			{kind: TokenKindOperator, lexeme: "=", startPosition: 11},
+			{kind: TokenKindKeyword, lexeme: "b", startPosition: 12},
+			{kind: TokenKindClosingBraces, lexeme: "}", startPosition: 13},
+		},
+		index: -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex(
+			[]string{"a"},
+			[][]string{{"b"}},
+		),
+	}
+
+	// Act
+	expression, err := parser.parseNextExpression()
+
+	// Assert
+	util.AssertNil(t, err)
+	util.AssertNotNil(t, expression)
+
+	subStatementExpression, isSubStatementExpression := expression.(*SubStatementFilterExpression)
+	util.AssertTrue(t, isSubStatementExpression)
+	util.AssertNotNil(t, subStatementExpression.statement)
+	util.AssertNotNil(t, subStatementExpression.statement.filter)
+
+	tagFilterExpression, isTagFilterExpression := subStatementExpression.statement.filter.(*TagFilterExpression)
+	util.AssertTrue(t, isTagFilterExpression)
+	util.AssertEqual(t, 0, tagFilterExpression.key)
+	util.AssertEqual(t, 0, tagFilterExpression.value)
+	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
+}
+
 func TestParser_parseNextExpression_simpleKeyFilter(t *testing.T) {
 	// Arrange
 	parser := &Parser{

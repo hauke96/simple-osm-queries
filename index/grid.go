@@ -555,7 +555,6 @@ func (g *GridIndex) readWaysFromCellData(output chan []*EncodedFeature, data []b
 		/*
 			Read the keys and tags of the feature
 		*/
-
 		encodedKeys := make([]byte, numEncodedKeyBytes)
 		encodedValues := make([]int, numValues)
 		copy(encodedKeys[:], data[pos+headerBytesCount:])

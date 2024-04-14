@@ -101,7 +101,7 @@ bbox(9.9713,53.5354,10.0160,53.5608)
 `, tagIndex, geometryIndex)
 		sigolo.FatalCheck(err)
 
-		features, err := q.Execute()
+		features, err := q.Execute(geometryIndex)
 		sigolo.FatalCheck(err)
 
 		sigolo.Infof("Found %d features", len(features))

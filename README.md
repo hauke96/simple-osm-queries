@@ -63,7 +63,7 @@ bbox(1, 2, 3, 4).nodes{
     (amenity = bench OR amenity = waste_basket) AND
     // ... have any highway-way within a 5m radius.
     this.buffer(5m).ways{
-        highway = *
+        highway=*
     }
 }
 ```
@@ -88,7 +88,7 @@ Get all nodes with a house number that are part of a building outline:
 bbox(1, 2, 3, 4).nodes{
     addr:housenumber = * AND
     this.ways{
-        building = *
+        building=*
     }
 }
 ```
