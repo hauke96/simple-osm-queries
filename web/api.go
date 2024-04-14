@@ -69,7 +69,7 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 			return
 		}
 
-		features, err := queryObj.Execute()
+		features, err := queryObj.Execute(geometryIndex)
 		if err != nil {
 			sigolo.Errorf("Error executing query: %v", err)
 			writer.WriteHeader(http.StatusInternalServerError)

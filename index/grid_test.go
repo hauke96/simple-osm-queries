@@ -20,10 +20,12 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 	}
 
 	geometry := &orb.Point{1.23, 2.34}
-	feature := &EncodedFeature{
-		Geometry: geometry,
-		keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
-		values:   []int{5, 1, 9},   // One value per "1" in "keys"
+	feature := &EncodedNodeFeature{
+		AbstractEncodedFeature: AbstractEncodedFeature{
+			Geometry: geometry,
+			keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
+			values:   []int{5, 1, 9},   // One value per "1" in "keys"
+		},
 	}
 	osmId := osm.NodeID(123)
 
@@ -80,11 +82,13 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	}
 
 	geometry := &orb.Point{1.23, 2.34}
-	originalFeature := &EncodedFeature{
-		ID:       123,
-		Geometry: geometry,
-		keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
-		values:   []int{0, 1, 0},   // One value per "1" in "keys"
+	originalFeature := &EncodedNodeFeature{
+		AbstractEncodedFeature: AbstractEncodedFeature{
+			ID:       123,
+			Geometry: geometry,
+			keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
+			values:   []int{0, 1, 0},   // One value per "1" in "keys"
+		},
 	}
 	osmId := osm.NodeID(123)
 
@@ -93,8 +97,8 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	err := gridIndex.writeNodeData(osmId, originalFeature, f)
 	util.AssertNil(t, err)
 
-	outputChannel := make(chan []*EncodedFeature)
-	var result []*EncodedFeature
+	outputChannel := make(chan []EncodedFeature)
+	var result []EncodedFeature
 
 	// Act
 	go func() {
@@ -114,9 +118,9 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	}
 
 	feature := result[0]
-	util.AssertEqual(t, 1, len(feature.keys))
-	util.AssertEqual(t, originalFeature.keys[0], feature.keys[0])
-	util.AssertEqual(t, originalFeature.values, feature.values)
-	util.AssertApprox(t, originalFeature.Geometry.(*orb.Point).Lon(), feature.Geometry.(*orb.Point).Lon(), 0.0001)
-	util.AssertApprox(t, originalFeature.Geometry.(*orb.Point).Lat(), feature.Geometry.(*orb.Point).Lat(), 0.0001)
+	util.AssertEqual(t, 1, len(feature.getKeys()))
+	util.AssertEqual(t, originalFeature.keys[0], feature.getKeys()[0])
+	util.AssertEqual(t, originalFeature.values, feature.getValues())
+	util.AssertApprox(t, originalFeature.GetGeometry().(*orb.Point).Lon(), feature.GetGeometry().(*orb.Point).Lon(), 0.0001)
+	util.AssertApprox(t, originalFeature.GetGeometry().(*orb.Point).Lat(), feature.GetGeometry().(*orb.Point).Lat(), 0.0001)
 }

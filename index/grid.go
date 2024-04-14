@@ -71,7 +71,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	sigolo.Info("Start processing geometries from input data")
 	importStartTime := time.Now()
 
-	var feature *EncodedFeature
+	var feature EncodedFeature
 	var cellX, cellY int
 
 	g.cacheFileHandles = map[string]*os.File{}
@@ -134,7 +134,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	return nil
 }
 
-func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, feature *EncodedFeature) error {
+func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, feature EncodedFeature) error {
 	var f io.Writer
 	var err error
 
@@ -146,7 +146,7 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 		if err != nil {
 			return err
 		}
-		err = g.writeNodeData(osmObj.ID, feature, f)
+		err = g.writeNodeData(osmObj.ID, feature.(*EncodedNodeFeature), f)
 		if err != nil {
 			return errors.Wrapf(err, "Unable to write node %d to cell x=%d, y=%d", osmObj.ID, cellX, cellY)
 		}
@@ -156,7 +156,7 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 		if err != nil {
 			return err
 		}
-		err = g.writeWayData(osmObj.ID, osmObj.Nodes, feature, f)
+		err = g.writeWayData(osmObj.ID, osmObj.Nodes, feature.(*EncodedWayFeature), f)
 		if err != nil {
 			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", osmObj.ID, cellX, cellY)
 		}
@@ -223,7 +223,7 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 	return writer, nil
 }
 
-func (g *GridIndex) writeNodeData(osmId osm.NodeID, feature *EncodedFeature, f io.Writer) error {
+func (g *GridIndex) writeNodeData(osmId osm.NodeID, feature *EncodedNodeFeature, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -257,7 +257,7 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, feature *EncodedFeature, f i
 
 	data := make([]byte, byteCount)
 
-	point := feature.Geometry.(orb.Point)
+	point := feature.GetGeometry().(orb.Point)
 
 	binary.LittleEndian.PutUint64(data[0:], uint64(osmId))
 	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(point.Lon())))
@@ -282,7 +282,7 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, feature *EncodedFeature, f i
 	return nil
 }
 
-func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, feature *EncodedFeature, f io.Writer) error {
+func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, feature *EncodedWayFeature, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -365,7 +365,7 @@ func (g *GridIndex) getCellIdForCoordinate(x float64, y float64) (int, int) {
 	return int(x / g.CellWidth), int(y / g.CellHeight)
 }
 
-func (g *GridIndex) toEncodedFeature(obj osm.Object) *EncodedFeature {
+func (g *GridIndex) toEncodedFeature(obj osm.Object) EncodedFeature {
 	var tags osm.Tags
 	var geometry orb.Geometry
 	var osmId uint64
@@ -385,20 +385,22 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) *EncodedFeature {
 
 	encodedKeys, encodedValues := g.TagIndex.encodeTags(tags)
 
-	return &EncodedFeature{
-		ID:       osmId,
-		Geometry: geometry,
-		keys:     encodedKeys,
-		values:   encodedValues,
+	return &EncodedNodeFeature{
+		AbstractEncodedFeature{
+			ID:       osmId,
+			Geometry: geometry,
+			keys:     encodedKeys,
+			values:   encodedValues,
+		},
 	}
 }
 
-func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []*EncodedFeature, error) {
+func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []EncodedFeature, error) {
 	sigolo.Debugf("Get feature from bbox=%#v", bbox)
 	minCellX, minCellY := g.getCellIdForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
 	maxCellX, maxCellY := g.getCellIdForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
 
-	resultChannel := make(chan []*EncodedFeature, 10)
+	resultChannel := make(chan []EncodedFeature, 10)
 
 	numThreads := 3
 	var wg sync.WaitGroup
@@ -432,7 +434,7 @@ func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []*EncodedFeat
 	return resultChannel, nil
 }
 
-func (g *GridIndex) getFeaturesForCells(output chan []*EncodedFeature, wg *sync.WaitGroup, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
+func (g *GridIndex) getFeaturesForCells(output chan []EncodedFeature, wg *sync.WaitGroup, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
 	sigolo.Tracef("Get feature for cell column from=%d, to=%d", minCellX, maxCellX)
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
@@ -446,7 +448,7 @@ func (g *GridIndex) getFeaturesForCells(output chan []*EncodedFeature, wg *sync.
 }
 
 // readFeaturesFromCellFile reads all features from the specified cell and writes them periodically to the output channel.
-func (g *GridIndex) readFeaturesFromCellFile(output chan []*EncodedFeature, cellX int, cellY int, objectType string) error {
+func (g *GridIndex) readFeaturesFromCellFile(output chan []EncodedFeature, cellX int, cellY int, objectType string) error {
 	cellFolderName := path.Join(g.BaseFolder, objectType, strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
 
@@ -475,8 +477,8 @@ func (g *GridIndex) readFeaturesFromCellFile(output chan []*EncodedFeature, cell
 	return nil
 }
 
-func (g *GridIndex) readNodesFromCellData(output chan []*EncodedFeature, data []byte) {
-	outputBuffer := make([]*EncodedFeature, 1000)
+func (g *GridIndex) readNodesFromCellData(output chan []EncodedFeature, data []byte) {
+	outputBuffer := make([]EncodedFeature, 1000)
 	currentBufferPos := 0
 	totalReadFeatures := 0
 
@@ -503,11 +505,13 @@ func (g *GridIndex) readNodesFromCellData(output chan []*EncodedFeature, data []
 			encodedValues[i] = int(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16)
 		}
 
-		feature := &EncodedFeature{
-			ID:       osmId,
-			Geometry: &orb.Point{float64(lon), float64(lat)},
-			keys:     encodedKeys,
-			values:   encodedValues,
+		feature := &EncodedWayFeature{
+			AbstractEncodedFeature: AbstractEncodedFeature{
+				ID:       osmId,
+				Geometry: &orb.Point{float64(lon), float64(lat)},
+				keys:     encodedKeys,
+				values:   encodedValues,
+			},
 		}
 		if g.checkFeatureValidity {
 			sigolo.Debugf("Check validity of feature %d", feature.ID)
@@ -519,7 +523,7 @@ func (g *GridIndex) readNodesFromCellData(output chan []*EncodedFeature, data []
 
 		if currentBufferPos == len(outputBuffer)-1 {
 			output <- outputBuffer
-			outputBuffer = make([]*EncodedFeature, len(outputBuffer))
+			outputBuffer = make([]EncodedFeature, len(outputBuffer))
 			currentBufferPos = 0
 		}
 
@@ -530,8 +534,8 @@ func (g *GridIndex) readNodesFromCellData(output chan []*EncodedFeature, data []
 	output <- outputBuffer
 }
 
-func (g *GridIndex) readWaysFromCellData(output chan []*EncodedFeature, data []byte) {
-	outputBuffer := make([]*EncodedFeature, 1000)
+func (g *GridIndex) readWaysFromCellData(output chan []EncodedFeature, data []byte) {
+	outputBuffer := make([]EncodedFeature, 1000)
 	currentBufferPos := 0
 	totalReadFeatures := 0
 
@@ -588,24 +592,26 @@ func (g *GridIndex) readWaysFromCellData(output chan []*EncodedFeature, data []b
 		for _, node := range nodes {
 			lineString = append(lineString, orb.Point{node.Lon, node.Lat})
 		}
-		feature := &EncodedFeature{
-			ID:       osmId,
-			keys:     encodedKeys,
-			values:   encodedValues,
-			nodes:    nodes,
-			Geometry: lineString,
+		feature := EncodedWayFeature{
+			AbstractEncodedFeature: AbstractEncodedFeature{
+				ID:       osmId,
+				keys:     encodedKeys,
+				values:   encodedValues,
+				Geometry: lineString,
+			},
+			nodes: nodes,
 		}
 		if g.checkFeatureValidity {
 			sigolo.Debugf("Check validity of feature %d", feature.ID)
-			g.checkValidity(feature)
+			g.checkValidity(&feature)
 		}
 
-		outputBuffer[currentBufferPos] = feature
+		outputBuffer[currentBufferPos] = &feature
 		currentBufferPos++
 
 		if currentBufferPos == len(outputBuffer)-1 {
 			output <- outputBuffer
-			outputBuffer = make([]*EncodedFeature, len(outputBuffer))
+			outputBuffer = make([]EncodedFeature, len(outputBuffer))
 			currentBufferPos = 0
 		}
 
@@ -616,25 +622,25 @@ func (g *GridIndex) readWaysFromCellData(output chan []*EncodedFeature, data []b
 	output <- outputBuffer
 }
 
-func (g *GridIndex) checkValidity(feature *EncodedFeature) {
+func (g *GridIndex) checkValidity(feature EncodedFeature) {
 	// Check keys
-	if len(feature.keys) > len(g.TagIndex.keyMap) {
-		sigolo.Fatalf("Invalid length of keys in feature %d: Expected less than %d but found %d", feature.ID, len(g.TagIndex.keyMap), len(feature.keys))
+	if len(feature.getKeys()) > len(g.TagIndex.keyMap) {
+		sigolo.Fatalf("Invalid length of keys in feature %d: Expected less than %d but found %d", feature.GetID(), len(g.TagIndex.keyMap), len(feature.getKeys()))
 	}
 
 	// Check values
 	numberOfSetKeys := 0
-	for keyIndex := 0; keyIndex < len(feature.keys)*8; keyIndex++ {
+	for keyIndex := 0; keyIndex < len(feature.getKeys())*8; keyIndex++ {
 		if feature.HasKey(keyIndex) {
 			valueIndex := feature.GetValueIndex(keyIndex)
 			if valueIndex > len(g.TagIndex.valueMap[keyIndex])-1 {
-				sigolo.Fatalf("Invalid key value found in feature %d: keyIndex=%d, valueIndex=%d, allowedMaxValueIndex=%d", feature.ID, keyIndex, valueIndex, len(g.TagIndex.valueMap[keyIndex])-1)
+				sigolo.Fatalf("Invalid key value found in feature %d: keyIndex=%d, valueIndex=%d, allowedMaxValueIndex=%d", feature.GetID(), keyIndex, valueIndex, len(g.TagIndex.valueMap[keyIndex])-1)
 			}
 			numberOfSetKeys++
 		}
 	}
 
-	if numberOfSetKeys > len(feature.values) {
-		sigolo.Fatalf("Invalid number of value indices found in feature %d: Expected %d values but found %d", feature.ID, len(feature.values)-1, numberOfSetKeys)
+	if numberOfSetKeys > len(feature.getValues()) {
+		sigolo.Fatalf("Invalid number of value indices found in feature %d: Expected %d values but found %d", feature.GetID(), len(feature.getValues())-1, numberOfSetKeys)
 	}
 }
