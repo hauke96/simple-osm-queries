@@ -5,6 +5,7 @@ import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/pkg/errors"
+	"reflect"
 	"soq/index"
 	"strings"
 	"time"
@@ -236,12 +237,17 @@ func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.Geometr
 		Supported expressions for relations: .nodes .ways .relations
 	*/
 
-	// TODO request the feature for the given context and objectType
-	return nil, errors.New("Not yet implemented")
+	switch feature := context.(type) {
+	case index.EncodedWayFeature:
+		return geometryIndex.GetNodes(feature.GetNodes())
+	}
+
+	return nil, errors.Errorf("Encoded feature type '%s' of context object not supported", reflect.TypeOf(context).String())
 }
 
 func (e *ContextAwareLocationExpression) IsWithin(feature index.EncodedFeature) (bool, error) {
-	panic("Not yet implemented")
+	// TODO Is this ok? See statement TODOs regarding the necessity of this function call.
+	return true, nil
 }
 
 func (e *ContextAwareLocationExpression) Print(indent int) {

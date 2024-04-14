@@ -141,6 +141,10 @@ type EncodedWayFeature struct {
 	nodes osm.WayNodes
 }
 
+func (f EncodedWayFeature) GetNodes() osm.WayNodes {
+	return f.nodes
+}
+
 func (f EncodedWayFeature) GetID() uint64 {
 	return f.ID
 }
