@@ -205,7 +205,7 @@
             style: new ol.style.Style({
                 stroke: new ol.style.Stroke({
                     color: "#e64a19",
-                    width: 1.5,
+                    width: 2,
                 }),
                 image: new ol.style.Circle({
                     fill: new ol.style.Fill({
@@ -248,6 +248,10 @@
         };
 
         const selectedStyle = new ol.style.Style({
+            stroke: new ol.style.Stroke({
+                color: "#0288d1",
+                width: 3,
+            }),
             image: new ol.style.Circle({
                 fill: new ol.style.Fill({
                     color: "#fff176",
@@ -270,7 +274,7 @@
             }
 
             const feature = selectInteraction.getFeatures().item(0);
-            const coordinate = feature.getGeometry().getCoordinates();
+            const coordinate = ol.extent.getCenter(feature.getGeometry().getExtent());
 
             let innerHTML = "<p>Object with ID " + feature.getProperties()["osm_id"] + ":</p>\n<table>\n<tr><th>Key</th><th>Value</th></tr>\n";
             for (let p of Object.entries(feature.getProperties()).filter(p => p[0] != "geometry" && p[0] != "osm_id")) {
