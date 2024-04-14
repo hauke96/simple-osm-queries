@@ -19,7 +19,7 @@ const (
 	OsmObjRelation
 )
 
-func (o OsmObjectType) string() string {
+func (o OsmObjectType) String() string {
 	switch o {
 	case OsmObjNode:
 		return "node"
@@ -183,7 +183,7 @@ func (s Statement) Execute(context index.EncodedFeature) ([]index.EncodedFeature
 func (s Statement) Print(indent int) {
 	sigolo.Debugf("%s%s", spacing(indent), "Statement")
 	s.location.Print(indent + 2)
-	sigolo.Debugf("%stype: %s", spacing(indent+2), s.objectType.string())
+	sigolo.Debugf("%stype: %s", spacing(indent+2), s.objectType.String())
 	s.filter.Print(indent + 2)
 }
 
@@ -202,8 +202,8 @@ type BboxLocationExpression struct {
 }
 
 func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context index.EncodedFeature, objectType OsmObjectType) (chan []index.EncodedFeature, error) {
-	// TODO Find a better solution than ".string()" for object types
-	return geometryIndex.Get(b.bbox, objectType.string())
+	// TODO Find a better solution than ".String()" for object types
+	return geometryIndex.Get(b.bbox, objectType.String())
 }
 
 func (b *BboxLocationExpression) IsWithin(feature index.EncodedFeature) (bool, error) {

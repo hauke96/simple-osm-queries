@@ -8,5 +8,5 @@ import (
 type GeometryIndex interface {
 	Import(filename string) error
 	Get(bbox *orb.Bound, objectType string) (chan []EncodedFeature, error)
-	GetNodes(nodeIds osm.WayNodes) (chan []EncodedFeature, error)
+	GetNodes(nodes osm.WayNodes) (chan []EncodedFeature, error)
 }

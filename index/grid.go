@@ -14,6 +14,8 @@ import (
 	"math"
 	"os"
 	"path"
+	"soq/query"
+	"soq/util"
 	"strconv"
 	"strings"
 	"sync"
@@ -428,6 +430,56 @@ func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []EncodedFeatu
 
 	go func() {
 		wg.Wait()
+		close(resultChannel)
+	}()
+
+	return resultChannel, nil
+}
+
+func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []EncodedFeature, error) {
+	cells := map[CellIndex][]uint64{} // just a lookup table to quickly see if a cell has already been collected
+	for _, node := range nodes {
+		cellX, cellY := g.getCellIdForCoordinate(node.Lon, node.Lat)
+		cellItem := CellIndex{cellX, cellY}
+		if _, ok := cells[cellItem]; !ok {
+			// New cell -> Create it and add first node ID
+			cells[cellItem] = []uint64{uint64(node.ID)}
+		} else {
+			// Cell has been seen before -> just add the new node ID
+			cells[cellItem] = append(cells[cellItem], uint64(node.ID))
+		}
+	}
+
+	var resultChannel = make(chan []EncodedFeature)
+
+	go func() {
+		var result []EncodedFeature
+
+		for cell, nodeIds := range cells {
+			var unfilteredFeatures = make(chan []EncodedFeature)
+
+			go func() {
+				for features := range unfilteredFeatures {
+					for _, feature := range features {
+						if util.Contains(nodeIds, feature.GetID()) {
+							result = append(result, feature)
+						}
+					}
+				}
+			}()
+
+			err := g.readFeaturesFromCellFile(unfilteredFeatures, cell[0], cell[1], query.OsmObjNode.String())
+			if err != nil {
+				sigolo.FatalCheck(err)
+			}
+
+			close(unfilteredFeatures)
+		}
+
+		if len(result) > 0 {
+			resultChannel <- result
+		}
+
 		close(resultChannel)
 	}()
 
