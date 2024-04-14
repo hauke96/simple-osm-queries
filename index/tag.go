@@ -69,9 +69,12 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 
 		key := splitLine[0]
 		values := splitLine[1]
-		values = strings.ReplaceAll(values, "\\n", "\n")
+		values = strings.ReplaceAll(values, "$$NEWLINE$$", "\n")
 		values = strings.ReplaceAll(values, "$$EQUAL$$", "=")
 		valueEntries := strings.Split(values, "|")
+		for j, value := range valueEntries {
+			valueEntries[j] = strings.ReplaceAll(value, "$$PIPE$$", "|")
+		}
 		sigolo.Tracef("Found key=%s with %d values", key, len(valueEntries))
 
 		keyMap = append(keyMap, key)
@@ -246,7 +249,7 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 		return ""
 	}
 	valueMap := i.valueMap[key]
-	if value >= len(i.valueMap) {
+	if value >= len(valueMap) {
 		return ""
 	}
 	return valueMap[value]
@@ -313,6 +316,9 @@ func (i *TagIndex) SaveToFile(filename string) error {
 
 func (i *TagIndex) WriteAsString(f io.Writer) error {
 	for keyIndex, values := range i.valueMap {
+		for j, value := range values {
+			values[j] = strings.ReplaceAll(value, "|", "$$PIPE$$")
+		}
 		valueString := strings.Join(values, "|")
 		valueString = strings.ReplaceAll(valueString, "\n", "$$NEWLINE$$")
 		valueString = strings.ReplaceAll(valueString, "=", "$$EQUAL$$")
@@ -335,7 +341,7 @@ func (i *TagIndex) Print() {
 	if err == nil {
 		sigolo.Tracef("Tag-index:\n%+v", buffer.String())
 	} else {
-		sigolo.Tracef("Error writing tag-index to string: %v", err)
+		sigolo.Tracef("Error writing tag-index to string: %+v", err)
 	}
 }
 
