@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"soq/index"
+	ownIo "soq/io"
 	"soq/query"
 )
 
@@ -82,7 +83,7 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 
 		sigolo.Debugf("Found %d features", len(features))
 
-		err = index.WriteFeaturesAsGeoJson(features, tagIndex, writer)
+		err = ownIo.WriteFeaturesAsGeoJson(features, tagIndex, writer)
 		if err != nil {
 			sigolo.Errorf("Error writing query result: %v", err)
 			writer.WriteHeader(http.StatusInternalServerError)

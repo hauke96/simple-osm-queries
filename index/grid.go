@@ -14,7 +14,7 @@ import (
 	"math"
 	"os"
 	"path"
-	"soq/query"
+	"soq/feature"
 	"soq/util"
 	"strconv"
 	"strings"
@@ -73,7 +73,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	sigolo.Info("Start processing geometries from input data")
 	importStartTime := time.Now()
 
-	var feature EncodedFeature
+	var encodedFeature feature.EncodedFeature
 	var cellX, cellY int
 
 	g.cacheFileHandles = map[string]*os.File{}
@@ -82,7 +82,7 @@ func (g *GridIndex) Import(inputFile string) error {
 
 	for scanner.Scan() {
 		obj := scanner.Object()
-		feature = g.toEncodedFeature(obj)
+		encodedFeature = g.toEncodedFeature(obj)
 		cells := map[CellIndex]CellIndex{} // just a lookup table to quickly see if a cell has already been collected
 
 		switch osmObj := obj.(type) {
@@ -108,7 +108,7 @@ func (g *GridIndex) Import(inputFile string) error {
 		//case *osm.Relation:
 
 		for _, cell := range cells {
-			err = g.writeOsmObjectToCell(cell[0], cell[1], obj, feature)
+			err = g.writeOsmObjectToCell(cell[0], cell[1], obj, encodedFeature)
 			if err != nil {
 				return err
 			}
@@ -136,7 +136,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	return nil
 }
 
-func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, feature EncodedFeature) error {
+func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, encodedFeature feature.EncodedFeature) error {
 	var f io.Writer
 	var err error
 
@@ -148,7 +148,7 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 		if err != nil {
 			return err
 		}
-		err = g.writeNodeData(osmObj.ID, feature.(*EncodedNodeFeature), f)
+		err = g.writeNodeData(osmObj.ID, encodedFeature.(*feature.EncodedNodeFeature), f)
 		if err != nil {
 			return errors.Wrapf(err, "Unable to write node %d to cell x=%d, y=%d", osmObj.ID, cellX, cellY)
 		}
@@ -158,7 +158,7 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, f
 		if err != nil {
 			return err
 		}
-		err = g.writeWayData(osmObj.ID, osmObj.Nodes, feature.(*EncodedWayFeature), f)
+		err = g.writeWayData(osmObj.ID, osmObj.Nodes, encodedFeature.(*feature.EncodedWayFeature), f)
 		if err != nil {
 			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", osmObj.ID, cellX, cellY)
 		}
@@ -225,7 +225,7 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 	return writer, nil
 }
 
-func (g *GridIndex) writeNodeData(osmId osm.NodeID, feature *EncodedNodeFeature, f io.Writer) error {
+func (g *GridIndex) writeNodeData(osmId osm.NodeID, encodedFeature *feature.EncodedNodeFeature, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -234,7 +234,7 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, feature *EncodedNodeFeature,
 		Bytes: |   8   |  4  |  4  |     4     |      4      | <num. keys> / 8 | <num. values> * 3 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
-		number of bytes in the keys array of the feature (i.e. "len(feature.keys)"). The encodedValue part, however,
+		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
 		is an int-array, therefore, we need the multiplication with 4.
 	*/
 
@@ -243,14 +243,14 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, feature *EncodedNodeFeature,
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
 	// by a factor of ten!
 	numKeys := 0
-	for i := 0; i < len(feature.keys); i++ {
-		if feature.keys[i] != 0 {
+	for i := 0; i < len(encodedFeature.GetKeys()); i++ {
+		if encodedFeature.GetKeys()[i] != 0 {
 			numKeys = i + 1
 		}
 	}
 
-	encodedKeyBytes := numKeys                   // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(feature.values) * 3 // Int array and int = 4 bytes
+	encodedKeyBytes := numKeys                               // Is already a byte-array -> no division by 8 needed
+	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
 
 	headerBytesCount := 8 + 4 + 4 + 4 + 4 // = 24
 	byteCount := headerBytesCount
@@ -259,23 +259,23 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, feature *EncodedNodeFeature,
 
 	data := make([]byte, byteCount)
 
-	point := feature.GetGeometry().(orb.Point)
+	point := encodedFeature.GetGeometry().(orb.Point)
 
 	binary.LittleEndian.PutUint64(data[0:], uint64(osmId))
 	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(point.Lon())))
 	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(point.Lat())))
 	binary.LittleEndian.PutUint32(data[16:], uint32(numKeys))
-	binary.LittleEndian.PutUint32(data[20:], uint32(len(feature.values)))
+	binary.LittleEndian.PutUint32(data[20:], uint32(len(encodedFeature.GetValues())))
 
-	copy(data[headerBytesCount:], feature.keys[0:numKeys])
-	for i, v := range feature.values {
+	copy(data[headerBytesCount:], encodedFeature.GetKeys()[0:numKeys])
+	for i, v := range encodedFeature.GetValues() {
 		b := data[headerBytesCount+encodedKeyBytes+i*3:]
 		b[0] = byte(v)
 		b[1] = byte(v >> 8)
 		b[2] = byte(v >> 16)
 	}
 
-	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d", osmId, point, byteCount, numKeys, len(feature.values))
+	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d", osmId, point, byteCount, numKeys, len(encodedFeature.GetValues()))
 
 	_, err := f.Write(data)
 	if err != nil {
@@ -284,7 +284,7 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, feature *EncodedNodeFeature,
 	return nil
 }
 
-func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, feature *EncodedWayFeature, f io.Writer) error {
+func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, encodedFeature *feature.EncodedWayFeature, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -293,7 +293,7 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, feature *E
 		Bytes: |   8   |     4     |      4      |      2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
-		number of bytes in the keys array of the feature (i.e. "len(feature.keys)"). The encodedValue part, however,
+		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
 		is an int-array, therefore, we need the multiplication with 4.
 
 		The nodes section contains all nodes, not only the ones within this cell. This enables geometric checks, even
@@ -306,15 +306,15 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, feature *E
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
 	// by a factor of ten!
 	numKeys := 0
-	for i := 0; i < len(feature.keys); i++ {
-		if feature.keys[i] != 0 {
+	for i := 0; i < len(encodedFeature.GetKeys()); i++ {
+		if encodedFeature.GetKeys()[i] != 0 {
 			numKeys = i + 1
 		}
 	}
 
-	encodedKeyBytes := numKeys                   // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(feature.values) * 3 // Int array and int = 4 bytes
-	nodeIdBytes := len(nodes) * 16               // Each ID is a 64-bit int
+	encodedKeyBytes := numKeys                               // Is already a byte-array -> no division by 8 needed
+	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
+	nodeIdBytes := len(nodes) * 16                           // Each ID is a 64-bit int
 
 	headerByteCount := 8 + 4 + 4 + 2
 	byteCount := headerByteCount
@@ -329,14 +329,14 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, feature *E
 	*/
 	binary.LittleEndian.PutUint64(data[0:], uint64(osmId))
 	binary.LittleEndian.PutUint32(data[8:], uint32(numKeys))
-	binary.LittleEndian.PutUint32(data[12:], uint32(len(feature.values)))
+	binary.LittleEndian.PutUint32(data[12:], uint32(len(encodedFeature.GetValues())))
 	binary.LittleEndian.PutUint16(data[16:], uint16(len(nodes)))
 
 	/*
 		Write keys and values
 	*/
-	copy(data[headerByteCount:], feature.keys[0:numKeys])
-	for i, v := range feature.values {
+	copy(data[headerByteCount:], encodedFeature.GetKeys()[0:numKeys])
+	for i, v := range encodedFeature.GetValues() {
 		b := data[headerByteCount+encodedKeyBytes+i*3:]
 		b[0] = byte(v)
 		b[1] = byte(v >> 8)
@@ -346,14 +346,14 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, feature *E
 	/*
 		Write nodes
 	*/
-	nodeIdStartIndex := headerByteCount + encodedKeyBytes + len(feature.values)*3
+	nodeIdStartIndex := headerByteCount + encodedKeyBytes + len(encodedFeature.GetValues())*3
 	for i, node := range nodes {
 		binary.LittleEndian.PutUint64(data[nodeIdStartIndex+i*16:], uint64(node.ID))
 		binary.LittleEndian.PutUint32(data[nodeIdStartIndex+i*16+8:], uint32(float32(node.Lon)))
 		binary.LittleEndian.PutUint32(data[nodeIdStartIndex+i*16+12:], uint32(float32(node.Lat)))
 	}
 
-	sigolo.Tracef("Write feature %d byteCount=%d, numKeys=%d, numValues=%d, numNodeIds=%d", osmId, byteCount, numKeys, len(feature.values), len(nodes))
+	sigolo.Tracef("Write feature %d byteCount=%d, numKeys=%d, numValues=%d, numNodeIds=%d", osmId, byteCount, numKeys, len(encodedFeature.GetValues()), len(nodes))
 
 	_, err := f.Write(data)
 	if err != nil {
@@ -367,7 +367,7 @@ func (g *GridIndex) getCellIdForCoordinate(x float64, y float64) (int, int) {
 	return int(x / g.CellWidth), int(y / g.CellHeight)
 }
 
-func (g *GridIndex) toEncodedFeature(obj osm.Object) EncodedFeature {
+func (g *GridIndex) toEncodedFeature(obj osm.Object) feature.EncodedFeature {
 	var tags osm.Tags
 	var geometry orb.Geometry
 	var osmId uint64
@@ -387,22 +387,22 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) EncodedFeature {
 
 	encodedKeys, encodedValues := g.TagIndex.encodeTags(tags)
 
-	return &EncodedNodeFeature{
-		AbstractEncodedFeature{
+	return &feature.EncodedNodeFeature{
+		feature.AbstractEncodedFeature{
 			ID:       osmId,
 			Geometry: geometry,
-			keys:     encodedKeys,
-			values:   encodedValues,
+			Keys:     encodedKeys,
+			Values:   encodedValues,
 		},
 	}
 }
 
-func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []EncodedFeature, error) {
+func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []feature.EncodedFeature, error) {
 	sigolo.Debugf("Get feature from bbox=%#v", bbox)
 	minCellX, minCellY := g.getCellIdForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
 	maxCellX, maxCellY := g.getCellIdForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
 
-	resultChannel := make(chan []EncodedFeature, 10)
+	resultChannel := make(chan []feature.EncodedFeature, 10)
 
 	numThreads := 3
 	var wg sync.WaitGroup
@@ -436,7 +436,7 @@ func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []EncodedFeatu
 	return resultChannel, nil
 }
 
-func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []EncodedFeature, error) {
+func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []feature.EncodedFeature, error) {
 	cells := map[CellIndex][]uint64{} // just a lookup table to quickly see if a cell has already been collected
 	for _, node := range nodes {
 		cellX, cellY := g.getCellIdForCoordinate(node.Lon, node.Lat)
@@ -450,25 +450,25 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []EncodedFeature, error) 
 		}
 	}
 
-	var resultChannel = make(chan []EncodedFeature)
+	var resultChannel = make(chan []feature.EncodedFeature)
 
 	go func() {
-		var result []EncodedFeature
+		var result []feature.EncodedFeature
 
 		for cell, nodeIds := range cells {
-			var unfilteredFeatures = make(chan []EncodedFeature)
+			var unfilteredFeatures = make(chan []feature.EncodedFeature)
 
 			go func() {
 				for features := range unfilteredFeatures {
-					for _, feature := range features {
-						if util.Contains(nodeIds, feature.GetID()) {
-							result = append(result, feature)
+					for _, encodedFeature := range features {
+						if util.Contains(nodeIds, encodedFeature.GetID()) {
+							result = append(result, encodedFeature)
 						}
 					}
 				}
 			}()
 
-			err := g.readFeaturesFromCellFile(unfilteredFeatures, cell[0], cell[1], query.OsmObjNode.String())
+			err := g.readFeaturesFromCellFile(unfilteredFeatures, cell[0], cell[1], feature.OsmObjNode.String())
 			if err != nil {
 				sigolo.FatalCheck(err)
 			}
@@ -486,7 +486,7 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []EncodedFeature, error) 
 	return resultChannel, nil
 }
 
-func (g *GridIndex) getFeaturesForCells(output chan []EncodedFeature, wg *sync.WaitGroup, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
+func (g *GridIndex) getFeaturesForCells(output chan []feature.EncodedFeature, wg *sync.WaitGroup, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
 	sigolo.Tracef("Get feature for cell column from=%d, to=%d", minCellX, maxCellX)
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
@@ -500,7 +500,7 @@ func (g *GridIndex) getFeaturesForCells(output chan []EncodedFeature, wg *sync.W
 }
 
 // readFeaturesFromCellFile reads all features from the specified cell and writes them periodically to the output channel.
-func (g *GridIndex) readFeaturesFromCellFile(output chan []EncodedFeature, cellX int, cellY int, objectType string) error {
+func (g *GridIndex) readFeaturesFromCellFile(output chan []feature.EncodedFeature, cellX int, cellY int, objectType string) error {
 	cellFolderName := path.Join(g.BaseFolder, objectType, strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
 
@@ -529,8 +529,8 @@ func (g *GridIndex) readFeaturesFromCellFile(output chan []EncodedFeature, cellX
 	return nil
 }
 
-func (g *GridIndex) readNodesFromCellData(output chan []EncodedFeature, data []byte) {
-	outputBuffer := make([]EncodedFeature, 1000)
+func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, data []byte) {
+	outputBuffer := make([]feature.EncodedFeature, 1000)
 	currentBufferPos := 0
 	totalReadFeatures := 0
 
@@ -557,25 +557,25 @@ func (g *GridIndex) readNodesFromCellData(output chan []EncodedFeature, data []b
 			encodedValues[i] = int(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16)
 		}
 
-		feature := &EncodedWayFeature{
-			AbstractEncodedFeature: AbstractEncodedFeature{
+		encodedFeature := &feature.EncodedWayFeature{
+			AbstractEncodedFeature: feature.AbstractEncodedFeature{
 				ID:       osmId,
 				Geometry: &orb.Point{float64(lon), float64(lat)},
-				keys:     encodedKeys,
-				values:   encodedValues,
+				Keys:     encodedKeys,
+				Values:   encodedValues,
 			},
 		}
 		if g.checkFeatureValidity {
-			sigolo.Debugf("Check validity of feature %d", feature.ID)
-			g.checkValidity(feature)
+			sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
+			g.checkValidity(encodedFeature)
 		}
 
-		outputBuffer[currentBufferPos] = feature
+		outputBuffer[currentBufferPos] = encodedFeature
 		currentBufferPos++
 
 		if currentBufferPos == len(outputBuffer)-1 {
 			output <- outputBuffer
-			outputBuffer = make([]EncodedFeature, len(outputBuffer))
+			outputBuffer = make([]feature.EncodedFeature, len(outputBuffer))
 			currentBufferPos = 0
 		}
 
@@ -586,8 +586,8 @@ func (g *GridIndex) readNodesFromCellData(output chan []EncodedFeature, data []b
 	output <- outputBuffer
 }
 
-func (g *GridIndex) readWaysFromCellData(output chan []EncodedFeature, data []byte) {
-	outputBuffer := make([]EncodedFeature, 1000)
+func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, data []byte) {
+	outputBuffer := make([]feature.EncodedFeature, 1000)
 	currentBufferPos := 0
 	totalReadFeatures := 0
 
@@ -644,26 +644,26 @@ func (g *GridIndex) readWaysFromCellData(output chan []EncodedFeature, data []by
 		for _, node := range nodes {
 			lineString = append(lineString, orb.Point{node.Lon, node.Lat})
 		}
-		feature := EncodedWayFeature{
-			AbstractEncodedFeature: AbstractEncodedFeature{
+		encodedFeature := feature.EncodedWayFeature{
+			AbstractEncodedFeature: feature.AbstractEncodedFeature{
 				ID:       osmId,
-				keys:     encodedKeys,
-				values:   encodedValues,
+				Keys:     encodedKeys,
+				Values:   encodedValues,
 				Geometry: lineString,
 			},
-			nodes: nodes,
+			Nodes: nodes,
 		}
 		if g.checkFeatureValidity {
-			sigolo.Debugf("Check validity of feature %d", feature.ID)
-			g.checkValidity(&feature)
+			sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
+			g.checkValidity(&encodedFeature)
 		}
 
-		outputBuffer[currentBufferPos] = &feature
+		outputBuffer[currentBufferPos] = &encodedFeature
 		currentBufferPos++
 
 		if currentBufferPos == len(outputBuffer)-1 {
 			output <- outputBuffer
-			outputBuffer = make([]EncodedFeature, len(outputBuffer))
+			outputBuffer = make([]feature.EncodedFeature, len(outputBuffer))
 			currentBufferPos = 0
 		}
 
@@ -674,25 +674,25 @@ func (g *GridIndex) readWaysFromCellData(output chan []EncodedFeature, data []by
 	output <- outputBuffer
 }
 
-func (g *GridIndex) checkValidity(feature EncodedFeature) {
+func (g *GridIndex) checkValidity(encodedFeature feature.EncodedFeature) {
 	// Check keys
-	if len(feature.getKeys()) > len(g.TagIndex.keyMap) {
-		sigolo.Fatalf("Invalid length of keys in feature %d: Expected less than %d but found %d", feature.GetID(), len(g.TagIndex.keyMap), len(feature.getKeys()))
+	if len(encodedFeature.GetKeys()) > len(g.TagIndex.keyMap) {
+		sigolo.Fatalf("Invalid length of keys in feature %d: Expected less than %d but found %d", encodedFeature.GetID(), len(g.TagIndex.keyMap), len(encodedFeature.GetKeys()))
 	}
 
 	// Check values
 	numberOfSetKeys := 0
-	for keyIndex := 0; keyIndex < len(feature.getKeys())*8; keyIndex++ {
-		if feature.HasKey(keyIndex) {
-			valueIndex := feature.GetValueIndex(keyIndex)
+	for keyIndex := 0; keyIndex < len(encodedFeature.GetKeys())*8; keyIndex++ {
+		if encodedFeature.HasKey(keyIndex) {
+			valueIndex := encodedFeature.GetValueIndex(keyIndex)
 			if valueIndex > len(g.TagIndex.valueMap[keyIndex])-1 {
-				sigolo.Fatalf("Invalid key value found in feature %d: keyIndex=%d, valueIndex=%d, allowedMaxValueIndex=%d", feature.GetID(), keyIndex, valueIndex, len(g.TagIndex.valueMap[keyIndex])-1)
+				sigolo.Fatalf("Invalid key value found in feature %d: keyIndex=%d, valueIndex=%d, allowedMaxValueIndex=%d", encodedFeature.GetID(), keyIndex, valueIndex, len(g.TagIndex.valueMap[keyIndex])-1)
 			}
 			numberOfSetKeys++
 		}
 	}
 
-	if numberOfSetKeys > len(feature.getValues()) {
-		sigolo.Fatalf("Invalid number of value indices found in feature %d: Expected %d values but found %d", feature.GetID(), len(feature.getValues())-1, numberOfSetKeys)
+	if numberOfSetKeys > len(encodedFeature.GetValues()) {
+		sigolo.Fatalf("Invalid number of value indices found in feature %d: Expected %d values but found %d", encodedFeature.GetID(), len(encodedFeature.GetValues())-1, numberOfSetKeys)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"runtime/pprof"
 	"soq/importing"
 	"soq/index"
+	"soq/io"
 	"soq/query"
 	"soq/web"
 	"strings"
@@ -106,7 +107,7 @@ bbox(9.9713,53.5354,10.0160,53.5608)
 
 		sigolo.Infof("Found %d features", len(features))
 
-		err = index.WriteFeaturesAsGeoJsonFile(features, tagIndex)
+		err = io.WriteFeaturesAsGeoJsonFile(features, tagIndex)
 		sigolo.FatalCheck(err)
 	case "server":
 		sigolo.SetDefaultFormatFunctionAll(sigolo.LogDefaultStatic)

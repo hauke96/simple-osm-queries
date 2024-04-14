@@ -1,4 +1,4 @@
-package index
+package feature
 
 import (
 	"soq/util"
@@ -7,10 +7,12 @@ import (
 
 func TestEncodedFeature_GetValueIndex(t *testing.T) {
 	// Arrange
-	feature := EncodedFeature{
-		Geometry: nil,
-		keys:     []byte{138}, // Little endian: 0101 0001 -> available key indices are 1, 3 and 7
-		values:   []int{5, 6, 7},
+	feature := EncodedNodeFeature{
+		AbstractEncodedFeature: AbstractEncodedFeature{
+			Geometry: nil,
+			Keys:     []byte{138}, // Little endian: 0101 0001 -> available key indices are 1, 3 and 7
+			Values:   []int{5, 6, 7},
+		},
 	}
 
 	// Act & Assert

@@ -4,6 +4,7 @@ import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/pkg/errors"
+	"soq/feature"
 	"soq/index"
 	"soq/util"
 	"strconv"
@@ -237,7 +238,7 @@ func (p *Parser) parseContextAwareLocationExpression() (*ContextAwareLocationExp
 	return &ContextAwareLocationExpression{}, nil
 }
 
-func (p *Parser) parseOsmObjectType() (OsmObjectType, error) {
+func (p *Parser) parseOsmObjectType() (feature.OsmObjectType, error) {
 	token := p.currentToken()
 	if token.kind != TokenKindKeyword {
 		return -1, errors.Errorf("Expected object type at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
@@ -245,11 +246,11 @@ func (p *Parser) parseOsmObjectType() (OsmObjectType, error) {
 
 	switch token.lexeme {
 	case objectTypeNodeExpression:
-		return OsmObjNode, nil
+		return feature.OsmObjNode, nil
 	case objectTypeWaysExpression:
-		return OsmObjWay, nil
+		return feature.OsmObjWay, nil
 	case objectTypeRelationsExpression:
-		return OsmObjRelation, nil
+		return feature.OsmObjRelation, nil
 	}
 
 	return -1, errors.Errorf("Expected object type at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)

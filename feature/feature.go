@@ -1,21 +1,16 @@
-package index
+package feature
 
 import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
-	"github.com/paulmach/orb/geojson"
 	"github.com/paulmach/osm"
-	"github.com/pkg/errors"
-	"io"
-	"os"
-	"time"
 )
 
 type EncodedFeature interface {
 	GetID() uint64
 	GetGeometry() orb.Geometry
-	getKeys() []byte
-	getValues() []int
+	GetKeys() []byte
+	GetValues() []int
 
 	HasKey(keyIndex int) bool
 	GetValueIndex(keyIndex int) int
@@ -30,12 +25,12 @@ type AbstractEncodedFeature struct {
 
 	// A bit-string defining which keys are set and which aren't. A 1 at index i says that the key with numeric
 	// representation i is set.
-	keys []byte
+	Keys []byte
 
 	// A list of all set values. The i-th entry corresponds to the i-th 1 in the keys bit-string and holds the numeric
 	// representation of the value. This means the amount of entries in this array is equal to the amount of ones in
 	// the keys bit-string.
-	values []int
+	Values []int
 }
 
 func featureHasKey(f EncodedFeature, keyIndex int) bool {
@@ -46,12 +41,12 @@ func featureHasKey(f EncodedFeature, keyIndex int) bool {
 	bin := keyIndex / 8 // Element of the array
 
 	// In case a key is requested that not even exists in the current bin, then if course the key is not set.
-	if bin > len(f.getKeys())-1 {
+	if bin > len(f.GetKeys())-1 {
 		return false
 	}
 
 	idxInBin := keyIndex % 8 // Bit position within the byte
-	return f.getKeys()[bin]&(1<<idxInBin) != 0
+	return f.GetKeys()[bin]&(1<<idxInBin) != 0
 }
 
 // FeatureGetValueIndex returns the value index (numerical representation of the actual value) for a given key index. This
@@ -63,13 +58,13 @@ func featureGetValueIndex(f EncodedFeature, keyIndex int) int {
 	for i := 0; i < keyIndex; i++ {
 		bin := i / 8      // Element of the array
 		idxInBin := i % 8 // Bit position within the byte
-		if f.getKeys()[bin]&(1<<idxInBin) != 0 {
+		if f.GetKeys()[bin]&(1<<idxInBin) != 0 {
 			// Key at "i" is set -> store its value
 			valueIndexPosition++
 		}
 	}
 
-	return f.getValues()[valueIndexPosition]
+	return f.GetValues()[valueIndexPosition]
 }
 
 func featureHasTag(f EncodedFeature, keyIndex int, valueIndex int) bool {
@@ -87,15 +82,15 @@ func featurePrint(f EncodedFeature) {
 
 	sigolo.Tracef("EncodedFeature:")
 	sigolo.Tracef("  id=%d", f.GetID())
-	sigolo.Tracef("  keys=%v", f.getKeys())
+	sigolo.Tracef("  keys=%v", f.GetKeys())
 	var setKeyBits []int
-	for i := 0; i < len(f.getKeys())*8; i++ {
+	for i := 0; i < len(f.GetKeys())*8; i++ {
 		if f.HasKey(i) {
 			setKeyBits = append(setKeyBits, i)
 		}
 	}
 	sigolo.Tracef("  set key bit positions=%v", setKeyBits)
-	sigolo.Tracef("  values=%v", f.getValues())
+	sigolo.Tracef("  values=%v", f.GetValues())
 }
 
 type EncodedNodeFeature struct {
@@ -110,12 +105,12 @@ func (f EncodedNodeFeature) GetGeometry() orb.Geometry {
 	return f.Geometry
 }
 
-func (f EncodedNodeFeature) getKeys() []byte {
-	return f.keys
+func (f EncodedNodeFeature) GetKeys() []byte {
+	return f.Keys
 }
 
-func (f EncodedNodeFeature) getValues() []int {
-	return f.values
+func (f EncodedNodeFeature) GetValues() []int {
+	return f.Values
 }
 
 func (f EncodedNodeFeature) HasKey(keyIndex int) bool {
@@ -138,11 +133,11 @@ type EncodedWayFeature struct {
 	AbstractEncodedFeature
 
 	// A list of all nodes of the way. These nodes only contain their ID, lat and lon.
-	nodes osm.WayNodes
+	Nodes osm.WayNodes
 }
 
 func (f EncodedWayFeature) GetNodes() osm.WayNodes {
-	return f.nodes
+	return f.Nodes
 }
 
 func (f EncodedWayFeature) GetID() uint64 {
@@ -153,12 +148,12 @@ func (f EncodedWayFeature) GetGeometry() orb.Geometry {
 	return f.Geometry
 }
 
-func (f EncodedWayFeature) getKeys() []byte {
-	return f.keys
+func (f EncodedWayFeature) GetKeys() []byte {
+	return f.Keys
 }
 
-func (f EncodedWayFeature) getValues() []int {
-	return f.values
+func (f EncodedWayFeature) GetValues() []int {
+	return f.Values
 }
 
 func (f EncodedWayFeature) HasKey(keyIndex int) bool {
@@ -175,59 +170,4 @@ func (f EncodedWayFeature) HasTag(keyIndex int, valueIndex int) bool {
 
 func (f EncodedWayFeature) Print() {
 	featurePrint(f)
-}
-
-func WriteFeaturesAsGeoJsonFile(encodedFeatures []EncodedFeature, tagIndex *TagIndex) error {
-	file, err := os.Create("output.geojson")
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		err = file.Close()
-		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for GeoJSON file %s", file.Name()))
-	}()
-
-	return WriteFeaturesAsGeoJson(encodedFeatures, tagIndex, file)
-}
-
-func WriteFeaturesAsGeoJson(encodedFeatures []EncodedFeature, tagIndex *TagIndex, writer io.Writer) error {
-	sigolo.Info("Write features to GeoJSON")
-	writeStartTime := time.Now()
-
-	featureCollection := geojson.NewFeatureCollection()
-	for _, encodedFeature := range encodedFeatures {
-		feature := geojson.NewFeature(encodedFeature.GetGeometry())
-
-		feature.Properties["osm_id"] = encodedFeature.GetID()
-		for keyIndex := 0; keyIndex < len(encodedFeature.getKeys())*8; keyIndex++ {
-			if !encodedFeature.HasKey(keyIndex) {
-				continue
-			}
-
-			valueIndex := encodedFeature.GetValueIndex(keyIndex)
-
-			keyString := tagIndex.GetKeyFromIndex(keyIndex)
-			valueString := tagIndex.GetValueForKey(keyIndex, valueIndex)
-
-			feature.Properties[keyString] = valueString
-		}
-
-		featureCollection.Features = append(featureCollection.Features, feature)
-	}
-
-	geojsonBytes, err := featureCollection.MarshalJSON()
-	if err != nil {
-		return err
-	}
-
-	_, err = writer.Write(geojsonBytes)
-	if err != nil {
-		return err
-	}
-
-	queryDuration := time.Since(writeStartTime)
-	sigolo.Infof("Finished writing in %s", queryDuration)
-
-	return nil
 }

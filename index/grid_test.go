@@ -6,6 +6,7 @@ import (
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
 	"math"
+	feature2 "soq/feature"
 	"soq/util"
 	"testing"
 )
@@ -20,8 +21,8 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 	}
 
 	geometry := &orb.Point{1.23, 2.34}
-	feature := &EncodedNodeFeature{
-		AbstractEncodedFeature: AbstractEncodedFeature{
+	feature := &feature2.EncodedNodeFeature{
+		AbstractEncodedFeature: feature2.AbstractEncodedFeature{
 			Geometry: geometry,
 			keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
 			values:   []int{5, 1, 9},   // One value per "1" in "keys"
@@ -82,8 +83,8 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	}
 
 	geometry := &orb.Point{1.23, 2.34}
-	originalFeature := &EncodedNodeFeature{
-		AbstractEncodedFeature: AbstractEncodedFeature{
+	originalFeature := &feature2.EncodedNodeFeature{
+		AbstractEncodedFeature: feature2.AbstractEncodedFeature{
 			ID:       123,
 			Geometry: geometry,
 			keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
@@ -97,8 +98,8 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	err := gridIndex.writeNodeData(osmId, originalFeature, f)
 	util.AssertNil(t, err)
 
-	outputChannel := make(chan []EncodedFeature)
-	var result []EncodedFeature
+	outputChannel := make(chan []feature2.EncodedFeature)
+	var result []feature2.EncodedFeature
 
 	// Act
 	go func() {
@@ -118,9 +119,9 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	}
 
 	feature := result[0]
-	util.AssertEqual(t, 1, len(feature.getKeys()))
-	util.AssertEqual(t, originalFeature.keys[0], feature.getKeys()[0])
-	util.AssertEqual(t, originalFeature.values, feature.getValues())
+	util.AssertEqual(t, 1, len(feature.GetKeys()))
+	util.AssertEqual(t, originalFeature.keys[0], feature.GetKeys()[0])
+	util.AssertEqual(t, originalFeature.values, feature.GetValues())
 	util.AssertApprox(t, originalFeature.GetGeometry().(*orb.Point).Lon(), feature.GetGeometry().(*orb.Point).Lon(), 0.0001)
 	util.AssertApprox(t, originalFeature.GetGeometry().(*orb.Point).Lat(), feature.GetGeometry().(*orb.Point).Lat(), 0.0001)
 }
