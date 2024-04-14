@@ -377,7 +377,7 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) *EncodedFeature {
 		osmId = uint64(osmObj.ID)
 	case *osm.Way:
 		tags = osmObj.Tags
-		// TODO Create geometry
+		geometry = osmObj.LineString()
 		osmId = uint64(osmObj.ID)
 	}
 	// TODO Implement relation handling
@@ -585,12 +585,16 @@ func (g *GridIndex) readWaysFromCellData(output chan []*EncodedFeature, data []b
 		/*
 			Actually create the encoded feature
 		*/
+		var lineString orb.LineString
+		for _, node := range nodes {
+			lineString = append(lineString, orb.Point{node.Lon, node.Lat})
+		}
 		feature := &EncodedFeature{
-			ID:     osmId,
-			keys:   encodedKeys,
-			values: encodedValues,
-			nodes:  nodes,
-			// TODO Build LineString geometry out of nodes
+			ID:       osmId,
+			keys:     encodedKeys,
+			values:   encodedValues,
+			nodes:    nodes,
+			Geometry: lineString,
 		}
 		if g.checkFeatureValidity {
 			sigolo.Debugf("Check validity of feature %d", feature.ID)
