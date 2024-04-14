@@ -29,17 +29,40 @@ Usage: `go run . server`
 This starts an HTTP server on Port 8080. Use [localhost:8080/app](http://localhost:8080/app) to access a simple web-interface.
 HTTP POST requests with the query as body go to [localhost:8080/query](http://localhost:8080/query) and return GeoJSON.
 
-## Query syntax
+## Query language
 
-Queries consist of filter statements of the following form: `<location-specifier>.<object-type>{ <tag-filter> }`.
+Queries consist of *statements*, *object types* and *expressions*.
+
+A statement is the bigger picture and consists of several elements:
+* A *location expression* defining *where* to search. 
+* An *object type* defining what *type* to consider.
+* A list of *filter expressions* defining *what* to search. This list might contain sub-statements (s. below).
+
+A statement has the following form: `<location-expression>.<object-type>{ <filter-expression> }`.
 For example `bbox(1,2,3,4).nodes{ natural=tree }`.
-Each statement is evaluated to a boolean value and there statements can be nested and used within the filters.
 
-Top-level statements, i.e. statements that are not nested within some other statements, determine the output of the whole query.
+### Output
+
+Only top-level statements, i.e. statements that are not nested within some other statements (s. below), determine the output of the whole query.
 Meaning: Any object fulfilling the filter criterion will be part of the output.
 
-The keyword `this` refers to the object of the current statement (java programmers will recognize `this` ;) .
-It enables you to call functions on this object as listed below.
+### Sub-statements
+
+Now the tricky part:
+Statements can be nested using the `this` specifier, for example: `this.ways{ highway=primary}`.
+These statements are called nested statement, inner statement, sub-statement (as used here frequently) or (more technically correct) *context-aware statement*.
+
+Here a bigger example on how this works:
+```go
+bbox(1, 2, 3, 4).nodes{
+    addr:housenumber = * AND
+    this.ways{
+        building=*
+    }
+}
+```
+This query outputs all nodes, which have a house number *and* are part of a building-way (which is often the case for entrance-nodes having a house number).
+The `this.ways{...}` statement considers the ways *this* node is part of (therefore the term "context-aware" because the result depends on the current considered node).
 
 ### Functions on `this`
 
@@ -54,8 +77,16 @@ No parentheses needed.
 
 ### Examples
 
-Benches near a way:
+Find all benches with missing `seats` tag:
+```go
+// Get all nodes within this bbox, which ...
+bbox(1, 2, 3, 4).nodes{
+    // ... are a bench without given number of seats
+    amenity = bench AND seats!=*
+}
+```
 
+Find alls benches near a street/path:
 ```go
 // Get all nodes within this bbox, which ...
 bbox(1, 2, 3, 4).nodes{
@@ -68,7 +99,9 @@ bbox(1, 2, 3, 4).nodes{
 }
 ```
 
-Same example but different way-filter:
+### Future features (not yet implemented)
+
+Same example but different way-filter using a buffer around the node:
 
 ```go
 // Get all nodes within this bbox, which ...
@@ -78,17 +111,6 @@ bbox(1, 2, 3, 4).nodes{
     // ... all ways in a 5m radius are highway-ways.
     !this.buffer(5m).ways{
         highway!=*
-    }
-}
-```
-
-Get all nodes with a house number that are part of a building outline:
-
-```go
-bbox(1, 2, 3, 4).nodes{
-    addr:housenumber = * AND
-    this.ways{
-        building=*
     }
 }
 ```
