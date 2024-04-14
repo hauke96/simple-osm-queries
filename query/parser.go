@@ -370,12 +370,12 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 func (p *Parser) parseNegatedExpression(token *Token, expression FilterExpression, err error) (FilterExpression, error) {
 	negationPosition := token.startPosition
 
-	token = p.moveToNextToken()
+	token = p.peekNextToken()
 	if token == nil {
 		return nil, errors.Errorf("Expected start of new expression after '!' (at position %d) but token stream ended", negationPosition)
 	}
 
-	if token.kind != TokenKindOpeningParenthesis {
+	if token.kind != TokenKindOpeningParenthesis && !(token.kind == TokenKindKeyword && token.lexeme == "this") {
 		// TODO Add "this" keyword here, which is another possible token after "!"
 		return nil, errors.Errorf("Expected '(' after '!' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}

@@ -510,7 +510,7 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []feature.EncodedFeature,
 						continue
 					}
 
-					for j := 0; i < len(nodeIds); i++ {
+					for j := 0; j < len(nodeIds); j++ {
 						if encodedFeature.GetID() == nodeIds[j] {
 							outputBuffer[currentBufferPos] = encodedFeature
 							currentBufferPos++
@@ -526,7 +526,10 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []feature.EncodedFeature,
 				}
 			}
 
-			resultChannel <- outputBuffer
+			if outputBuffer[0] != nil {
+				// Only send when outputBuffer is not empty (i.e. filled with "nil" values)
+				resultChannel <- outputBuffer
+			}
 		}
 		close(resultChannel)
 	}()

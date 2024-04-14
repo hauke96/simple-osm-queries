@@ -86,6 +86,18 @@ bbox(1, 2, 3, 4).nodes{
 }
 ```
 
+Find all ways with an address, that have a node on them (e.g. an entrance) that also has an address:
+```go
+bbox(1, 2, 3, 4).ways{
+    addr:housenumber=* AND
+    this.nodes{
+        addr:housenumber=*
+    }
+}
+```
+
+### Future features (not yet implemented)
+
 Find alls benches near a street/path:
 ```go
 // Get all nodes within this bbox, which ...
@@ -98,8 +110,6 @@ bbox(1, 2, 3, 4).nodes{
     }
 }
 ```
-
-### Future features (not yet implemented)
 
 Same example but different way-filter using a buffer around the node:
 
