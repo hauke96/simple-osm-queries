@@ -350,5 +350,13 @@
         document.getElementById("copy-extent-button").addEventListener("click", () => {
             navigator.clipboard.writeText(bbox);
         });
+
+        const storedValue = localStorage.getItem("query-input");
+        if(!!storedValue) {
+            document.getElementById("query-input").value = storedValue;
+        }
+        document.getElementById("query-input").addEventListener("input", evt => {
+            localStorage.setItem("query-input", evt.target.value);
+        });
     </script>
 </html>
