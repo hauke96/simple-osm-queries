@@ -629,7 +629,7 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 			encodedValues[i] = int(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16)
 		}
 
-		encodedFeature := &feature.EncodedWayFeature{
+		encodedFeature := &feature.EncodedNodeFeature{
 			AbstractEncodedFeature: feature.AbstractEncodedFeature{
 				ID:       osmId,
 				Geometry: &orb.Point{float64(lon), float64(lat)},

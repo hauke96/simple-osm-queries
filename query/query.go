@@ -214,6 +214,9 @@ func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.Geometr
 		Supported expressions for ways     : .nodes   -   .relations
 		Supported expressions for relations: .nodes .ways .relations
 	*/
+	if context == nil {
+		return nil, errors.Errorf("Context feature must not be 'nil'")
+	}
 
 	switch encodedFeature := context.(type) {
 	case *feature.EncodedWayFeature:
@@ -352,19 +355,57 @@ func (f KeyFilterExpression) Print(indent int) {
 }
 
 type SubStatementFilterExpression struct {
-	statement *Statement
+	statement       *Statement
+	cellResultCache map[index.CellIndex][]feature.EncodedFeature
 }
 
-func (f SubStatementFilterExpression) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
+func (f SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
 	if sigolo.ShouldLogTrace() {
-		sigolo.Tracef("SubStatementFilterExpression for object %d?", feature.GetID())
+		sigolo.Tracef("SubStatementFilterExpression for object %d?", featureToCheck.GetID())
 	}
 
-	result, err := f.statement.Execute(feature)
+	context = featureToCheck
+
+	featuresChannel, err := f.statement.GetFeatures(context)
 	if err != nil {
 		return false, err
 	}
-	return len(result) > 0, nil
+
+	for getFeatureResult := range featuresChannel {
+		sigolo.Tracef("Received %d features from cell %v", len(getFeatureResult.Features), getFeatureResult.Cell)
+
+		for _, foundFeature := range getFeatureResult.Features {
+			sigolo.Trace("----- next feature -----")
+			if foundFeature != nil {
+				foundFeature.Print()
+
+				applies, err := f.statement.Applies(foundFeature, context)
+				if err != nil {
+					return false, err
+				}
+
+				if applies {
+					f.cellResultCache[getFeatureResult.Cell] = append(f.cellResultCache[getFeatureResult.Cell], foundFeature)
+				}
+			}
+		}
+
+		// Check is feature to check is within the result set of features. This depends on the context, i.e. for a
+		// way-context, we want to check the nodes of the way, whether or not there is at least one way-node in the
+		// result set.
+		for _, matchingFeature := range f.cellResultCache[getFeatureResult.Cell] {
+			switch contextFeature := context.(type) {
+			case *feature.EncodedWayFeature:
+				for _, nodeOfContextFeature := range contextFeature.Nodes {
+					if matchingFeature.GetID() == uint64(nodeOfContextFeature.ID) {
+						return true, nil
+					}
+				}
+			}
+		}
+	}
+
+	return false, nil
 }
 
 func (f SubStatementFilterExpression) Print(indent int) {
