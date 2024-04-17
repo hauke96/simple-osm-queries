@@ -37,6 +37,10 @@ type GridIndex struct {
 
 type CellIndex [2]int
 
+func (c CellIndex) X() int { return c[0] }
+
+func (c CellIndex) Y() int { return c[1] }
+
 func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, checkFeatureValidity bool, tagIndex *TagIndex) *GridIndex {
 	return &GridIndex{
 		TagIndex:             tagIndex,
@@ -75,7 +79,6 @@ func (g *GridIndex) Import(inputFile string) error {
 	importStartTime := time.Now()
 
 	var encodedFeature feature.EncodedFeature
-	var cellX, cellY int
 
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
@@ -98,9 +101,8 @@ func (g *GridIndex) Import(inputFile string) error {
 
 		switch osmObj := obj.(type) {
 		case *osm.Node:
-			cellX, cellY = g.getCellIdForCoordinate(osmObj.Lon, osmObj.Lat)
-			cellItem := CellIndex{cellX, cellY}
-			cells[cellItem] = cellItem
+			cell := g.GetCellIdForCoordinate(osmObj.Lon, osmObj.Lat)
+			cells[cell] = cell
 			g.nodeToPositionMap[osmObj.ID] = orb.Point{osmObj.Lon, osmObj.Lat}
 		case *osm.Way:
 			for i, node := range osmObj.Nodes {
@@ -108,10 +110,9 @@ func (g *GridIndex) Import(inputFile string) error {
 				node.Lat = g.nodeToPositionMap[node.ID][1]
 				osmObj.Nodes[i] = node
 
-				cellX, cellY = g.getCellIdForCoordinate(node.Lon, node.Lat)
-				cellItem := CellIndex{cellX, cellY}
-				if _, ok := cells[cellItem]; !ok {
-					cells[cellItem] = cellItem
+				cell := g.GetCellIdForCoordinate(node.Lon, node.Lat)
+				if _, ok := cells[cell]; !ok {
+					cells[cell] = cell
 				}
 			}
 		}
@@ -373,9 +374,9 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, encodedFea
 	return nil
 }
 
-// getCellIdsForCoordinate returns the cell ID (i.e. position) for the given coordinate.
-func (g *GridIndex) getCellIdForCoordinate(x float64, y float64) (int, int) {
-	return int(x / g.CellWidth), int(y / g.CellHeight)
+// GetCellIdForCoordinate returns the cell index (i.e. position) for the given coordinate.
+func (g *GridIndex) GetCellIdForCoordinate(x float64, y float64) CellIndex {
+	return CellIndex{int(x / g.CellWidth), int(y / g.CellHeight)}
 }
 
 func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, error) {
@@ -426,8 +427,8 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, er
 
 func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error) {
 	sigolo.Debugf("Get feature from bbox=%#v", bbox)
-	minCellX, minCellY := g.getCellIdForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
-	maxCellX, maxCellY := g.getCellIdForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
+	minCell := g.GetCellIdForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
+	maxCell := g.GetCellIdForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
 
 	resultChannel := make(chan *GetFeaturesResult, 10)
 
@@ -436,22 +437,22 @@ func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesRe
 	wg.Add(numThreads)
 	go func() {
 		// Group the cells into columns of equal size so that each goroutine below can handle on column.
-		cellColumns := maxCellX - minCellX + 1 // min and max are inclusive, therefore +1
+		cellColumns := maxCell.X() - minCell.X() + 1 // min and max are inclusive, therefore +1
 		threadColumns := cellColumns / numThreads
 
 		for i := 0; i < numThreads; i++ {
-			minColX := minCellX + i*threadColumns
-			maxColX := minCellX + (i+1)*threadColumns
+			minColX := minCell.X() + i*threadColumns
+			maxColX := minCell.X() + (i+1)*threadColumns
 			if i != 0 {
 				// To prevent overlapping columns
 				minColX++
 			}
 			if i == numThreads-1 {
 				// Last column: Make sure it goes til the requested end
-				maxColX = maxCellX
+				maxColX = maxCell.X()
 			}
 
-			go g.getFeaturesForCells(resultChannel, &wg, bbox, minColX, maxColX, minCellY, maxCellY, objectType)
+			go g.getFeaturesForCellsWithBbox(resultChannel, &wg, bbox, minColX, maxColX, minCell.Y(), maxCell.Y(), objectType)
 		}
 	}()
 
@@ -460,23 +461,22 @@ func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesRe
 		close(resultChannel)
 	}()
 
-	return resultChannel, nil
+	return resultChannel, nil // Remove error from return, since it doesn't make any sense here
 }
 
 func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error) {
 	cells := map[CellIndex][]uint64{}            // just a lookup table to quickly see if a cell has already been collected
 	innerCellBounds := map[CellIndex]orb.Bound{} // just a lookup table to quickly see if a cell has already been collected
 	for _, node := range nodes {
-		cellX, cellY := g.getCellIdForCoordinate(node.Lon, node.Lat)
-		cellItem := CellIndex{cellX, cellY}
-		if _, ok := cells[cellItem]; !ok {
+		cell := g.GetCellIdForCoordinate(node.Lon, node.Lat)
+		if _, ok := cells[cell]; !ok {
 			// New cell -> Create it and add first node ID
-			cells[cellItem] = []uint64{uint64(node.ID)}
-			innerCellBounds[cellItem] = node.Point().Bound()
+			cells[cell] = []uint64{uint64(node.ID)}
+			innerCellBounds[cell] = node.Point().Bound()
 		} else {
 			// Cell has been seen before -> just add the new node ID
-			cells[cellItem] = append(cells[cellItem], uint64(node.ID))
-			innerCellBounds[cellItem] = innerCellBounds[cellItem].Union(node.Point().Bound())
+			cells[cell] = append(cells[cell], uint64(node.ID))
+			innerCellBounds[cell] = innerCellBounds[cell].Union(node.Point().Bound())
 		}
 	}
 
@@ -493,9 +493,8 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error
 			outputBuffer := []feature.EncodedFeature{}
 
 			unfilteredFeatures, err := g.readFeaturesFromCellFile(cell[0], cell[1], feature.OsmObjNode.String())
-			if err != nil {
-				sigolo.FatalCheck(err)
-			}
+			sigolo.FatalCheck(err)
+
 			for i := 0; i < len(unfilteredFeatures); i++ {
 				encodedFeature := unfilteredFeatures[i]
 				if encodedFeature != nil {
@@ -529,7 +528,29 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error
 	return resultChannel, nil
 }
 
-func (g *GridIndex) getFeaturesForCells(output chan *GetFeaturesResult, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
+func (g *GridIndex) GetFeaturesForCells(cells []CellIndex, objectType string) chan *GetFeaturesResult {
+	resultChannel := make(chan *GetFeaturesResult)
+
+	go func() {
+		for _, cell := range cells {
+			featuresInCell := &GetFeaturesResult{
+				Cell:     cell,
+				Features: []feature.EncodedFeature{},
+			}
+
+			encodedFeatures, err := g.readFeaturesFromCellFile(cell[0], cell[1], objectType)
+			sigolo.FatalCheck(err)
+			featuresInCell.Features = encodedFeatures
+
+			resultChannel <- featuresInCell
+		}
+		close(resultChannel)
+	}()
+
+	return resultChannel
+}
+
+func (g *GridIndex) getFeaturesForCellsWithBbox(output chan *GetFeaturesResult, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
 	sigolo.Tracef("Get feature for cell column from=%d, to=%d", minCellX, maxCellX)
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
@@ -539,9 +560,7 @@ func (g *GridIndex) getFeaturesForCells(output chan *GetFeaturesResult, wg *sync
 			}
 
 			encodedFeatures, err := g.readFeaturesFromCellFile(cellX, cellY, objectType)
-			if err != nil {
-				sigolo.FatalCheck(err)
-			}
+			sigolo.FatalCheck(err)
 
 			for i := 0; i < len(encodedFeatures); i++ {
 				if encodedFeatures[i] != nil && bbox.Intersects(encodedFeatures[i].GetGeometry().Bound()) {

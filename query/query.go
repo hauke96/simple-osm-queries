@@ -168,6 +168,7 @@ func (s Statement) Print(indent int) {
 
 type LocationExpression interface {
 	GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error)
+	GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []index.CellIndex, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error)
 	IsWithin(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error)
 	Print(indent int)
 }
@@ -179,6 +180,10 @@ type BboxLocationExpression struct {
 func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
 	// TODO Find a better solution than ".String()" for object types
 	return geometryIndex.Get(b.bbox, objectType.String())
+}
+
+func (b *BboxLocationExpression) GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []index.CellIndex, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
+	return geometryIndex.GetFeaturesForCells(cells, objectType.String()), nil
 }
 
 func (b *BboxLocationExpression) IsWithin(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
@@ -228,6 +233,10 @@ func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.Geometr
 	}
 
 	return nil, errors.Errorf("Encoded feature type '%s' of context object not supported", reflect.TypeOf(context).String())
+}
+
+func (e *ContextAwareLocationExpression) GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []index.CellIndex, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
+	return geometryIndex.GetFeaturesForCells(cells, objectType.String()), nil
 }
 
 func (e *ContextAwareLocationExpression) IsWithin(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
@@ -366,7 +375,32 @@ func (f SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFeat
 
 	context = featureToCheck
 
-	featuresChannel, err := f.statement.GetFeatures(context)
+	var err error
+	var featuresChannel chan *index.GetFeaturesResult
+	cells := map[index.CellIndex]index.CellIndex{} // Map instead of array to have quick lookups
+
+	switch contextFeature := context.(type) {
+	case *feature.EncodedWayFeature:
+		for _, node := range contextFeature.Nodes {
+			cell := geometryIndex.GetCellIdForCoordinate(node.Lon, node.Lat)
+			if _, ok := cells[cell]; !ok {
+				cells[cell] = cell
+			}
+		}
+	}
+	if len(cells) == 0 {
+		return false, errors.Errorf("No cells found for context feature %d", context.GetID())
+	}
+
+	// Get those cells that are not in the cache
+	var cellsToFetch []index.CellIndex
+	for _, cell := range cells {
+		if _, ok := f.cellResultCache[cell]; !ok {
+			cellsToFetch = append(cellsToFetch, cell)
+		}
+	}
+
+	featuresChannel, err = f.statement.location.GetFeaturesForCells(geometryIndex, cellsToFetch, f.statement.objectType)
 	if err != nil {
 		return false, err
 	}
@@ -389,11 +423,14 @@ func (f SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFeat
 				}
 			}
 		}
+	}
 
-		// Check is feature to check is within the result set of features. This depends on the context, i.e. for a
-		// way-context, we want to check the nodes of the way, whether or not there is at least one way-node in the
-		// result set.
-		for _, matchingFeature := range f.cellResultCache[getFeatureResult.Cell] {
+	// Check if feature to check is within the result set of features. This depends on the context, i.e. for a
+	// way-context, we want to check the nodes of the way, whether or not there is at least one way-node in the
+	// result set.
+	for _, cell := range cells {
+		// TODO Only store sorted IDs and use binary search
+		for _, matchingFeature := range f.cellResultCache[cell] {
 			switch contextFeature := context.(type) {
 			case *feature.EncodedWayFeature:
 				for _, nodeOfContextFeature := range contextFeature.Nodes {
