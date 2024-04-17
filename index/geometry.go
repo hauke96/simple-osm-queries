@@ -6,8 +6,13 @@ import (
 	"soq/feature"
 )
 
+type GetFeaturesResult struct {
+	Cell     CellIndex
+	Features []feature.EncodedFeature
+}
+
 type GeometryIndex interface {
 	Import(filename string) error
-	Get(bbox *orb.Bound, objectType string) (chan []feature.EncodedFeature, error)
-	GetNodes(nodes osm.WayNodes) (chan []feature.EncodedFeature, error)
+	Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error)
+	GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error)
 }

@@ -107,7 +107,7 @@ type Statement struct {
 	filter     FilterExpression
 }
 
-func (s Statement) GetFeatures(context feature.EncodedFeature) (chan []feature.EncodedFeature, error) {
+func (s Statement) GetFeatures(context feature.EncodedFeature) (chan *index.GetFeaturesResult, error) {
 	return s.location.GetFeatures(geometryIndex, context, s.objectType)
 }
 
@@ -132,10 +132,10 @@ func (s Statement) Execute(context feature.EncodedFeature) ([]feature.EncodedFea
 
 	var result []feature.EncodedFeature
 
-	for features := range featuresChannel {
-		sigolo.Tracef("Received %d features", len(features))
+	for getFeatureResult := range featuresChannel {
+		sigolo.Tracef("Received %d features from cell %v", len(getFeatureResult.Features), getFeatureResult.Cell)
 
-		for _, feature := range features {
+		for _, feature := range getFeatureResult.Features {
 			sigolo.Trace("----- next feature -----")
 			if feature != nil {
 				feature.Print()
@@ -167,7 +167,7 @@ func (s Statement) Print(indent int) {
 */
 
 type LocationExpression interface {
-	GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan []feature.EncodedFeature, error)
+	GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error)
 	IsWithin(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error)
 	Print(indent int)
 }
@@ -176,7 +176,7 @@ type BboxLocationExpression struct {
 	bbox *orb.Bound
 }
 
-func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan []feature.EncodedFeature, error) {
+func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
 	// TODO Find a better solution than ".String()" for object types
 	return geometryIndex.Get(b.bbox, objectType.String())
 }
@@ -208,7 +208,7 @@ type ContextAwareLocationExpression struct {
 	bbox BboxLocationExpression
 }
 
-func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan []feature.EncodedFeature, error) {
+func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
 	/*
 		Supported expressions for nodes    :    -   .ways .relations
 		Supported expressions for ways     : .nodes   -   .relations

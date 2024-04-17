@@ -424,12 +424,12 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, er
 	return nil, errors.Errorf("Converting OSM object of type '%s' not supported", obj.ObjectID().Type())
 }
 
-func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []feature.EncodedFeature, error) {
+func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error) {
 	sigolo.Debugf("Get feature from bbox=%#v", bbox)
 	minCellX, minCellY := g.getCellIdForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
 	maxCellX, maxCellY := g.getCellIdForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
 
-	resultChannel := make(chan []feature.EncodedFeature, 10)
+	resultChannel := make(chan *GetFeaturesResult, 10)
 
 	numThreads := 3
 	var wg sync.WaitGroup
@@ -463,7 +463,7 @@ func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan []feature.Enco
 	return resultChannel, nil
 }
 
-func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []feature.EncodedFeature, error) {
+func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error) {
 	cells := map[CellIndex][]uint64{}            // just a lookup table to quickly see if a cell has already been collected
 	innerCellBounds := map[CellIndex]orb.Bound{} // just a lookup table to quickly see if a cell has already been collected
 	for _, node := range nodes {
@@ -480,7 +480,7 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []feature.EncodedFeature,
 		}
 	}
 
-	var resultChannel = make(chan []feature.EncodedFeature, 10)
+	var resultChannel = make(chan *GetFeaturesResult, 10)
 
 	if len(cells) == 0 {
 		close(resultChannel)
@@ -490,8 +490,7 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []feature.EncodedFeature,
 	go func() {
 		for cell, nodeIds := range cells {
 			innerCellBound := innerCellBounds[cell]
-			outputBuffer := make([]feature.EncodedFeature, 1000)
-			currentBufferPos := 0
+			outputBuffer := []feature.EncodedFeature{}
 
 			unfilteredFeatures, err := g.readFeaturesFromCellFile(cell[0], cell[1], feature.OsmObjNode.String())
 			if err != nil {
@@ -512,23 +511,16 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []feature.EncodedFeature,
 
 					for j := 0; j < len(nodeIds); j++ {
 						if encodedFeature.GetID() == nodeIds[j] {
-							outputBuffer[currentBufferPos] = encodedFeature
-							currentBufferPos++
-
-							if currentBufferPos == len(outputBuffer)-1 {
-								resultChannel <- outputBuffer
-								outputBuffer = make([]feature.EncodedFeature, len(outputBuffer))
-								currentBufferPos = 0
-							}
+							outputBuffer = append(outputBuffer, encodedFeature)
 							break
 						}
 					}
 				}
 			}
 
-			if outputBuffer[0] != nil {
-				// Only send when outputBuffer is not empty (i.e. filled with "nil" values)
-				resultChannel <- outputBuffer
+			resultChannel <- &GetFeaturesResult{
+				Cell:     cell,
+				Features: outputBuffer,
 			}
 		}
 		close(resultChannel)
@@ -537,11 +529,14 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan []feature.EncodedFeature,
 	return resultChannel, nil
 }
 
-func (g *GridIndex) getFeaturesForCells(output chan []feature.EncodedFeature, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
+func (g *GridIndex) getFeaturesForCells(output chan *GetFeaturesResult, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
 	sigolo.Tracef("Get feature for cell column from=%d, to=%d", minCellX, maxCellX)
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
-			var featuresInBbox []feature.EncodedFeature
+			featuresInBbox := &GetFeaturesResult{
+				Cell:     CellIndex{cellX, cellY},
+				Features: []feature.EncodedFeature{},
+			}
 
 			encodedFeatures, err := g.readFeaturesFromCellFile(cellX, cellY, objectType)
 			if err != nil {
@@ -550,7 +545,7 @@ func (g *GridIndex) getFeaturesForCells(output chan []feature.EncodedFeature, wg
 
 			for i := 0; i < len(encodedFeatures); i++ {
 				if encodedFeatures[i] != nil && bbox.Intersects(encodedFeatures[i].GetGeometry().Bound()) {
-					featuresInBbox = append(featuresInBbox, encodedFeatures[i])
+					featuresInBbox.Features = append(featuresInBbox.Features, encodedFeatures[i])
 				}
 			}
 
