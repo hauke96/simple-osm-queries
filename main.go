@@ -9,7 +9,7 @@ import (
 	"soq/importing"
 	"soq/index"
 	"soq/io"
-	"soq/query"
+	"soq/parser"
 	"soq/web"
 	"strings"
 )
@@ -91,7 +91,7 @@ func main() {
 
 		geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, cli.Query.CheckFeatureValidity, tagIndex)
 
-		q, err := query.ParseQueryString(`
+		q, err := parser.ParseQueryString(`
 //bbox(9.99549,53.55688,9.99569,53.55701)
 //bbox(9.9713,53.5354,10.01711,53.58268)
 bbox(9.9713,53.5354,10.0160,53.5608)

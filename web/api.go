@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"soq/index"
 	ownIo "soq/io"
-	"soq/query"
+	"soq/parser"
 )
 
 func StartServer(port string, indexBaseFolder string, defaultCellSize float64, checkFeatureValidity bool) {
@@ -59,7 +59,7 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 		}
 		sigolo.Infof("Query:\n%s", trimmedQueryString)
 
-		queryObj, err := query.ParseQueryString(queryString, tagIndex, geometryIndex)
+		queryObj, err := parser.ParseQueryString(queryString, tagIndex, geometryIndex)
 		if err != nil {
 			sigolo.Errorf("Error parsing query: %+v", err)
 			writer.WriteHeader(http.StatusBadRequest)

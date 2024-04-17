@@ -1,9 +1,10 @@
-package query
+package parser
 
 import (
 	"github.com/paulmach/orb"
 	"soq/feature"
 	"soq/index"
+	"soq/query"
 	"soq/util"
 	"testing"
 )
@@ -87,7 +88,7 @@ func TestParser_parseLocationExpression(t *testing.T) {
 	// Assert
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, expression)
-	bboxExpression, isBboxExpression := expression.(*BboxLocationExpression)
+	bboxExpression, isBboxExpression := expression.(*query.BboxLocationExpression)
 	util.AssertTrue(t, isBboxExpression)
 	expectedBbox := &orb.Bound{
 		Min: orb.Point{1.1, 2.2},
@@ -181,32 +182,32 @@ func TestParser_parseBinaryOperator(t *testing.T) {
 	// Act & Assert
 	operator, err := parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, BinOpEqual, operator)
+	util.AssertEqual(t, query.BinOpEqual, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, BinOpNotEqual, operator)
+	util.AssertEqual(t, query.BinOpNotEqual, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, BinOpGreater, operator)
+	util.AssertEqual(t, query.BinOpGreater, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, BinOpGreaterEqual, operator)
+	util.AssertEqual(t, query.BinOpGreaterEqual, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, BinOpLower, operator)
+	util.AssertEqual(t, query.BinOpLower, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNil(t, err)
-	util.AssertEqual(t, BinOpLowerEqual, operator)
+	util.AssertEqual(t, query.BinOpLowerEqual, operator)
 }
 
 func TestParser_parseNextExpression_simpleTagFilter(t *testing.T) {
@@ -230,11 +231,11 @@ func TestParser_parseNextExpression_simpleTagFilter(t *testing.T) {
 	// Assert
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, expression)
-	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
+	tagFilterExpression, isTagFilterExpression := expression.(*query.TagFilterExpression)
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 1, tagFilterExpression.key)
 	util.AssertEqual(t, 1, tagFilterExpression.value)
-	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
+	util.AssertEqual(t, query.BinOpEqual, tagFilterExpression.operator)
 }
 
 func TestParser_parseNextExpression_simpleInnerStatement(t *testing.T) {
@@ -264,16 +265,16 @@ func TestParser_parseNextExpression_simpleInnerStatement(t *testing.T) {
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, expression)
 
-	subStatementExpression, isSubStatementExpression := expression.(*SubStatementFilterExpression)
+	subStatementExpression, isSubStatementExpression := expression.(*query.SubStatementFilterExpression)
 	util.AssertTrue(t, isSubStatementExpression)
 	util.AssertNotNil(t, subStatementExpression.statement)
 	util.AssertNotNil(t, subStatementExpression.statement.filter)
 
-	tagFilterExpression, isTagFilterExpression := subStatementExpression.statement.filter.(*TagFilterExpression)
+	tagFilterExpression, isTagFilterExpression := subStatementExpression.statement.filter.(*query.TagFilterExpression)
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 0, tagFilterExpression.key)
 	util.AssertEqual(t, 0, tagFilterExpression.value)
-	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
+	util.AssertEqual(t, query.BinOpEqual, tagFilterExpression.operator)
 }
 
 func TestParser_parseNextExpression_simpleKeyFilter(t *testing.T) {
@@ -297,7 +298,7 @@ func TestParser_parseNextExpression_simpleKeyFilter(t *testing.T) {
 	// Assert
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, expression)
-	keyFilterExpression, isKeyFilterExpression := expression.(*KeyFilterExpression)
+	keyFilterExpression, isKeyFilterExpression := expression.(*query.KeyFilterExpression)
 	util.AssertTrue(t, isKeyFilterExpression)
 	util.AssertEqual(t, 1, keyFilterExpression.key)
 	util.AssertEqual(t, true, keyFilterExpression.shouldBeSet)
@@ -351,15 +352,15 @@ func TestParser_parseNextExpression_negatedTagFilter(t *testing.T) {
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, expression)
 
-	negatedTagFilterExpression, isNegatedTagFilterExpression := expression.(*NegatedFilterExpression)
+	negatedTagFilterExpression, isNegatedTagFilterExpression := expression.(*query.NegatedFilterExpression)
 	util.AssertTrue(t, isNegatedTagFilterExpression)
 	util.AssertNotNil(t, negatedTagFilterExpression.baseExpression)
 
-	tagFilterExpression, isTagFilterExpression := negatedTagFilterExpression.baseExpression.(*TagFilterExpression)
+	tagFilterExpression, isTagFilterExpression := negatedTagFilterExpression.baseExpression.(*query.TagFilterExpression)
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 1, tagFilterExpression.key)
 	util.AssertEqual(t, 1, tagFilterExpression.value)
-	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
+	util.AssertEqual(t, query.BinOpEqual, tagFilterExpression.operator)
 }
 
 func TestParser_parseNextExpression_invalidNegatedTagFilter(t *testing.T) {
@@ -434,11 +435,11 @@ func TestParser_parseNextExpression_expressionInsideParentheses(t *testing.T) {
 	// Assert
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, expression)
-	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
+	tagFilterExpression, isTagFilterExpression := expression.(*query.TagFilterExpression)
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 1, tagFilterExpression.key)
 	util.AssertEqual(t, 1, tagFilterExpression.value)
-	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
+	util.AssertEqual(t, query.BinOpEqual, tagFilterExpression.operator)
 }
 
 func TestParser_parseNextExpression_expressionInsideParenthesesMissinClose(t *testing.T) {
@@ -487,11 +488,11 @@ func TestParser_parseNextExpression_determineNextSmallerValue_greaterThanOperato
 	// Assert
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, expression)
-	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
+	tagFilterExpression, isTagFilterExpression := expression.(*query.TagFilterExpression)
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 0, tagFilterExpression.key)
 	util.AssertEqual(t, 1, tagFilterExpression.value)
-	util.AssertEqual(t, BinOpGreater, tagFilterExpression.operator)
+	util.AssertEqual(t, query.BinOpGreater, tagFilterExpression.operator)
 }
 
 func TestParser_parseNextExpression_determineNextSmallerValue_lowerOperatorOnHugeValue(t *testing.T) {
@@ -515,11 +516,11 @@ func TestParser_parseNextExpression_determineNextSmallerValue_lowerOperatorOnHug
 	// Assert
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, expression)
-	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
+	tagFilterExpression, isTagFilterExpression := expression.(*query.TagFilterExpression)
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 0, tagFilterExpression.key)
 	util.AssertEqual(t, 3, tagFilterExpression.value)
-	util.AssertEqual(t, BinOpLowerEqual, tagFilterExpression.operator)
+	util.AssertEqual(t, query.BinOpLowerEqual, tagFilterExpression.operator)
 }
 
 func TestParser_parseNextExpression_determineNextSmallerValue_equalOperator(t *testing.T) {
@@ -543,11 +544,11 @@ func TestParser_parseNextExpression_determineNextSmallerValue_equalOperator(t *t
 	// Assert
 	util.AssertNil(t, err)
 	util.AssertNotNil(t, expression)
-	tagFilterExpression, isTagFilterExpression := expression.(*TagFilterExpression)
+	tagFilterExpression, isTagFilterExpression := expression.(*query.TagFilterExpression)
 	util.AssertTrue(t, isTagFilterExpression)
 	util.AssertEqual(t, 0, tagFilterExpression.key)
 	util.AssertEqual(t, -1, tagFilterExpression.value)
-	util.AssertEqual(t, BinOpEqual, tagFilterExpression.operator)
+	util.AssertEqual(t, query.BinOpEqual, tagFilterExpression.operator)
 }
 
 func TestParser_parseBinaryOperator_invalidAndNotExistingToken(t *testing.T) {
@@ -562,10 +563,10 @@ func TestParser_parseBinaryOperator_invalidAndNotExistingToken(t *testing.T) {
 	// Act & Assert
 	operator, err := parser.parseBinaryOperator("previous", -123)
 	util.AssertNotNil(t, err)
-	util.AssertEqual(t, BinOpInvalid, operator)
+	util.AssertEqual(t, query.BinOpInvalid, operator)
 
 	parser.moveToNextToken()
 	operator, err = parser.parseBinaryOperator("previous", -123)
 	util.AssertNotNil(t, err)
-	util.AssertEqual(t, BinOpInvalid, operator)
+	util.AssertEqual(t, query.BinOpInvalid, operator)
 }

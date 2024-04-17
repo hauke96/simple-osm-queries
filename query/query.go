@@ -43,9 +43,9 @@ func (o BinaryOperator) string() string {
 	return fmt.Sprintf("[!UNKNOWN BinaryOperator %d]", o)
 }
 
-// isComparisonOperator returns true for operators >, >=, < and <=. The = and != operators are considered "equality" but
+// IsComparisonOperator returns true for operators >, >=, < and <=. The = and != operators are considered "equality" but
 // not comparison operators.
-func (o BinaryOperator) isComparisonOperator() bool {
+func (o BinaryOperator) IsComparisonOperator() bool {
 	return o == BinOpGreater || o == BinOpGreaterEqual || o == BinOpLower || o == BinOpLowerEqual
 }
 
@@ -73,6 +73,10 @@ var geometryIndex index.GeometryIndex
 
 type Query struct {
 	topLevelStatements []Statement
+}
+
+func NewQuery(topLevelStatements []Statement) *Query {
+	return &Query{topLevelStatements: topLevelStatements}
 }
 
 func (q *Query) Execute(geomIndex index.GeometryIndex) ([]feature.EncodedFeature, error) {
@@ -106,6 +110,14 @@ type Statement struct {
 	location   LocationExpression
 	objectType feature.OsmObjectType
 	filter     FilterExpression
+}
+
+func NewStatement(locationExpression LocationExpression, objectType feature.OsmObjectType, filterExpression FilterExpression) *Statement {
+	return &Statement{
+		location:   locationExpression,
+		objectType: objectType,
+		filter:     filterExpression,
+	}
 }
 
 func (s Statement) GetFeatures(context feature.EncodedFeature) (chan *index.GetFeaturesResult, error) {
@@ -178,6 +190,10 @@ type BboxLocationExpression struct {
 	bbox *orb.Bound
 }
 
+func NewBboxLocationExpression(bbox *orb.Bound) *BboxLocationExpression {
+	return &BboxLocationExpression{bbox: bbox}
+}
+
 func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
 	// TODO Find a better solution than ".String()" for object types
 	return geometryIndex.Get(b.bbox, objectType.String())
@@ -212,6 +228,10 @@ func (b *BboxLocationExpression) string() string {
 
 type ContextAwareLocationExpression struct {
 	bbox BboxLocationExpression
+}
+
+func NewContextAwareLocationExpression(bbox BboxLocationExpression) *ContextAwareLocationExpression {
+	return &ContextAwareLocationExpression{bbox: bbox}
 }
 
 func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
@@ -261,6 +281,10 @@ type NegatedFilterExpression struct {
 	baseExpression FilterExpression
 }
 
+func NewNegatedFilterExpression(baseExpression FilterExpression) *NegatedFilterExpression {
+	return &NegatedFilterExpression{baseExpression: baseExpression}
+}
+
 func (f NegatedFilterExpression) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
 	sigolo.Tracef("NegatedFilterExpression")
 	applies, err := f.baseExpression.Applies(feature, nil)
@@ -279,6 +303,14 @@ type LogicalFilterExpression struct {
 	statementA FilterExpression
 	statementB FilterExpression
 	operator   LogicalOperator
+}
+
+func NewLogicalFilterExpression(statementA FilterExpression, statementB FilterExpression, operator LogicalOperator) *LogicalFilterExpression {
+	return &LogicalFilterExpression{
+		statementA: statementA,
+		statementB: statementB,
+		operator:   operator,
+	}
 }
 
 func (f LogicalFilterExpression) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
@@ -314,6 +346,14 @@ type TagFilterExpression struct {
 	key      int
 	value    int
 	operator BinaryOperator
+}
+
+func NewTagFilterExpression(key int, value int, operator BinaryOperator) *TagFilterExpression {
+	return &TagFilterExpression{
+		key:      key,
+		value:    value,
+		operator: operator,
+	}
 }
 
 func (f TagFilterExpression) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
@@ -352,6 +392,13 @@ type KeyFilterExpression struct {
 	shouldBeSet bool
 }
 
+func NewKeyFilterExpression(key int, shouldBeSet bool) *KeyFilterExpression {
+	return &KeyFilterExpression{
+		key:         key,
+		shouldBeSet: shouldBeSet,
+	}
+}
+
 func (f KeyFilterExpression) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
 	if sigolo.ShouldLogTrace() {
 		sigolo.Tracef("TagFilterExpression: HasKey(%d)=%v?", f.key, f.shouldBeSet)
@@ -368,6 +415,14 @@ type SubStatementFilterExpression struct {
 	statement   *Statement
 	cachedCells []index.CellIndex
 	idCache     map[uint64]uint64
+}
+
+func NewSubStatementFilterExpression(statement *Statement) *SubStatementFilterExpression {
+	return &SubStatementFilterExpression{
+		statement:   statement,
+		cachedCells: []index.CellIndex{},
+		idCache:     make(map[uint64]uint64),
+	}
 }
 
 func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {

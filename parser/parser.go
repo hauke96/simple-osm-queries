@@ -1,4 +1,4 @@
-package query
+package parser
 
 import (
 	"github.com/hauke96/sigolo/v2"
@@ -6,6 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"soq/feature"
 	"soq/index"
+	"soq/query"
 	"soq/util"
 	"strconv"
 	"strings"
@@ -27,7 +28,7 @@ type Parser struct {
 	geometryIndex index.GeometryIndex
 }
 
-func ParseQueryString(queryString string, tagIndex *index.TagIndex, geometryIndex index.GeometryIndex) (*Query, error) {
+func ParseQueryString(queryString string, tagIndex *index.TagIndex, geometryIndex index.GeometryIndex) (*query.Query, error) {
 	runes := []rune(strings.Trim(queryString, "\n\r\t "))
 	lexer := Lexer{
 		input: runes,
@@ -73,8 +74,8 @@ func (p *Parser) currentToken() *Token {
 	return p.token[p.index]
 }
 
-func (p *Parser) parse() (*Query, error) {
-	var topLevelStatements []Statement
+func (p *Parser) parse() (*query.Query, error) {
+	var topLevelStatements []query.Statement
 
 	for p.peekNextToken() != nil {
 		statement, err := p.parseStatement()
@@ -85,14 +86,14 @@ func (p *Parser) parse() (*Query, error) {
 		topLevelStatements = append(topLevelStatements, *statement)
 	}
 
-	return &Query{topLevelStatements: topLevelStatements}, nil
+	return query.NewQuery(topLevelStatements), nil
 }
 
-func (p *Parser) parseStatement() (*Statement, error) {
+func (p *Parser) parseStatement() (*query.Statement, error) {
 	var err error
 
 	// Parse location expression, such as "bbox(...)" but also context aware expressions like "this.ways"
-	var locationExpression LocationExpression
+	var locationExpression query.LocationExpression
 	token := p.currentToken()
 	if token.kind == TokenKindKeyword && token.lexeme == "this" {
 		thisPosition := token.startPosition
@@ -104,7 +105,7 @@ func (p *Parser) parseStatement() (*Statement, error) {
 			return nil, errors.Errorf("Expected '.' after 'this' (at position %d) but found kind=%d with lexeme=%s", thisPosition, token.kind, token.lexeme)
 		}
 
-		locationExpression = &ContextAwareLocationExpression{}
+		locationExpression = &query.ContextAwareLocationExpression{}
 	} else {
 		// We start with a fresh baseExpression, so the first thing we expect is a location expression
 		locationExpression, err = p.parseLocationExpression()
@@ -156,14 +157,10 @@ func (p *Parser) parseStatement() (*Statement, error) {
 		return nil, errors.Errorf("Expected '}' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
-	return &Statement{
-		location:   locationExpression,
-		objectType: objectType,
-		filter:     filterExpression,
-	}, nil
+	return query.NewStatement(locationExpression, objectType, filterExpression), nil
 }
 
-func (p *Parser) parseLocationExpression() (LocationExpression, error) {
+func (p *Parser) parseLocationExpression() (query.LocationExpression, error) {
 	token := p.currentToken()
 	if token == nil {
 		return nil, errors.Errorf("Expected keyword to parse location expression but token stream ended")
@@ -172,7 +169,7 @@ func (p *Parser) parseLocationExpression() (LocationExpression, error) {
 		return nil, errors.Errorf("Expected location expression at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
-	var locationExpression LocationExpression
+	var locationExpression query.LocationExpression
 	var err error
 
 	switch token.lexeme {
@@ -189,7 +186,7 @@ func (p *Parser) parseLocationExpression() (LocationExpression, error) {
 	return locationExpression, nil
 }
 
-func (p *Parser) parseBboxLocationExpression() (*BboxLocationExpression, error) {
+func (p *Parser) parseBboxLocationExpression() (*query.BboxLocationExpression, error) {
 	token := p.currentToken()
 	if token.kind != TokenKindKeyword && token.lexeme != "bbox" {
 		return nil, errors.Errorf("Error parsing BBOX-Expression: Expected start at bbox-token at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
@@ -222,20 +219,20 @@ func (p *Parser) parseBboxLocationExpression() (*BboxLocationExpression, error) 
 		return nil, errors.Errorf("Expected ')' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
-	return &BboxLocationExpression{bbox: &orb.Bound{
+	return query.NewBboxLocationExpression(&orb.Bound{
 		Min: orb.Point{coordinates[0], coordinates[1]},
 		Max: orb.Point{coordinates[2], coordinates[3]},
-	}}, nil
+	}), nil
 }
 
-func (p *Parser) parseContextAwareLocationExpression() (*ContextAwareLocationExpression, error) {
+func (p *Parser) parseContextAwareLocationExpression() (*query.ContextAwareLocationExpression, error) {
 	token := p.currentToken()
 	notAContextAwareSpecifier := token.lexeme != objectTypeNodeExpression && token.lexeme != objectTypeWaysExpression && token.lexeme != objectTypeRelationsExpression
 	if token.kind != TokenKindKeyword || notAContextAwareSpecifier {
 		return nil, errors.Errorf("Error parsing BBOX-Expression: Expected start at bbox-token at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
-	return &ContextAwareLocationExpression{}, nil
+	return &query.ContextAwareLocationExpression{}, nil
 }
 
 func (p *Parser) parseOsmObjectType() (feature.OsmObjectType, error) {
@@ -256,7 +253,7 @@ func (p *Parser) parseOsmObjectType() (feature.OsmObjectType, error) {
 	return -1, errors.Errorf("Expected object type at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 }
 
-func (p *Parser) parseNextFilterExpressions() (FilterExpression, error) {
+func (p *Parser) parseNextFilterExpressions() (query.FilterExpression, error) {
 	expression, err := p.parseNextExpression()
 	if err != nil {
 		return nil, err
@@ -285,30 +282,22 @@ func (p *Parser) parseNextFilterExpressions() (FilterExpression, error) {
 			switch token.lexeme {
 			case "AND":
 				// Exit recursion to create correct hierarchy of AND/OR operators
-				var secondExpression FilterExpression
+				var secondExpression query.FilterExpression
 				secondExpression, err = p.parseNextExpression()
 				if err != nil {
 					return nil, err
 				}
 
-				expression = &LogicalFilterExpression{
-					statementA: expression,
-					statementB: secondExpression,
-					operator:   LogicOpAnd,
-				}
+				expression = query.NewLogicalFilterExpression(expression, secondExpression, query.LogicOpAnd)
 			case "OR":
 				// Enter recursion to create correct hierarchy of AND/OR operators
-				var secondExpression FilterExpression
+				var secondExpression query.FilterExpression
 				secondExpression, err = p.parseNextFilterExpressions()
 				if err != nil {
 					return nil, err
 				}
 
-				expression = &LogicalFilterExpression{
-					statementA: expression,
-					statementB: secondExpression,
-					operator:   LogicOpOr,
-				}
+				expression = query.NewLogicalFilterExpression(expression, secondExpression, query.LogicOpOr)
 			default:
 				return nil, errors.Errorf("Unexpected keyword '%s' at position %d, expected 'AND' or 'OR'", token.lexeme, token.startPosition)
 			}
@@ -320,8 +309,8 @@ func (p *Parser) parseNextFilterExpressions() (FilterExpression, error) {
 	return expression, nil
 }
 
-func (p *Parser) parseNextExpression() (FilterExpression, error) {
-	var expression FilterExpression
+func (p *Parser) parseNextExpression() (query.FilterExpression, error) {
+	var expression query.FilterExpression
 	var err error
 	token := p.moveToNextToken()
 	switch token.kind {
@@ -348,16 +337,12 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 	case TokenKindKeyword:
 		if token.lexeme == "this" {
 			// Some function call like "this.foo()" -> new statement starts
-			var statement *Statement
+			var statement *query.Statement
 			statement, err = p.parseStatement()
 			if err != nil {
 				return nil, err
 			}
-			return &SubStatementFilterExpression{
-				statement:   statement,
-				cachedCells: []index.CellIndex{},
-				idCache:     make(map[uint64]uint64),
-			}, err
+			return query.NewSubStatementFilterExpression(statement), err
 		} else {
 			// General keyword, meaning a new expression starts, such as "highway=primary".
 
@@ -371,7 +356,7 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 	return expression, nil
 }
 
-func (p *Parser) parseNegatedExpression(token *Token, expression FilterExpression, err error) (FilterExpression, error) {
+func (p *Parser) parseNegatedExpression(token *Token, expression query.FilterExpression, err error) (query.FilterExpression, error) {
 	negationPosition := token.startPosition
 
 	token = p.peekNextToken()
@@ -389,13 +374,10 @@ func (p *Parser) parseNegatedExpression(token *Token, expression FilterExpressio
 		return nil, err
 	}
 
-	expression = &NegatedFilterExpression{
-		baseExpression: expression,
-	}
-	return expression, nil
+	return query.NewNegatedFilterExpression(expression), nil
 }
 
-func (p *Parser) parseNormalExpression(token *Token) (FilterExpression, error) {
+func (p *Parser) parseNormalExpression(token *Token) (query.FilterExpression, error) {
 	// We're on the key (e.g. "highway" in "highway=primary")
 	key := token.lexeme
 	keyPos := token.startPosition
@@ -419,18 +401,15 @@ func (p *Parser) parseNormalExpression(token *Token) (FilterExpression, error) {
 	}
 
 	if valueToken.kind == TokenKindWildcard {
-		if binaryOperator != BinOpEqual && binaryOperator != BinOpNotEqual {
+		if binaryOperator != query.BinOpEqual && binaryOperator != query.BinOpNotEqual {
 			return nil, errors.Errorf("Expected '=' or '!=' operator when using wildcard but found kind=%d with lexeme=%s at pos=%d", valueToken.kind, valueToken.lexeme, valueToken.startPosition)
 		}
 
-		return &KeyFilterExpression{
-			key:         keyIndex,
-			shouldBeSet: binaryOperator == BinOpEqual,
-		}, nil
+		return query.NewKeyFilterExpression(keyIndex, binaryOperator == query.BinOpEqual), nil
 	} else {
 		_, valueIndex := p.tagIndex.GetIndicesFromKeyValueStrings(key, valueToken.lexeme)
 
-		if valueIndex == index.NotFound && binaryOperator.isComparisonOperator() {
+		if valueIndex == index.NotFound && binaryOperator.IsComparisonOperator() {
 			// Search for next smaller value and adjust binary operator. It can happen that we search for e.g.
 			// "width>=2.5" but the exact value "2.5" doesn't exist. Then we have to adjust the expression to
 			// "width>2" in case "2" is the next lower existing value for "2.5".
@@ -440,56 +419,52 @@ func (p *Parser) parseNormalExpression(token *Token) (FilterExpression, error) {
 				// There is no lower value, the valueToken already contains a value lower than the lowest value
 				// in the tag index.
 				valueIndex = 0
-				if binaryOperator == BinOpGreater {
+				if binaryOperator == query.BinOpGreater {
 					// Example: "width>-1"  ->  "width>=0"
-					binaryOperator = BinOpGreaterEqual
-				} else if binaryOperator == BinOpLowerEqual {
+					binaryOperator = query.BinOpGreaterEqual
+				} else if binaryOperator == query.BinOpLowerEqual {
 					// Example: "width<=-1"  ->  "width<0"
-					binaryOperator = BinOpLower
+					binaryOperator = query.BinOpLower
 				}
 				// All other operators are ok, they do not distort/falsify the result of the expression.
 			} else {
 				// We found the next lower value for the given valueToken. We now might have to adjust the
 				// binary operator so that the meaning of the expression is still correct.
-				if binaryOperator == BinOpGreaterEqual {
+				if binaryOperator == query.BinOpGreaterEqual {
 					// Example: "width>=2.5"  ->  "width>2"
-					binaryOperator = BinOpGreater
-				} else if binaryOperator == BinOpLower {
+					binaryOperator = query.BinOpGreater
+				} else if binaryOperator == query.BinOpLower {
 					// Example: "width<2.5"  ->  "width<=2"
-					binaryOperator = BinOpLowerEqual
+					binaryOperator = query.BinOpLowerEqual
 				}
 				// All other operators are ok, they do not distort/falsify the result of the expression.
 			}
 		}
 
-		return &TagFilterExpression{
-			key:      keyIndex,
-			value:    valueIndex,
-			operator: binaryOperator,
-		}, nil
+		return query.NewTagFilterExpression(keyIndex, valueIndex, binaryOperator), nil
 	}
 }
 
-func (p *Parser) parseBinaryOperator(previousLexeme string, previousLexemePos int) (BinaryOperator, error) {
+func (p *Parser) parseBinaryOperator(previousLexeme string, previousLexemePos int) (query.BinaryOperator, error) {
 	token := p.currentToken()
 	if token == nil || token.kind != TokenKindOperator {
-		return BinOpInvalid, errors.Errorf("Expected binary operator after '%s' (position %d) but token stream ended", previousLexeme, previousLexemePos)
+		return query.BinOpInvalid, errors.Errorf("Expected binary operator after '%s' (position %d) but token stream ended", previousLexeme, previousLexemePos)
 	}
 
 	switch token.lexeme {
 	case "=":
-		return BinOpEqual, nil
+		return query.BinOpEqual, nil
 	case "!=":
-		return BinOpNotEqual, nil
+		return query.BinOpNotEqual, nil
 	case ">":
-		return BinOpGreater, nil
+		return query.BinOpGreater, nil
 	case ">=":
-		return BinOpGreaterEqual, nil
+		return query.BinOpGreaterEqual, nil
 	case "<":
-		return BinOpLower, nil
+		return query.BinOpLower, nil
 	case "<=":
-		return BinOpLowerEqual, nil
+		return query.BinOpLowerEqual, nil
 	default:
-		return BinOpInvalid, errors.Errorf("Expected binary operator (e.g. '>=') after '%s' (position %d) but found kind=%d with lexeme=%s", previousLexeme, previousLexemePos, token.kind, token.lexeme)
+		return query.BinOpInvalid, errors.Errorf("Expected binary operator (e.g. '>=') after '%s' (position %d) but found kind=%d with lexeme=%s", previousLexeme, previousLexemePos, token.kind, token.lexeme)
 	}
 }

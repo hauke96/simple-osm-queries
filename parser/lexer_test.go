@@ -1,4 +1,4 @@
-package query
+package parser
 
 import (
 	"github.com/hauke96/sigolo/v2"
