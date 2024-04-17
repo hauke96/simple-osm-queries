@@ -351,12 +351,25 @@
             navigator.clipboard.writeText(bbox);
         });
 
+        const queryInputControl = document.getElementById("query-input");
         const storedValue = localStorage.getItem("query-input");
         if(!!storedValue) {
-            document.getElementById("query-input").value = storedValue;
+            queryInputControl.value = storedValue;
         }
-        document.getElementById("query-input").addEventListener("input", evt => {
+        queryInputControl.addEventListener("input", evt => { // For manual input
             localStorage.setItem("query-input", evt.target.value);
+        });
+        queryInputControl.addEventListener("change", evt => { // For automatic input, i.e. Tab behavior from below
+            localStorage.setItem("query-input", evt.target.value);
+        });
+        queryInputControl.addEventListener("keydown", evt => {
+            if(evt.code === "Tab") {
+                const caretPost = queryInputControl.selectionStart;
+                queryInputControl.value = queryInputControl.value.substring(0, caretPost) + "  " + queryInputControl.value.substring(caretPost, queryInputControl.value.length);
+                queryInputControl.selectionStart = caretPost + 2;
+                queryInputControl.selectionEnd = caretPost + 2;
+                evt.preventDefault();
+            }
         });
     </script>
 </html>
