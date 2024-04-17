@@ -353,7 +353,11 @@ func (p *Parser) parseNextExpression() (FilterExpression, error) {
 			if err != nil {
 				return nil, err
 			}
-			return &SubStatementFilterExpression{statement: statement, cellResultCache: map[index.CellIndex][]feature.EncodedFeature{}}, err
+			return &SubStatementFilterExpression{
+				statement:   statement,
+				cachedCells: []index.CellIndex{},
+				idCache:     make(map[uint64]uint64),
+			}, err
 		} else {
 			// General keyword, meaning a new expression starts, such as "highway=primary".
 

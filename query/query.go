@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"soq/feature"
 	"soq/index"
+	"soq/util"
 	"strings"
 	"time"
 )
@@ -364,11 +365,12 @@ func (f KeyFilterExpression) Print(indent int) {
 }
 
 type SubStatementFilterExpression struct {
-	statement       *Statement
-	cellResultCache map[index.CellIndex][]feature.EncodedFeature
+	statement   *Statement
+	cachedCells []index.CellIndex
+	idCache     map[uint64]uint64
 }
 
-func (f SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
+func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
 	if sigolo.ShouldLogTrace() {
 		sigolo.Tracef("SubStatementFilterExpression for object %d?", featureToCheck.GetID())
 	}
@@ -395,49 +397,47 @@ func (f SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFeat
 	// Get those cells that are not in the cache
 	var cellsToFetch []index.CellIndex
 	for _, cell := range cells {
-		if _, ok := f.cellResultCache[cell]; !ok {
+		if !util.Contains(f.cachedCells, cell) {
 			cellsToFetch = append(cellsToFetch, cell)
 		}
 	}
 
-	featuresChannel, err = f.statement.location.GetFeaturesForCells(geometryIndex, cellsToFetch, f.statement.objectType)
-	if err != nil {
-		return false, err
-	}
+	// Fetch data only of those cells needed
+	if len(cellsToFetch) != 0 {
+		featuresChannel, err = f.statement.location.GetFeaturesForCells(geometryIndex, cellsToFetch, f.statement.objectType)
+		if err != nil {
+			return false, err
+		}
 
-	for getFeatureResult := range featuresChannel {
-		sigolo.Tracef("Received %d features from cell %v", len(getFeatureResult.Features), getFeatureResult.Cell)
+		for getFeatureResult := range featuresChannel {
+			sigolo.Tracef("Received %d features from cell %v", len(getFeatureResult.Features), getFeatureResult.Cell)
 
-		for _, foundFeature := range getFeatureResult.Features {
-			sigolo.Trace("----- next feature -----")
-			if foundFeature != nil {
-				foundFeature.Print()
+			for _, foundFeature := range getFeatureResult.Features {
+				sigolo.Trace("----- next feature -----")
+				if foundFeature != nil {
+					foundFeature.Print()
 
-				applies, err := f.statement.Applies(foundFeature, context)
-				if err != nil {
-					return false, err
-				}
+					applies, err := f.statement.Applies(foundFeature, context)
+					if err != nil {
+						return false, err
+					}
 
-				if applies {
-					f.cellResultCache[getFeatureResult.Cell] = append(f.cellResultCache[getFeatureResult.Cell], foundFeature)
+					if applies {
+						f.idCache[foundFeature.GetID()] = foundFeature.GetID()
+					}
 				}
 			}
 		}
+
+		f.cachedCells = append(f.cachedCells, cellsToFetch...)
 	}
 
-	// Check if feature to check is within the result set of features. This depends on the context, i.e. for a
-	// way-context, we want to check the nodes of the way, whether or not there is at least one way-node in the
-	// result set.
-	for _, cell := range cells {
-		// TODO Only store sorted IDs and use binary search
-		for _, matchingFeature := range f.cellResultCache[cell] {
-			switch contextFeature := context.(type) {
-			case *feature.EncodedWayFeature:
-				for _, nodeOfContextFeature := range contextFeature.Nodes {
-					if matchingFeature.GetID() == uint64(nodeOfContextFeature.ID) {
-						return true, nil
-					}
-				}
+	// Check whether at least one sub-feature of the context is within the list of IDs that fulfill the sub-statement.
+	switch contextFeature := context.(type) {
+	case *feature.EncodedWayFeature:
+		for _, node := range contextFeature.Nodes {
+			if _, ok := f.idCache[uint64(node.ID)]; ok {
+				return true, nil
 			}
 		}
 	}
@@ -445,7 +445,7 @@ func (f SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFeat
 	return false, nil
 }
 
-func (f SubStatementFilterExpression) Print(indent int) {
+func (f *SubStatementFilterExpression) Print(indent int) {
 	sigolo.Debugf("%s%s", spacing(indent), "SubStatementFilterExpression")
 	f.statement.Print(indent + 2)
 }
