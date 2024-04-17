@@ -105,7 +105,7 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 			return nil, errors.Errorf("Expected '.' after 'this' (at position %d) but found kind=%d with lexeme=%s", thisPosition, token.kind, token.lexeme)
 		}
 
-		locationExpression = &query.ContextAwareLocationExpression{}
+		locationExpression = query.NewContextAwareLocationExpression()
 	} else {
 		// We start with a fresh baseExpression, so the first thing we expect is a location expression
 		locationExpression, err = p.parseLocationExpression()
@@ -232,7 +232,7 @@ func (p *Parser) parseContextAwareLocationExpression() (*query.ContextAwareLocat
 		return nil, errors.Errorf("Error parsing BBOX-Expression: Expected start at bbox-token at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
-	return &query.ContextAwareLocationExpression{}, nil
+	return query.NewContextAwareLocationExpression(), nil
 }
 
 func (p *Parser) parseOsmObjectType() (feature.OsmObjectType, error) {
