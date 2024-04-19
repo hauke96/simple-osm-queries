@@ -75,6 +75,8 @@ No parentheses needed.
 | `ways`        | Nodes and relations       | For nodes: The list of all ways the node is part of. For relations: All ways being part of this relation.                         |
 | `relations`   | Nodes, ways and relations | For nodes and ways: The list of all relations this node/way is part of. For relations: All relations being part of this relation. |
 
+![](this-node-way-relations.png)
+
 ### Examples
 
 Find all benches with missing `seats` tag:
