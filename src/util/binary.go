@@ -60,7 +60,7 @@ type BinaryDataItem struct {
 }
 
 func (b *BinaryDataItem) Write(object any, data []byte, index int) (int, error) {
-	field := reflect.Indirect(reflect.ValueOf(object)).FieldByName(b.FieldName)
+	field := reflect.ValueOf(object).FieldByName(b.FieldName)
 
 	switch b.BinaryType {
 	case DatatypeByte:
@@ -172,7 +172,7 @@ func (b *BinaryCollectionItem) Write(object any, data []byte, index int) (int, e
 	var err error
 	for i := 0; i < reflectionType.Len(); i++ {
 		element := reflectionType.Index(i)
-		index, err = b.ItemSchema.Write(element, data, index)
+		index, err = b.ItemSchema.Write(element.Interface(), data, index)
 		if err != nil {
 			return -1, err
 		}

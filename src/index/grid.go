@@ -36,6 +36,26 @@ var (
 			&util.BinaryRawCollectionItem{FieldName: "EncodedValues", BinaryType: util.DatatypeInt24},
 		},
 	}
+
+	// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes DatatypeInt24).
+	// TODO Store relations: only IDs to relations, because its data can be fetched from the cell of the way
+	wayBinarySchema = util.BinarySchema{
+		Items: []util.BinaryItem{
+			&util.BinaryDataItem{FieldName: "ID", BinaryType: util.DatatypeInt64},
+			&util.BinaryRawCollectionItem{FieldName: "EncodedKeys", BinaryType: util.DatatypeByte},
+			&util.BinaryRawCollectionItem{FieldName: "EncodedValues", BinaryType: util.DatatypeInt24},
+			&util.BinaryCollectionItem{
+				FieldName: "Nodes",
+				ItemSchema: util.BinarySchema{
+					Items: []util.BinaryItem{
+						&util.BinaryDataItem{FieldName: "ID", BinaryType: util.DatatypeInt64},
+						&util.BinaryDataItem{FieldName: "Lon", BinaryType: util.DatatypeFloat32},
+						&util.BinaryDataItem{FieldName: "Lat", BinaryType: util.DatatypeFloat32},
+					},
+				},
+			},
+		},
+	}
 )
 
 type NodeBinaryDao struct {
@@ -44,6 +64,36 @@ type NodeBinaryDao struct {
 	Lat           float64
 	EncodedKeys   []byte
 	EncodedValues []int
+}
+
+func (d NodeBinaryDao) getExpectedByteSize() int {
+	encodedKeysSize := 4 + len(d.EncodedKeys)
+	encodedValuesSize := 4 + len(d.EncodedValues)*4
+
+	// ID + size of lat/lon + the lists
+	return 8 + 4 + 4 + encodedKeysSize + encodedValuesSize
+}
+
+type WayNodeBinaryDao struct {
+	ID  uint64
+	Lon float64
+	Lat float64
+}
+
+type WayBinaryDao struct {
+	ID            uint64
+	EncodedKeys   []byte
+	EncodedValues []int
+	Nodes         []WayNodeBinaryDao
+}
+
+func (d WayBinaryDao) getExpectedByteSize() int {
+	encodedKeysSize := 4 + len(d.EncodedKeys)
+	encodedValuesSize := 4 + len(d.EncodedValues)*4
+	nodesSize := 4 + len(d.Nodes)*16
+
+	// ID + size of the lists
+	return 8 + encodedKeysSize + encodedValuesSize + nodesSize
 }
 
 type GridIndex struct {
@@ -291,30 +341,22 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, encodedFeature *feature.Enco
 	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
 	// by a factor of ten!
-	numKeyBytes := 0
+	encodedKeyBytes := 0
 	for i := 0; i < len(encodedFeature.GetKeys()); i++ {
 		if encodedFeature.GetKeys()[i] != 0 {
-			numKeyBytes = i + 1
+			encodedKeyBytes = i + 1
 		}
 	}
-
-	encodedKeyBytes := numKeyBytes                           // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
-
-	headerBytesCount := 8 + 4 + 4 + 4 + 4 // = 24
-	byteCount := headerBytesCount
-	byteCount += encodedKeyBytes
-	byteCount += encodedValueBytes
-
-	data := make([]byte, byteCount)
 
 	dao := NodeBinaryDao{
 		ID:            encodedFeature.ID,
 		Lon:           encodedFeature.Geometry.(*orb.Point).Lon(),
 		Lat:           encodedFeature.Geometry.(*orb.Point).Lat(),
-		EncodedKeys:   encodedFeature.GetKeys()[0:numKeyBytes],
+		EncodedKeys:   encodedFeature.GetKeys()[0:encodedKeyBytes],
 		EncodedValues: encodedFeature.GetValues(),
 	}
+
+	data := make([]byte, dao.getExpectedByteSize())
 
 	_, err := nodeBinarySchema.Write(dao, data, 0)
 	if err != nil {
@@ -330,81 +372,45 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, encodedFeature *feature.Enco
 }
 
 func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, encodedFeature *feature.EncodedWayFeature, f io.Writer) error {
-	/*
-		Entry format:
-		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
-		// TODO Store relations: only IDs to relations, because its data can be fetched from the cell of the way
-
-		Names: | osmId | num. keys | num. values | num. nodes |   encodedKeys   |   encodedValues   |       nodes       |
-		Bytes: |   8   |     4     |      4      |      2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 |
-
-		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
-		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
-		is an int-array, therefore, we need the multiplication with 4.
-
-		The nodes section contains all nodes, not only the ones within this cell. This enables geometric checks, even
-		in cases where no way-node is within this cell. The nodes are stores in the following way:
-		<id (64-bit)><lon (32-bit)><lat (23-bit)>
-	*/
-
 	// The number of key-bins to store is determined by the bin with the highest index that is not empty (i.e. all 0s).
 	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
 	// by a factor of ten!
-	numKeys := 0
+	encodedKeyBytes := 0
 	for i := 0; i < len(encodedFeature.GetKeys()); i++ {
 		if encodedFeature.GetKeys()[i] != 0 {
-			numKeys = i + 1
+			encodedKeyBytes = i + 1
 		}
 	}
 
-	encodedKeyBytes := numKeys                               // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
-	nodeIdBytes := len(nodes) * 16                           // Each ID is a 64-bit int
-
-	headerByteCount := 8 + 4 + 4 + 2
-	byteCount := headerByteCount
-	byteCount += encodedKeyBytes
-	byteCount += encodedValueBytes
-	byteCount += nodeIdBytes
-
-	data := make([]byte, byteCount)
-
-	/*
-		Write header
-	*/
-	binary.LittleEndian.PutUint64(data[0:], uint64(osmId))
-	binary.LittleEndian.PutUint32(data[8:], uint32(numKeys))
-	binary.LittleEndian.PutUint32(data[12:], uint32(len(encodedFeature.GetValues())))
-	binary.LittleEndian.PutUint16(data[16:], uint16(len(nodes)))
-
-	/*
-		Write keys and values
-	*/
-	copy(data[headerByteCount:], encodedFeature.GetKeys()[0:numKeys])
-	for i, v := range encodedFeature.GetValues() {
-		b := data[headerByteCount+encodedKeyBytes+i*3:]
-		b[0] = byte(v)
-		b[1] = byte(v >> 8)
-		b[2] = byte(v >> 16)
+	var nodeDaos []WayNodeBinaryDao
+	for _, node := range nodes {
+		nodeDaos = append(nodeDaos, WayNodeBinaryDao{
+			ID:  uint64(node.ID),
+			Lon: node.Lon,
+			Lat: node.Lat,
+		})
 	}
 
-	/*
-		Write nodes
-	*/
-	nodeIdStartIndex := headerByteCount + encodedKeyBytes + len(encodedFeature.GetValues())*3
-	for i, node := range nodes {
-		binary.LittleEndian.PutUint64(data[nodeIdStartIndex+i*16:], uint64(node.ID))
-		binary.LittleEndian.PutUint32(data[nodeIdStartIndex+i*16+8:], math.Float32bits(float32(node.Lon)))
-		binary.LittleEndian.PutUint32(data[nodeIdStartIndex+i*16+12:], math.Float32bits(float32(node.Lat)))
+	dao := WayBinaryDao{
+		ID:            uint64(osmId),
+		EncodedKeys:   encodedFeature.GetKeys()[0:encodedKeyBytes],
+		EncodedValues: encodedFeature.GetValues(),
+		Nodes:         nodeDaos,
 	}
 
-	sigolo.Tracef("Write feature %d byteCount=%d, numKeys=%d, numValues=%d, numNodeIds=%d", osmId, byteCount, numKeys, len(encodedFeature.GetValues()), len(nodes))
+	data := make([]byte, dao.getExpectedByteSize())
 
-	_, err := f.Write(data)
+	_, err := wayBinarySchema.Write(dao, data, 0)
+	if err != nil {
+		return errors.Wrapf(err, "Unable to create binary data for node %d", osmId)
+	}
+
+	_, err = f.Write(data)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to write node %d to cell file", osmId)
 	}
+
 	return nil
 }
 
@@ -711,7 +717,7 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
 		nodeBytes := numNodes * 16
 
-		headerBytesCount := 8 + 4 + 4 + 2
+		headerBytesCount := 8 + 4 + 4 + 2 // TODO this changed to 4 bytes for the node count
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
 
