@@ -53,6 +53,10 @@ func (b *BboxLocationExpression) Print(indent int) {
 	sigolo.Debugf("%slocation: %s(%s)", spacing(indent), "bbox", b.string())
 }
 
+func (b *BboxLocationExpression) GetBbox() *orb.Bound {
+	return b.bbox
+}
+
 func (b *BboxLocationExpression) string() string {
 	return fmt.Sprintf("%f, %f, %f, %f", b.bbox.Min.Lon(), b.bbox.Min.Lat(), b.bbox.Max.Lon(), b.bbox.Max.Lat())
 }

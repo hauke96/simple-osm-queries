@@ -74,3 +74,7 @@ func (s Statement) Print(indent int) {
 	sigolo.Debugf("%stype: %s", spacing(indent+2), s.objectType.String())
 	s.filter.Print(indent + 2)
 }
+
+func (s Statement) GetFilterExpression() FilterExpression {
+	return s.filter
+}

@@ -36,6 +36,10 @@ func (f NegatedFilterExpression) Print(indent int) {
 	f.baseExpression.Print(indent + 2)
 }
 
+func (f NegatedFilterExpression) GetBaseExpression() FilterExpression {
+	return f.baseExpression
+}
+
 type LogicalFilterExpression struct {
 	statementA FilterExpression
 	statementB FilterExpression
@@ -124,6 +128,10 @@ func (f TagFilterExpression) Print(indent int) {
 	sigolo.Debugf("%s%s: %d%s%d", spacing(indent), "TagFilterExpression", f.key, f.operator.string(), f.value)
 }
 
+func (f TagFilterExpression) GetParameter() (int, int, BinaryOperator) {
+	return f.key, f.value, f.operator
+}
+
 type KeyFilterExpression struct {
 	key         int
 	shouldBeSet bool
@@ -146,6 +154,10 @@ func (f KeyFilterExpression) Applies(feature feature.EncodedFeature, context fea
 
 func (f KeyFilterExpression) Print(indent int) {
 	sigolo.Debugf("%s%s: %d (souldBeSet=%v)", spacing(indent), "KeyFilterExpression", f.key, f.shouldBeSet)
+}
+
+func (f KeyFilterExpression) GetParameter() (int, bool) {
+	return f.key, f.shouldBeSet
 }
 
 type SubStatementFilterExpression struct {
@@ -240,6 +252,10 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 func (f *SubStatementFilterExpression) Print(indent int) {
 	sigolo.Debugf("%s%s", spacing(indent), "SubStatementFilterExpression")
 	f.statement.Print(indent + 2)
+}
+
+func (f *SubStatementFilterExpression) GetStatement() *Statement {
+	return f.statement
 }
 
 func spacing(indent int) string {
