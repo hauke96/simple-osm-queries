@@ -25,6 +25,8 @@ import (
 const GridIndexFolder = "grid-index"
 
 var (
+	// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with the 3 bytes DatatypeInt24).
+	// TODO Store nodes with ways (only IDs to relations, because it can be fetched from the cell of the node) and relations (only IDs to relations, because it can be fetched from the cell of the node)
 	nodeBinarySchema = util.BinarySchema{
 		Items: []util.BinaryItem{
 			&util.BinaryDataItem{FieldName: "ID", BinaryType: util.DatatypeInt64},
@@ -38,8 +40,8 @@ var (
 
 type NodeBinaryDao struct {
 	ID            uint64
-	Lon           float32
-	Lat           float32
+	Lon           float64
+	Lat           float64
 	EncodedKeys   []byte
 	EncodedValues []int
 }
@@ -285,19 +287,6 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 }
 
 func (g *GridIndex) writeNodeData(osmId osm.NodeID, encodedFeature *feature.EncodedNodeFeature, f io.Writer) error {
-	/*
-		Entry format:
-		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
-		// TODO Store nodes with ways (only IDs to relations, because it can be fetched from the cell of the node) and relations (only IDs to relations, because it can be fetched from the cell of the node)
-
-		Names: | osmId | lon | lat | num. keys | num. values |   encodedKeys   |   encodedValues   |
-		Bytes: |   8   |  4  |  4  |     4     |      4      | <num. keys> / 8 | <num. values> * 3 |
-
-		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
-		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
-		is an int-array, therefore, we need the multiplication with 4.
-	*/
-
 	// The number of key-bins to store is determined by the bin with the highest index that is not empty (i.e. all 0s).
 	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
@@ -321,8 +310,8 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, encodedFeature *feature.Enco
 
 	dao := NodeBinaryDao{
 		ID:            encodedFeature.ID,
-		Lon:           float32(encodedFeature.Geometry.(*orb.Point).Lon()),
-		Lat:           float32(encodedFeature.Geometry.(*orb.Point).Lat()),
+		Lon:           encodedFeature.Geometry.(*orb.Point).Lon(),
+		Lat:           encodedFeature.Geometry.(*orb.Point).Lat(),
 		EncodedKeys:   encodedFeature.GetKeys()[0:numKeyBytes],
 		EncodedValues: encodedFeature.GetValues(),
 	}
@@ -669,36 +658,19 @@ func (g *GridIndex) readFeaturesFromCellFile(cellX int, cellY int, objectType st
 func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, data []byte) {
 	outputBuffer := make([]feature.EncodedFeature, 1000)
 	currentBufferPos := 0
+	var err error
 
 	for pos := 0; pos < len(data); {
-		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
-		osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		lon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+8:]))
-		lat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+16:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+20:]))
-
-		headerBytesCount := 8 + 4 + 4 + 4 + 4 // = 24
-
-		sigolo.Tracef("Read feature pos=%d, id=%d, lon=%f, lat=%f, numKeys=%d, numValues=%d", pos, osmId, lon, lat, numEncodedKeyBytes, numValues)
-
-		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
-
-		encodedKeys := make([]byte, numEncodedKeyBytes)
-		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos+headerBytesCount:])
-
-		for i := 0; i < numValues; i++ {
-			b := data[pos+headerBytesCount+numEncodedKeyBytes+i*3:]
-			encodedValues[i] = int(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16)
-		}
+		nodeDao := NodeBinaryDao{}
+		pos, err = nodeBinarySchema.Read(&nodeDao, data, pos)
+		sigolo.FatalCheck(err) // TODO better return error?
 
 		encodedFeature := &feature.EncodedNodeFeature{
 			AbstractEncodedFeature: feature.AbstractEncodedFeature{
-				ID:       osmId,
-				Geometry: &orb.Point{float64(lon), float64(lat)},
-				Keys:     encodedKeys,
-				Values:   encodedValues,
+				ID:       nodeDao.ID,
+				Geometry: &orb.Point{nodeDao.Lon, nodeDao.Lat},
+				Keys:     nodeDao.EncodedKeys,
+				Values:   nodeDao.EncodedValues,
 			},
 		}
 		if g.checkFeatureValidity {
@@ -715,7 +687,7 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 			currentBufferPos = 0
 		}
 
-		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes
+		//pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes
 	}
 
 	output <- outputBuffer
