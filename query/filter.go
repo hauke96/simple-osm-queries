@@ -176,7 +176,7 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	switch contextFeature := context.(type) {
 	case *feature.EncodedWayFeature:
 		for _, node := range contextFeature.Nodes {
-			cell := geometryIndex.GetCellIdForCoordinate(node.Lon, node.Lat)
+			cell := geometryIndex.GetCellIndexForCoordinate(node.Lon, node.Lat)
 			if _, ok := cells[cell]; !ok {
 				cells[cell] = cell
 			}

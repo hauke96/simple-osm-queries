@@ -16,5 +16,5 @@ type GeometryIndex interface {
 	Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error)
 	GetFeaturesForCells(cells []CellIndex, objectType string) chan *GetFeaturesResult
 	GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error)
-	GetCellIdForCoordinate(x float64, y float64) CellIndex
+	GetCellIndexForCoordinate(x float64, y float64) CellIndex
 }

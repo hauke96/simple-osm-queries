@@ -32,6 +32,7 @@ type GridIndex struct {
 	cacheFileWriters     map[string]*bufio.Writer
 	checkFeatureValidity bool
 	nodeToPositionMap    map[osm.NodeID]orb.Point
+	nodeToWayMap         map[osm.NodeID]osm.Ways
 	featureCache         map[string][]feature.EncodedFeature // Filename to feature within it
 }
 
@@ -53,37 +54,31 @@ func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64
 }
 
 func (g *GridIndex) Import(inputFile string) error {
-	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
-		sigolo.Error("Input file must be an .osm or .pbf file")
-		os.Exit(1)
-	}
-
-	f, err := os.Open(inputFile)
-	sigolo.FatalCheck(err)
-	defer f.Close()
-
-	var scanner osm.Scanner
-	if strings.HasSuffix(inputFile, ".osm") {
-		scanner = osmxml.New(context.Background(), f)
-	} else if strings.HasSuffix(inputFile, ".pbf") {
-		scanner = osmpbf.New(context.Background(), f, 1)
-	}
-	defer scanner.Close()
-
-	err = os.RemoveAll(g.BaseFolder)
+	err := os.RemoveAll(g.BaseFolder)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", g.BaseFolder)
 	}
 
-	sigolo.Info("Start processing geometries from input data")
-	importStartTime := time.Now()
-
-	var encodedFeature feature.EncodedFeature
-
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
 	g.nodeToPositionMap = map[osm.NodeID]orb.Point{}
+	g.nodeToWayMap = map[osm.NodeID]osm.Ways{}
 
+	amountOfObjects := 0
+	cellDataMap := map[CellIndex]osm.Objects{}
+
+	file, scanner, err := g.getScanner(inputFile)
+	if err != nil {
+		return err
+	}
+
+	defer file.Close()
+	defer scanner.Close()
+
+	sigolo.Infof("Start processing geometries from input file %s", inputFile)
+	importStartTime := time.Now()
+
+	sigolo.Debugf("Read all osm objects from OSM file")
 	for scanner.Scan() {
 		obj := scanner.Object()
 
@@ -92,34 +87,47 @@ func (g *GridIndex) Import(inputFile string) error {
 			continue
 		}
 
-		encodedFeature, err = g.toEncodedFeature(obj)
-		if err != nil {
-			return err
-		}
-
-		cells := map[CellIndex]CellIndex{} // just a lookup table to quickly see if a cell has already been collected
-
 		switch osmObj := obj.(type) {
 		case *osm.Node:
-			cell := g.GetCellIdForCoordinate(osmObj.Lon, osmObj.Lat)
-			cells[cell] = cell
+			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
+
+			if _, hasDataInCell := cellDataMap[cell]; !hasDataInCell {
+				cellDataMap[cell] = osm.Objects{osmObj}
+			} else {
+				cellDataMap[cell] = append(cellDataMap[cell], osmObj)
+			}
+
 			g.nodeToPositionMap[osmObj.ID] = orb.Point{osmObj.Lon, osmObj.Lat}
+			amountOfObjects++
 		case *osm.Way:
 			for i, node := range osmObj.Nodes {
 				node.Lon = g.nodeToPositionMap[node.ID][0]
 				node.Lat = g.nodeToPositionMap[node.ID][1]
 				osmObj.Nodes[i] = node
 
-				cell := g.GetCellIdForCoordinate(node.Lon, node.Lat)
-				if _, ok := cells[cell]; !ok {
-					cells[cell] = cell
+				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
+				if _, hasDataInCell := cellDataMap[cell]; !hasDataInCell {
+					cellDataMap[cell] = osm.Objects{osmObj}
+				} else {
+					cellDataMap[cell] = append(cellDataMap[cell], osmObj)
 				}
 			}
+			amountOfObjects++
 		}
 		// TODO	 Implement relation handling
 		//case *osm.Relation:
 
-		for _, cell := range cells {
+	}
+	sigolo.Infof("Read %d objects in %d cells", amountOfObjects, len(cellDataMap))
+
+	sigolo.Debugf("Write OSM objects")
+	for cell, objects := range cellDataMap {
+		for _, obj := range objects {
+			encodedFeature, err := g.toEncodedFeature(obj)
+			if err != nil {
+				return err
+			}
+
 			err = g.writeOsmObjectToCell(cell[0], cell[1], obj, encodedFeature)
 			if err != nil {
 				return err
@@ -127,6 +135,7 @@ func (g *GridIndex) Import(inputFile string) error {
 		}
 	}
 
+	sigolo.Debugf("Close remaining open file handles")
 	for filename, file := range g.cacheFileHandles {
 		if file != nil {
 			sigolo.Tracef("Close cell file %s", file.Name())
@@ -146,6 +155,23 @@ func (g *GridIndex) Import(inputFile string) error {
 	sigolo.Infof("Created OSM object index from OSM data in %s", importDuration)
 
 	return nil
+}
+
+func (g *GridIndex) getScanner(inputFile string) (*os.File, osm.Scanner, error) {
+	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
+		return nil, nil, errors.Errorf("Input file %s must be an .osm or .pbf file", inputFile)
+	}
+
+	f, err := os.Open(inputFile)
+	sigolo.FatalCheck(err)
+
+	var scanner osm.Scanner
+	if strings.HasSuffix(inputFile, ".osm") {
+		scanner = osmxml.New(context.Background(), f)
+	} else if strings.HasSuffix(inputFile, ".pbf") {
+		scanner = osmpbf.New(context.Background(), f, 1)
+	}
+	return f, scanner, err
 }
 
 func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, encodedFeature feature.EncodedFeature) error {
@@ -176,7 +202,7 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, e
 		}
 		return nil
 	}
-	// TODO	 Implement relation handling
+	// TODO	 Implement relation handling: Store nodes (ID with lat+lon) and ways (ID with first cell index, because the way appears in all cells it covers, so just store the first one)
 	//case *osm.Relation:
 
 	return nil
@@ -241,6 +267,7 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, encodedFeature *feature.Enco
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
+		// TODO Store nodes with ways (only IDs to relations, because it can be fetched from the cell of the node) and relations (only IDs to relations, because it can be fetched from the cell of the node)
 
 		Names: | osmId | lon | lat | num. keys | num. values |   encodedKeys   |   encodedValues   |
 		Bytes: |   8   |  4  |  4  |     4     |      4      | <num. keys> / 8 | <num. values> * 3 |
@@ -300,6 +327,7 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, encodedFea
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
+		// TODO Store relations: only IDs to relations, because its data can be fetched from the cell of the way
 
 		Names: | osmId | num. keys | num. values | num. nodes |   encodedKeys   |   encodedValues   |       nodes       |
 		Bytes: |   8   |     4     |      4      |      2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 |
@@ -374,8 +402,8 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, encodedFea
 	return nil
 }
 
-// GetCellIdForCoordinate returns the cell index (i.e. position) for the given coordinate.
-func (g *GridIndex) GetCellIdForCoordinate(x float64, y float64) CellIndex {
+// GetCellIndexForCoordinate returns the cell index (i.e. position) for the given coordinate.
+func (g *GridIndex) GetCellIndexForCoordinate(x float64, y float64) CellIndex {
 	return CellIndex{int(x / g.CellWidth), int(y / g.CellHeight)}
 }
 
@@ -427,8 +455,8 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, er
 
 func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error) {
 	sigolo.Debugf("Get feature from bbox=%#v", bbox)
-	minCell := g.GetCellIdForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
-	maxCell := g.GetCellIdForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
+	minCell := g.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
+	maxCell := g.GetCellIndexForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
 
 	resultChannel := make(chan *GetFeaturesResult, 10)
 
@@ -468,7 +496,7 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error
 	cells := map[CellIndex][]uint64{}            // just a lookup table to quickly see if a cell has already been collected
 	innerCellBounds := map[CellIndex]orb.Bound{} // just a lookup table to quickly see if a cell has already been collected
 	for _, node := range nodes {
-		cell := g.GetCellIdForCoordinate(node.Lon, node.Lat)
+		cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 		if _, ok := cells[cell]; !ok {
 			// New cell -> Create it and add first node ID
 			cells[cell] = []uint64{uint64(node.ID)}
