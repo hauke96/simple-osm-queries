@@ -1,0 +1,193 @@
+package util
+
+import (
+	"encoding/binary"
+	"github.com/pkg/errors"
+	"math"
+	"reflect"
+)
+
+type Datatype int
+
+const (
+	DatatypeByte Datatype = iota
+	DatatypeInt16
+	DatatypeInt24
+	DatatypeInt32
+	DatatypeInt64
+	DatatypeFloat32
+	DatatypeFloat64
+)
+
+type BinaryItem interface {
+	Write(object any, data []byte, index int) (int, error)
+	Read(object any, data []byte, index int) (int, error)
+}
+
+type BinarySchema struct {
+	Items []BinaryItem // All items of this object schema. They are written and read in the given order.
+}
+
+func (b *BinarySchema) Write(object any, data []byte, index int) (int, error) {
+	var err error
+
+	for _, item := range b.Items {
+		index, err = item.Write(object, data, index)
+		if err != nil {
+			return -1, err
+		}
+	}
+
+	return index, nil
+}
+
+func (b *BinarySchema) Read(object any, data []byte, index int) (int, error) {
+	panic("Implement")
+}
+
+type BinaryDataItem struct {
+	FieldName  string   // Name of the golang struct field.
+	BinaryType Datatype // Type this field should be stored to. This has to be compatible with the FieldType.
+}
+
+func (b *BinaryDataItem) Write(object any, data []byte, index int) (int, error) {
+	field := reflect.Indirect(reflect.ValueOf(object)).FieldByName(b.FieldName)
+
+	switch b.BinaryType {
+	case DatatypeByte:
+		data[index] = byte(field.Int())
+		index += 1
+	case DatatypeInt16:
+		binary.LittleEndian.PutUint16(data[index:], uint16(field.Uint()))
+		index += 2
+	case DatatypeInt24:
+		v := field.Int()
+		data[0] = byte(v)
+		data[1] = byte(v >> 8)
+		data[2] = byte(v >> 16)
+		index += 3
+	case DatatypeInt32:
+		binary.LittleEndian.PutUint32(data[index:], uint32(field.Uint()))
+		index += 4
+	case DatatypeInt64:
+		binary.LittleEndian.PutUint64(data[index:], field.Uint())
+		index += 8
+	case DatatypeFloat32:
+		binary.LittleEndian.PutUint32(data[index:], math.Float32bits(float32(field.Float())))
+		index += 4
+	case DatatypeFloat64:
+		binary.LittleEndian.PutUint64(data[index:], math.Float64bits(field.Float()))
+		index += 8
+	default:
+		return -1, errors.Errorf("Unsupported datatype %d for field %s", b.BinaryType, b.FieldName)
+	}
+
+	return index, nil
+}
+
+func (b *BinaryDataItem) Read(object any, data []byte, index int) (int, error) {
+	panic("Implement")
+}
+
+// BinaryRawCollectionItem represents the simple schema for array of e.g. integers. It also stores the size of the array as 32 bit integer.
+type BinaryRawCollectionItem struct {
+	FieldName  string   // Name of the golang struct slice.
+	BinaryType Datatype // Type this field should be stored to. This has to be compatible with the FieldType.
+}
+
+func (b *BinaryRawCollectionItem) Write(object any, data []byte, index int) (int, error) {
+	reflectionType := reflect.Indirect(reflect.ValueOf(object)).FieldByName(b.FieldName)
+	if reflectionType.Kind() != reflect.Slice && reflectionType.Kind() != reflect.Array {
+		return -1, errors.Errorf("Unsupported type given to BinaryCollectionItem (type=%v, index=%d, object=%v). Only slices and array are supported.", reflectionType, index, object)
+	}
+
+	binary.LittleEndian.PutUint32(data[index:], uint32(reflectionType.Len()))
+	index += 4
+
+	for i := 0; i < reflectionType.Len(); i++ {
+		element := reflectionType.Index(i)
+
+		switch b.BinaryType {
+		case DatatypeByte:
+			data[index] = byte(getUint64FromValue(element))
+			index += 1
+		case DatatypeInt16:
+			binary.LittleEndian.PutUint16(data[index:], uint16(getUint64FromValue(element)))
+			index += 2
+		case DatatypeInt24:
+			v := getUint64FromValue(element)
+			data[0] = byte(v)
+			data[1] = byte(v >> 8)
+			data[2] = byte(v >> 16)
+			index += 3
+		case DatatypeInt32:
+			binary.LittleEndian.PutUint32(data[index:], uint32(getUint64FromValue(element)))
+			index += 4
+		case DatatypeInt64:
+			binary.LittleEndian.PutUint64(data[index:], getUint64FromValue(element))
+			index += 8
+		case DatatypeFloat32:
+			binary.LittleEndian.PutUint32(data[index:], math.Float32bits(float32(element.Float())))
+			index += 4
+		case DatatypeFloat64:
+			binary.LittleEndian.PutUint64(data[index:], math.Float64bits(element.Float()))
+			index += 8
+		default:
+			return -1, errors.Errorf("Unsupported datatype %d for slice field %s", b.BinaryType, b.FieldName)
+		}
+	}
+
+	return index, nil
+}
+
+func (b *BinaryRawCollectionItem) Read(object any, data []byte, index int) (int, error) {
+	panic("Implement")
+}
+
+// BinaryCollectionItem represents the simple schema for array of structs.
+type BinaryCollectionItem struct {
+	FieldName  string       // Name of the golang struct slice.
+	ItemSchema BinarySchema // Schema of the item in this collection
+}
+
+func (b *BinaryCollectionItem) Write(object any, data []byte, index int) (int, error) {
+	reflectionType := reflect.Indirect(reflect.ValueOf(object)).FieldByName(b.FieldName)
+	if reflectionType.Kind() != reflect.Slice && reflectionType.Kind() != reflect.Array {
+		return -1, errors.Errorf("Unsupported type given to BinaryCollectionItem (type=%v, index=%d, object=%v). Only slices and array are supported.", reflectionType, index, object)
+	}
+
+	binary.LittleEndian.PutUint32(data[index:], uint32(reflectionType.Len()))
+	index += 4
+
+	var err error
+	for i := 0; i < reflectionType.Len(); i++ {
+		element := reflectionType.Index(i)
+		index, err = b.ItemSchema.Write(element, data, index)
+		if err != nil {
+			return -1, err
+		}
+	}
+
+	return index, nil
+}
+
+func (b *BinaryCollectionItem) Read(object any, data []byte, index int) (int, error) {
+	panic("Implement")
+}
+
+func getUint64FromValue(value reflect.Value) uint64 {
+	if value.Kind() == reflect.Int ||
+		value.Kind() == reflect.Int8 ||
+		value.Kind() == reflect.Int16 ||
+		value.Kind() == reflect.Int32 ||
+		value.Kind() == reflect.Int64 {
+		return uint64(value.Int())
+	} else if value.Kind() == reflect.Uint ||
+		value.Kind() == reflect.Uint8 ||
+		value.Kind() == reflect.Uint16 ||
+		value.Kind() == reflect.Uint32 ||
+		value.Kind() == reflect.Uint64 {
+		return value.Uint()
+	}
+	panic("Unsupported value type " + value.Kind().String() + " to convert to uint.")
+}

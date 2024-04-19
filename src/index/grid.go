@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"soq/feature"
+	"soq/util"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,26 @@ import (
 )
 
 const GridIndexFolder = "grid-index"
+
+var (
+	nodeBinarySchema = util.BinarySchema{
+		Items: []util.BinaryItem{
+			&util.BinaryDataItem{FieldName: "ID", BinaryType: util.DatatypeInt64},
+			&util.BinaryDataItem{FieldName: "Lon", BinaryType: util.DatatypeFloat32},
+			&util.BinaryDataItem{FieldName: "Lat", BinaryType: util.DatatypeFloat32},
+			&util.BinaryRawCollectionItem{FieldName: "EncodedKeys", BinaryType: util.DatatypeByte},
+			&util.BinaryRawCollectionItem{FieldName: "EncodedValues", BinaryType: util.DatatypeInt24},
+		},
+	}
+)
+
+type NodeBinaryDao struct {
+	ID            uint64
+	Lon           float32
+	Lat           float32
+	EncodedKeys   []byte
+	EncodedValues []int
+}
 
 type GridIndex struct {
 	TagIndex             *TagIndex
@@ -281,14 +302,14 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, encodedFeature *feature.Enco
 	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
 	// by a factor of ten!
-	numKeys := 0
+	numKeyBytes := 0
 	for i := 0; i < len(encodedFeature.GetKeys()); i++ {
 		if encodedFeature.GetKeys()[i] != 0 {
-			numKeys = i + 1
+			numKeyBytes = i + 1
 		}
 	}
 
-	encodedKeyBytes := numKeys                               // Is already a byte-array -> no division by 8 needed
+	encodedKeyBytes := numKeyBytes                           // Is already a byte-array -> no division by 8 needed
 	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
 
 	headerBytesCount := 8 + 4 + 4 + 4 + 4 // = 24
@@ -298,28 +319,24 @@ func (g *GridIndex) writeNodeData(osmId osm.NodeID, encodedFeature *feature.Enco
 
 	data := make([]byte, byteCount)
 
-	point := encodedFeature.Geometry.(*orb.Point)
-
-	binary.LittleEndian.PutUint64(data[0:], uint64(osmId))
-	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(point.Lon())))
-	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(point.Lat())))
-	binary.LittleEndian.PutUint32(data[16:], uint32(numKeys))
-	binary.LittleEndian.PutUint32(data[20:], uint32(len(encodedFeature.GetValues())))
-
-	copy(data[headerBytesCount:], encodedFeature.GetKeys()[0:numKeys])
-	for i, v := range encodedFeature.GetValues() {
-		b := data[headerBytesCount+encodedKeyBytes+i*3:]
-		b[0] = byte(v)
-		b[1] = byte(v >> 8)
-		b[2] = byte(v >> 16)
+	dao := NodeBinaryDao{
+		ID:            encodedFeature.ID,
+		Lon:           float32(encodedFeature.Geometry.(*orb.Point).Lon()),
+		Lat:           float32(encodedFeature.Geometry.(*orb.Point).Lat()),
+		EncodedKeys:   encodedFeature.GetKeys()[0:numKeyBytes],
+		EncodedValues: encodedFeature.GetValues(),
 	}
 
-	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d", osmId, point, byteCount, numKeys, len(encodedFeature.GetValues()))
+	_, err := nodeBinarySchema.Write(dao, data, 0)
+	if err != nil {
+		return errors.Wrapf(err, "Unable to create binary data for node %d", osmId)
+	}
 
-	_, err := f.Write(data)
+	_, err = f.Write(data)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to write node %d to cell file", osmId)
 	}
+
 	return nil
 }
 
