@@ -299,7 +299,7 @@
             document.getElementById("error-request-label").style.visibility = "collapse";
 
             let query = document.getElementById("query-input").value;
-            query = query.replace("{{bbox}}", "" + getCurrentBbox());
+            query = query.replaceAll("{{bbox}}", "" + getCurrentBbox());
             console.log("Send query:", query);
 
             fetch("./query", {
