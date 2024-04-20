@@ -1,8 +1,8 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="run import (test-small.osm)" type="GoApplicationRunConfiguration" factoryName="Go Application">
+  <configuration default="false" name="run server" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="simple-osm-queries" />
     <working_directory value="$PROJECT_DIR$/src" />
-    <parameters value="--logging=trace import ../test-small.osm" />
+    <parameters value="--diagnostics-profiling --logging=info server --port=8080" />
     <kind value="FILE" />
     <package value="github.com/hauke96/simple-osm-queries" />
     <directory value="$PROJECT_DIR$" />

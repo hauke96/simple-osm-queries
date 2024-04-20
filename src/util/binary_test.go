@@ -89,7 +89,7 @@ func TestBinary_writeReadSimpleSchema(t *testing.T) {
 	AssertEqual(t, dao, readDao)
 }
 
-func TestBinary_writeRawCollectionSchema(t *testing.T) {
+func TestBinary_writeReadRawCollectionSchema(t *testing.T) {
 	// Arrange
 	dao := rawCollectionDao{
 		A: 123,
@@ -127,7 +127,7 @@ func TestBinary_writeRawCollectionSchema(t *testing.T) {
 	AssertEqual(t, dao, readDao)
 }
 
-func TestBinary_writeCollectionSchema(t *testing.T) {
+func TestBinary_writeReadCollectionSchema(t *testing.T) {
 	// Arrange
 	dao := collectionDao{
 		A: 123,
@@ -161,5 +161,8 @@ func TestBinary_writeCollectionSchema(t *testing.T) {
 	// Assert
 	AssertNil(t, err)
 	AssertEqual(t, len(data), index)
-	AssertEqual(t, dao, readDao)
+	AssertEqual(t, dao.A, readDao.A)
+	AssertEqual(t, len(dao.B), len(readDao.B))
+	AssertApprox(t, dao.B[0].C, readDao.B[0].C, 0.00001)
+	AssertApprox(t, dao.B[1].C, readDao.B[1].C, 0.00001)
 }

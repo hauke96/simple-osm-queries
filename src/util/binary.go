@@ -20,8 +20,8 @@ const (
 )
 
 type BinaryItem interface {
-	Write(object any, data []byte, index int) (int, error)
-	Read(object any, data []byte, index int) (int, error)
+	Write(object reflect.Value, data []byte, index int) (int, error)
+	Read(object reflect.Value, data []byte, index int) (int, error)
 }
 
 type BinarySchema struct {
@@ -32,7 +32,7 @@ func (b *BinarySchema) Write(object any, data []byte, index int) (int, error) {
 	var err error
 
 	for _, item := range b.Items {
-		index, err = item.Write(object, data, index)
+		index, err = item.Write(reflect.ValueOf(object), data, index)
 		if err != nil {
 			return -1, err
 		}
@@ -45,7 +45,7 @@ func (b *BinarySchema) Read(object any, data []byte, index int) (int, error) {
 	var err error
 
 	for _, item := range b.Items {
-		index, err = item.Read(object, data, index)
+		index, err = item.Read(reflect.Indirect(reflect.ValueOf(object)), data, index)
 		if err != nil {
 			return -1, err
 		}
@@ -59,15 +59,15 @@ type BinaryDataItem struct {
 	BinaryType Datatype // Type this field should be stored to. This has to be compatible with the FieldType.
 }
 
-func (b *BinaryDataItem) Write(object any, data []byte, index int) (int, error) {
-	field := reflect.ValueOf(object).FieldByName(b.FieldName)
+func (b *BinaryDataItem) Write(object reflect.Value, data []byte, index int) (int, error) {
+	field := object.FieldByName(b.FieldName)
 	binaryType := b.BinaryType
 	fieldName := b.FieldName
 	return writeBinaryValue(binaryType, fieldName, field, data, index)
 }
 
-func (b *BinaryDataItem) Read(object any, data []byte, index int) (int, error) {
-	field := reflect.Indirect(reflect.ValueOf(object)).FieldByName(b.FieldName)
+func (b *BinaryDataItem) Read(object reflect.Value, data []byte, index int) (int, error) {
+	field := object.FieldByName(b.FieldName)
 	return readBinaryValue(b.BinaryType, b.FieldName, field, data, index)
 }
 
@@ -77,8 +77,8 @@ type BinaryRawCollectionItem struct {
 	BinaryType Datatype // Type this field should be stored to. This has to be compatible with the FieldType.
 }
 
-func (b *BinaryRawCollectionItem) Write(object any, data []byte, index int) (int, error) {
-	reflectionType := reflect.Indirect(reflect.ValueOf(object)).FieldByName(b.FieldName)
+func (b *BinaryRawCollectionItem) Write(object reflect.Value, data []byte, index int) (int, error) {
+	reflectionType := object.FieldByName(b.FieldName)
 	if reflectionType.Kind() != reflect.Slice && reflectionType.Kind() != reflect.Array {
 		return -1, errors.Errorf("Unsupported type given to BinaryCollectionItem (type=%v, index=%d, object=%v). Only slices and array are supported.", reflectionType, index, object)
 	}
@@ -101,10 +101,10 @@ func (b *BinaryRawCollectionItem) Write(object any, data []byte, index int) (int
 	return index, nil
 }
 
-func (b *BinaryRawCollectionItem) Read(object any, data []byte, index int) (int, error) {
-	reflectionType := reflect.Indirect(reflect.ValueOf(object)).FieldByName(b.FieldName)
+func (b *BinaryRawCollectionItem) Read(object reflect.Value, data []byte, index int) (int, error) {
+	reflectionType := object.FieldByName(b.FieldName)
 	if reflectionType.Kind() != reflect.Slice && reflectionType.Kind() != reflect.Array {
-		return -1, errors.Errorf("Unsupported type given to BinaryCollectionItem (type=%v, index=%d, object=%v). Only slices and array are supported.", reflectionType, index, object)
+		return -1, errors.Errorf("Unsupported type given to BinaryRawCollectionItem (type=%v, index=%d, object=%v). Only slices and array are supported.", reflectionType, index, object)
 	}
 
 	length := int(binary.LittleEndian.Uint32(data[index:]))
@@ -132,8 +132,8 @@ type BinaryCollectionItem struct {
 	ItemSchema BinarySchema // Schema of the item in this collection
 }
 
-func (b *BinaryCollectionItem) Write(object any, data []byte, index int) (int, error) {
-	reflectionType := reflect.Indirect(reflect.ValueOf(object)).FieldByName(b.FieldName)
+func (b *BinaryCollectionItem) Write(object reflect.Value, data []byte, index int) (int, error) {
+	reflectionType := object.FieldByName(b.FieldName)
 	if reflectionType.Kind() != reflect.Slice && reflectionType.Kind() != reflect.Array {
 		return -1, errors.Errorf("Unsupported type given to BinaryCollectionItem (type=%v, index=%d, object=%v). Only slices and array are supported.", reflectionType, index, object)
 	}
@@ -153,8 +153,33 @@ func (b *BinaryCollectionItem) Write(object any, data []byte, index int) (int, e
 	return index, nil
 }
 
-func (b *BinaryCollectionItem) Read(object any, data []byte, index int) (int, error) {
-	panic("Implement")
+func (b *BinaryCollectionItem) Read(object reflect.Value, data []byte, index int) (int, error) {
+	field := object.FieldByName(b.FieldName)
+	if field.Kind() != reflect.Slice && field.Kind() != reflect.Array {
+		return -1, errors.Errorf("Unsupported type given to BinaryCollectionItem (type=%v, index=%d, object=%v). Only slices and array are supported.", field, index, object)
+	}
+
+	length := int(binary.LittleEndian.Uint32(data[index:]))
+	index += 4
+
+	slice := reflect.MakeSlice(field.Type(), length, length)
+
+	var err error
+	for i := 0; i < length; i++ {
+		sliceItemValue := slice.Index(i)
+		newItem := reflect.New(sliceItemValue.Type())
+
+		index, err = b.ItemSchema.Read(newItem.Interface(), data, index)
+		if err != nil {
+			return -1, err
+		}
+
+		sliceItemValue.Set(newItem.Elem())
+	}
+
+	field.Set(slice)
+
+	return index, nil
 }
 
 func writeBinaryValue(binaryType Datatype, fieldName string, value reflect.Value, data []byte, index int) (int, error) {
