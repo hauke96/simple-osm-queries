@@ -61,37 +61,9 @@ type BinaryDataItem struct {
 
 func (b *BinaryDataItem) Write(object any, data []byte, index int) (int, error) {
 	field := reflect.ValueOf(object).FieldByName(b.FieldName)
-
-	switch b.BinaryType {
-	case DatatypeByte:
-		data[index] = byte(field.Int())
-		index += 1
-	case DatatypeInt16:
-		binary.LittleEndian.PutUint16(data[index:], uint16(field.Uint()))
-		index += 2
-	case DatatypeInt24:
-		v := field.Int()
-		data[0] = byte(v)
-		data[1] = byte(v >> 8)
-		data[2] = byte(v >> 16)
-		index += 3
-	case DatatypeInt32:
-		binary.LittleEndian.PutUint32(data[index:], uint32(field.Uint()))
-		index += 4
-	case DatatypeInt64:
-		binary.LittleEndian.PutUint64(data[index:], field.Uint())
-		index += 8
-	case DatatypeFloat32:
-		binary.LittleEndian.PutUint32(data[index:], math.Float32bits(float32(field.Float())))
-		index += 4
-	case DatatypeFloat64:
-		binary.LittleEndian.PutUint64(data[index:], math.Float64bits(field.Float()))
-		index += 8
-	default:
-		return -1, errors.Errorf("Unsupported datatype %d for field %s", b.BinaryType, b.FieldName)
-	}
-
-	return index, nil
+	binaryType := b.BinaryType
+	fieldName := b.FieldName
+	return writeBinaryValue(binaryType, fieldName, field, data, index)
 }
 
 func (b *BinaryDataItem) Read(object any, data []byte, index int) (int, error) {
@@ -195,9 +167,9 @@ func writeBinaryValue(binaryType Datatype, fieldName string, value reflect.Value
 		index += 2
 	case DatatypeInt24:
 		v := getUint64FromValue(value)
-		data[0] = byte(v)
-		data[1] = byte(v >> 8)
-		data[2] = byte(v >> 16)
+		data[index] = byte(v)
+		data[index+1] = byte(v >> 8)
+		data[index+2] = byte(v >> 16)
 		index += 3
 	case DatatypeInt32:
 		binary.LittleEndian.PutUint32(data[index:], uint32(getUint64FromValue(value)))

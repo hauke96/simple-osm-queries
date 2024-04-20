@@ -3,7 +3,6 @@ package index
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
@@ -11,7 +10,6 @@ import (
 	"github.com/paulmach/osm/osmxml"
 	"github.com/pkg/errors"
 	"io"
-	"math"
 	"os"
 	"path"
 	"soq/feature"
@@ -68,7 +66,7 @@ type NodeBinaryDao struct {
 
 func (d NodeBinaryDao) getExpectedByteSize() int {
 	encodedKeysSize := 4 + len(d.EncodedKeys)
-	encodedValuesSize := 4 + len(d.EncodedValues)*4
+	encodedValuesSize := 4 + len(d.EncodedValues)*3 // *3 because of the Int24 type
 
 	// ID + size of lat/lon + the lists
 	return 8 + 4 + 4 + encodedKeysSize + encodedValuesSize
@@ -89,7 +87,7 @@ type WayBinaryDao struct {
 
 func (d WayBinaryDao) getExpectedByteSize() int {
 	encodedKeysSize := 4 + len(d.EncodedKeys)
-	encodedValuesSize := 4 + len(d.EncodedValues)*4
+	encodedValuesSize := 4 + len(d.EncodedValues)*3 // *3 because of the Int24 type
 	nodesSize := 4 + len(d.Nodes)*16
 
 	// ID + size of the lists
@@ -667,20 +665,21 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 	var err error
 
 	for pos := 0; pos < len(data); {
-		nodeDao := NodeBinaryDao{}
-		pos, err = nodeBinarySchema.Read(&nodeDao, data, pos)
+		dao := NodeBinaryDao{}
+		pos, err = nodeBinarySchema.Read(&dao, data, pos)
 		sigolo.FatalCheck(err) // TODO better return error?
 
 		encodedFeature := &feature.EncodedNodeFeature{
 			AbstractEncodedFeature: feature.AbstractEncodedFeature{
-				ID:       nodeDao.ID,
-				Geometry: &orb.Point{nodeDao.Lon, nodeDao.Lat},
-				Keys:     nodeDao.EncodedKeys,
-				Values:   nodeDao.EncodedValues,
+				ID:       dao.ID,
+				Geometry: &orb.Point{dao.Lon, dao.Lat},
+				Keys:     dao.EncodedKeys,
+				Values:   dao.EncodedValues,
 			},
 		}
+
 		if g.checkFeatureValidity {
-			sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
+			sigolo.Debugf("Check validity of node feature %d", encodedFeature.ID)
 			g.checkValidity(encodedFeature)
 		}
 
@@ -692,8 +691,6 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 			outputBuffer = make([]feature.EncodedFeature, len(outputBuffer))
 			currentBufferPos = 0
 		}
-
-		//pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes
 	}
 
 	output <- outputBuffer
@@ -702,76 +699,40 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, data []byte) {
 	outputBuffer := make([]feature.EncodedFeature, 1000)
 	currentBufferPos := 0
-	totalReadFeatures := 0
+	var err error
 
 	for pos := 0; pos < len(data); {
-		// See format details (bit position, field sizes, etc.) in function "writeWayData".
+		dao := WayBinaryDao{}
+		pos, err = wayBinarySchema.Read(&dao, data, pos)
+		sigolo.FatalCheck(err) // TODO better return error?
 
-		/*
-			Read general information of the feature
-		*/
-		osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+8:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+12:]))
-		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
-		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
-		nodeBytes := numNodes * 16
-
-		headerBytesCount := 8 + 4 + 4 + 2 // TODO this changed to 4 bytes for the node count
-
-		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
-
-		/*
-			Read the keys and tags of the feature
-		*/
-		encodedKeys := make([]byte, numEncodedKeyBytes)
-		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos+headerBytesCount:])
-
-		encodedValuesStartIndex := pos + headerBytesCount + numEncodedKeyBytes
-		for i := 0; i < numValues; i++ {
-			b := data[encodedValuesStartIndex+i*3:]
-			encodedValues[i] = int(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16)
-		}
-
-		/*
-			Read the node-IDs of the way
-		*/
+		var lineString orb.LineString
 		var nodes osm.WayNodes
-		nodesStartIndex := encodedValuesStartIndex + numValues*3
-		for i := 0; i < numNodes; i++ {
-			nodeIdIndex := nodesStartIndex + i*16
-			lonIndex := nodesStartIndex + i*16 + 8
-			latIndex := nodesStartIndex + i*16 + 12
+		for _, nodeDao := range dao.Nodes {
+			lineString = append(lineString, orb.Point{nodeDao.Lon, nodeDao.Lat})
 			nodes = append(nodes, osm.WayNode{
-				ID:  osm.NodeID(binary.LittleEndian.Uint64(data[nodeIdIndex:])),
-				Lon: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[lonIndex:]))),
-				Lat: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[latIndex:]))),
+				ID:  osm.NodeID(nodeDao.ID),
+				Lon: nodeDao.Lon,
+				Lat: nodeDao.Lat,
 			})
 		}
 
-		/*
-			Actually create the encoded feature
-		*/
-		var lineString orb.LineString
-		for _, node := range nodes {
-			lineString = append(lineString, orb.Point{node.Lon, node.Lat})
-		}
-		encodedFeature := feature.EncodedWayFeature{
+		encodedFeature := &feature.EncodedWayFeature{
 			AbstractEncodedFeature: feature.AbstractEncodedFeature{
-				ID:       osmId,
-				Keys:     encodedKeys,
-				Values:   encodedValues,
-				Geometry: &lineString,
+				ID:       dao.ID,
+				Geometry: lineString,
+				Keys:     dao.EncodedKeys,
+				Values:   dao.EncodedValues,
 			},
 			Nodes: nodes,
 		}
+
 		if g.checkFeatureValidity {
-			sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
-			g.checkValidity(&encodedFeature)
+			sigolo.Debugf("Check validity of way feature %d", encodedFeature.ID)
+			g.checkValidity(encodedFeature)
 		}
 
-		outputBuffer[currentBufferPos] = &encodedFeature
+		outputBuffer[currentBufferPos] = encodedFeature
 		currentBufferPos++
 
 		if currentBufferPos == len(outputBuffer)-1 {
@@ -779,9 +740,6 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 			outputBuffer = make([]feature.EncodedFeature, len(outputBuffer))
 			currentBufferPos = 0
 		}
-
-		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + nodeBytes
-		totalReadFeatures++
 	}
 
 	output <- outputBuffer
