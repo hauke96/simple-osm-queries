@@ -3,6 +3,8 @@ package index
 import (
 	"bufio"
 	"context"
+	"encoding/xml"
+	"fmt"
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
@@ -152,56 +154,108 @@ func (g *GridIndex) Import(inputFile string) error {
 	sigolo.Infof("Start processing geometries from input file %s", inputFile)
 	importStartTime := time.Now()
 
-	sigolo.Debugf("Read all osm objects from OSM file")
+	cells := map[CellIndex]*bufio.Writer{}
+
 	for scanner.Scan() {
 		obj := scanner.Object()
-
-		if obj.ObjectID().Type() != osm.TypeNode && obj.ObjectID().Type() != osm.TypeWay {
-			// TODO Add relation support
-			continue
-		}
 
 		switch osmObj := obj.(type) {
 		case *osm.Node:
 			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
 
-			if _, hasDataInCell := cellDataMap[cell]; !hasDataInCell {
-				cellDataMap[cell] = osm.Objects{osmObj}
-			} else {
-				cellDataMap[cell] = append(cellDataMap[cell], osmObj)
+			if _, hasDataInCell := cells[cell]; !hasDataInCell {
+				err = os.MkdirAll(fmt.Sprintf(".tmp/%d", cell.X()), os.ModePerm)
+				sigolo.FatalCheck(err)
+				f, err := os.Create(fmt.Sprintf(".tmp/%d/%d.osm", cell.X(), cell.Y()))
+				sigolo.FatalCheck(err)
+				cells[cell] = bufio.NewWriter(f)
+				_, err = cells[cell].WriteString("<?xml version='1.0' encoding='UTF-8'?>\n<osm version='0.6' generator=''>\n")
+				sigolo.FatalCheck(err)
 			}
 
+			nodeXml, err := xml.Marshal(osmObj)
+			sigolo.FatalCheck(err)
+			_, err = cells[cell].Write(nodeXml)
+			sigolo.FatalCheck(err)
+			_, err = cells[cell].WriteRune('\n')
+			sigolo.FatalCheck(err)
+
 			g.nodeToPositionMap[osmObj.ID] = orb.Point{osmObj.Lon, osmObj.Lat}
-			amountOfObjects++
 		case *osm.Way:
 			for i, node := range osmObj.Nodes {
 				node.Lon = g.nodeToPositionMap[node.ID][0]
 				node.Lat = g.nodeToPositionMap[node.ID][1]
 				osmObj.Nodes[i] = node
-
-				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
-				if _, hasDataInCell := cellDataMap[cell]; !hasDataInCell {
-					cellDataMap[cell] = osm.Objects{osmObj}
-				} else {
-					cellDataMap[cell] = append(cellDataMap[cell], osmObj)
-				}
-
-				// Add way to node mapping if not already exists (ways to contain duplicate nodes, i.e. polygons,
-				// some roundabout, etc.).
-				_, found := g.nodeToWayMap[node.ID]
-				if !found {
-					g.nodeToWayMap[node.ID] = osm.Ways{}
-				}
-				if !util.Contains(g.nodeToWayMap[node.ID], osmObj) {
-					g.nodeToWayMap[node.ID] = append(g.nodeToWayMap[node.ID], osmObj)
-				}
 			}
-			amountOfObjects++
+			for _, node := range osmObj.Nodes {
+				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
+				wayXml, err := xml.Marshal(osmObj)
+				sigolo.FatalCheck(err)
+				_, err = cells[cell].Write(wayXml)
+				sigolo.FatalCheck(err)
+			}
 		}
 		// TODO	 Implement relation handling
 		//case *osm.Relation:
-
 	}
+
+	for _, writer := range cells {
+		_, err = writer.WriteString("</osm>")
+		sigolo.FatalCheck(err)
+		err = writer.Flush()
+		sigolo.FatalCheck(err)
+	}
+
+	sigolo.Debugf("Read all osm objects from OSM file")
+	//for scanner.Scan() {
+	//	obj := scanner.Object()
+	//
+	//	if obj.ObjectID().Type() != osm.TypeNode && obj.ObjectID().Type() != osm.TypeWay {
+	//		// TODO Add relation support
+	//		continue
+	//	}
+	//
+	//	switch osmObj := obj.(type) {
+	//	case *osm.Node:
+	//		cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
+	//
+	//		if _, hasDataInCell := cellDataMap[cell]; !hasDataInCell {
+	//			cellDataMap[cell] = osm.Objects{osmObj}
+	//		} else {
+	//			cellDataMap[cell] = append(cellDataMap[cell], osmObj)
+	//		}
+	//
+	//		g.nodeToPositionMap[osmObj.ID] = orb.Point{osmObj.Lon, osmObj.Lat}
+	//		amountOfObjects++
+	//	case *osm.Way:
+	//		for i, node := range osmObj.Nodes {
+	//			node.Lon = g.nodeToPositionMap[node.ID][0]
+	//			node.Lat = g.nodeToPositionMap[node.ID][1]
+	//			osmObj.Nodes[i] = node
+	//
+	//			cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
+	//			if _, hasDataInCell := cellDataMap[cell]; !hasDataInCell {
+	//				cellDataMap[cell] = osm.Objects{osmObj}
+	//			} else {
+	//				cellDataMap[cell] = append(cellDataMap[cell], osmObj)
+	//			}
+	//
+	//			// Add way to node mapping if not already exists (ways to contain duplicate nodes, i.e. polygons,
+	//			// some roundabout, etc.).
+	//			_, found := g.nodeToWayMap[node.ID]
+	//			if !found {
+	//				g.nodeToWayMap[node.ID] = osm.Ways{}
+	//			}
+	//			if !util.Contains(g.nodeToWayMap[node.ID], osmObj) {
+	//				g.nodeToWayMap[node.ID] = append(g.nodeToWayMap[node.ID], osmObj)
+	//			}
+	//		}
+	//		amountOfObjects++
+	//	}
+	//	// TODO	 Implement relation handling
+	//	//case *osm.Relation:
+	//
+	//}
 	sigolo.Infof("Read %d objects in %d cells", amountOfObjects, len(cellDataMap))
 
 	sigolo.Debugf("Write OSM objects")
