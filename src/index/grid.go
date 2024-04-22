@@ -288,8 +288,6 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 		//sigolo.Debugf("Add way IDs for nodes in cell %v", cell)
 		//nodes, err := g.readFeaturesFromCellFile(cell.X(), cell.Y(), feature.OsmObjNode.String())
 		//sigolo.FatalCheck(err)
-		//err = g.clearCellFile(cell, feature.OsmObjNode.String())
-		//sigolo.FatalCheck(err)
 		//for _, node := range nodes {
 		//	if node == nil {
 		//		continue
@@ -431,7 +429,7 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 	if _, err = os.Stat(cellFileName); err == nil {
 		// Cell file does exist -> open it
 		sigolo.Debugf("Cell file %s already exist but is not cached, I'll open it", cellFileName)
-		file, err = os.OpenFile(cellFileName, os.O_APPEND|os.O_RDWR, 0666)
+		file, err = os.OpenFile(cellFileName, os.O_RDWR, 0666)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
 		}
@@ -465,12 +463,6 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 	g.cacheFileMutex.Unlock()
 
 	return writer, nil
-}
-
-func (g *GridIndex) clearCellFile(cell CellIndex, objectType string) error {
-	cellFolderName := g.BaseFolder + "/" + objectType + "/" + strconv.Itoa(cell.X())
-	cellFileName := cellFolderName + "/" + strconv.Itoa(cell.Y()) + ".cell"
-	return os.Remove(cellFileName)
 }
 
 func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f io.Writer) error {
