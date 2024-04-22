@@ -317,6 +317,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 
 	var emptyWayIds []osm.WayID
 	//nodeToPositionMap := map[osm.NodeID][2]float32{}
+	savedCells := map[CellIndex]bool{}
 
 	for scanner.Scan() {
 		obj := scanner.Object()
@@ -345,8 +346,16 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 			for _, node := range osmObj.Nodes {
 				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 
-				err = g.writeOsmObjectToCell(cell.X(), cell.Y(), wayFeature)
-				sigolo.FatalCheck(err)
+				if hasAlreadyBeenSaved, ok := savedCells[cell]; !ok || !hasAlreadyBeenSaved {
+					err = g.writeOsmObjectToCell(cell.X(), cell.Y(), wayFeature)
+					sigolo.FatalCheck(err)
+					savedCells[cell] = true
+				}
+			}
+
+			// Reset map but without new memory allocation
+			for cell, _ := range savedCells {
+				savedCells[cell] = false
 			}
 		}
 		// TODO	 Implement relation handling
