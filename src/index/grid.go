@@ -145,7 +145,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	g.featureCacheMutex = &sync.Mutex{}
 	g.cacheFileMutex = &sync.Mutex{}
 
-	time.Sleep(10 * time.Second)
+	//time.Sleep(10 * time.Second)
 
 	//amountOfObjects := 0
 	//cellDataMap := map[CellIndex]osm.Objects{}
@@ -165,6 +165,7 @@ func (g *GridIndex) Import(inputFile string) error {
 
 	//runtime.GC()
 
+	g.cacheFileMutex.Lock()
 	sigolo.Debugf("Close remaining open file handles")
 	for filename, file := range g.cacheFileHandles {
 		if file != nil {
@@ -182,11 +183,13 @@ func (g *GridIndex) Import(inputFile string) error {
 	}
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
+	g.cacheFileMutex.Unlock()
 
 	//runtime.GC()
 
 	g.addWayIdsToNodesInCells(cells)
 
+	g.cacheFileMutex.Lock()
 	sigolo.Debugf("Close remaining open file handles")
 	for filename, file := range g.cacheFileHandles {
 		if file != nil {
@@ -204,6 +207,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	}
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
+	g.cacheFileMutex.Unlock()
 
 	//for scanner.Scan() {
 	//	obj := scanner.Object()
@@ -327,6 +331,8 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 		}
 
 		readFeatureChannel := make(chan []feature.EncodedFeature)
+		var finishWaitGroup sync.WaitGroup
+		finishWaitGroup.Add(1)
 		go func() {
 			for nodes := range readFeatureChannel {
 				for _, node := range nodes {
@@ -343,11 +349,14 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 				}
 				//runtime.GC()
 			}
+			finishWaitGroup.Done()
 		}()
 
 		g.readNodesFromCellData(readFeatureChannel, data)
 
 		close(readFeatureChannel)
+
+		finishWaitGroup.Wait()
 
 		// Add way information to nodes
 		//sigolo.Debugf("Add way IDs for nodes in cell %v", cell)
@@ -484,12 +493,11 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 
 	g.cacheFileMutex.Lock()
 	writer, cached = g.cacheFileWriters[cellFileName]
+	g.cacheFileMutex.Unlock()
 	if cached {
-		g.cacheFileMutex.Unlock()
 		sigolo.Tracef("Cell file %s already exist and cached", cellFileName)
 		return writer, nil
 	}
-	g.cacheFileMutex.Unlock()
 
 	// Cell file not cached
 	var file *os.File
@@ -854,13 +862,12 @@ func (g *GridIndex) readFeaturesFromCellFile(cellX int, cellY int, objectType st
 	}
 
 	g.featureCacheMutex.Lock()
-	if _, ok := g.featureCache[cellFileName]; ok {
+	if cachedFeatures, ok := g.featureCache[cellFileName]; ok {
 		sigolo.Tracef("Use features from cache for cell file %s", cellFileName)
 		g.featureCacheMutex.Unlock()
-		return g.featureCache[cellFileName], nil
-	} else {
-		g.featureCache[cellFileName] = []feature.EncodedFeature{}
+		return cachedFeatures, nil
 	}
+	g.featureCache[cellFileName] = []feature.EncodedFeature{}
 	g.featureCacheMutex.Unlock()
 
 	sigolo.Tracef("Read cell file %s", cellFileName)
