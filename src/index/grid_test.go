@@ -24,7 +24,6 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 	geometry = &orb.Point{1.23, 2.34}
 	encodedFeature := &feature.EncodedNodeFeature{
 		AbstractEncodedFeature: feature.AbstractEncodedFeature{
-			ID:       123,
 			Geometry: geometry,
 			Keys:     []byte{73, 0, 0}, // LittleEndian: 1001 0010
 			Values:   []int{5, 1, 9},   // One value per "1" in "keys"
@@ -48,10 +47,11 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 	util.AssertApprox(t, geometry.(*orb.Point).Lat(), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[12:]))), 0.00001)
 
 	util.AssertEqual(t, uint32(1), binary.LittleEndian.Uint32(data[16:]))
-	util.AssertEqual(t, encodedFeature.Keys[0], data[20])
+	util.AssertEqual(t, uint32(3), binary.LittleEndian.Uint32(data[20:]))
 
-	util.AssertEqual(t, uint32(3), binary.LittleEndian.Uint32(data[21:]))
-	p := 21 + 4
+	util.AssertEqual(t, encodedFeature.Keys[0], data[24])
+
+	p := 24 + 1
 	util.AssertEqual(t, encodedFeature.Values[0], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
 	p += 3
 	util.AssertEqual(t, encodedFeature.Values[1], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
