@@ -71,7 +71,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	g.featureCacheMutex = &sync.Mutex{}
 	g.cacheFileMutex = &sync.Mutex{}
 
-	//time.Sleep(10 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	//amountOfObjects := 0
 	//cellDataMap := map[CellIndex]osm.Objects{}
@@ -983,7 +983,7 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 			Read the node-IDs of the way
 		*/
 		var nodes osm.WayNodes
-		nodesStartIndex := encodedValuesStartIndex + numValues*3
+		nodesStartIndex := encodedValuesStartIndex + encodedValuesBytes
 		for i := 0; i < numNodes; i++ {
 			nodeIdIndex := nodesStartIndex + i*16
 			lonIndex := nodesStartIndex + i*16 + 8
@@ -1052,26 +1052,40 @@ func (g *GridIndex) readNodeToWayMappingFromCellData(cellX int, cellY int) (map[
 	nodeToWays := map[uint64][]osm.WayID{}
 
 	for pos := 0; pos < len(data); {
-		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
+		// See format details (bit position, field sizes, etc.) in function "writeWayData".
+
+		/*
+			Read general information of the feature
+		*/
 		osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+16:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+20:]))
-		numWayIds := int(binary.LittleEndian.Uint16(data[pos+24:]))
-		wayIdsBytes := numWayIds * 8
-
-		headerBytesCount := 8 + 4 + 4 + 4 + 4 + 2 // = 26
-
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+8:]))
+		numValues := int(binary.LittleEndian.Uint32(data[pos+12:]))
 		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
+		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
+		nodeBytes := numNodes * 16
 
-		wayIds := make([]osm.WayID, numWayIds)
-		wayIdsStartIndex := headerBytesCount + numEncodedKeyBytes + encodedValuesBytes
-		for i := 0; i < numWayIds; i++ {
-			wayIds[i] = osm.WayID(binary.LittleEndian.Uint64(data[wayIdsStartIndex+i*8:]))
+		headerBytesCount := 8 + 4 + 4 + 2
+
+		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
+
+		encodedValuesStartIndex := pos + headerBytesCount + numEncodedKeyBytes
+
+		/*
+			Read the node-IDs of the way
+		*/
+		nodesStartIndex := encodedValuesStartIndex + encodedValuesBytes
+		for i := 0; i < numNodes; i++ {
+			nodeIdIndex := nodesStartIndex + i*16
+			nodeId := binary.LittleEndian.Uint64(data[nodeIdIndex:])
+
+			if _, ok := nodeToWays[nodeId]; !ok {
+				nodeToWays[nodeId] = []osm.WayID{osm.WayID(osmId)}
+			} else {
+				nodeToWays[nodeId] = append(nodeToWays[nodeId], osm.WayID(osmId))
+			}
 		}
 
-		nodeToWays[osmId] = wayIds
-
-		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + wayIdsBytes
+		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + nodeBytes
 	}
 
 	return nodeToWays, nil
