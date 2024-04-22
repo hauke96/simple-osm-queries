@@ -716,7 +716,7 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 		}
 
 		wayIds := make([]osm.WayID, numWayIds)
-		wayIdsStartIndex := headerBytesCount + numEncodedKeyBytes + encodedValuesBytes
+		wayIdsStartIndex := pos + headerBytesCount + numEncodedKeyBytes + encodedValuesBytes
 		for i := 0; i < numWayIds; i++ {
 			wayIds[i] = osm.WayID(binary.LittleEndian.Uint64(data[wayIdsStartIndex+i*8:]))
 		}
