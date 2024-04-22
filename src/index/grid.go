@@ -71,7 +71,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	g.featureCacheMutex = &sync.Mutex{}
 	g.cacheFileMutex = &sync.Mutex{}
 
-	time.Sleep(10 * time.Second)
+	//time.Sleep(10 * time.Second)
 
 	//amountOfObjects := 0
 	//cellDataMap := map[CellIndex]osm.Objects{}

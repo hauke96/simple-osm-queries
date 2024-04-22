@@ -30,6 +30,9 @@ type TagIndex struct {
 	// index from disk).
 	keyReverseMap   map[string]int   // Helper map: key-string -> key-index
 	valueReverseMap []map[string]int // Helper map: value-string -> value-index in value[key-index]-array
+
+	// Contains the values for each keyIndex, or nil if the key is not set. The empty places will be removed below.
+	tempEncodedValues []int
 }
 
 func LoadTagIndex(baseFolder string) (*TagIndex, error) {
@@ -85,9 +88,10 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 	}
 
 	index := &TagIndex{
-		BaseFolder: path.Base(baseFolder),
-		keyMap:     keyMap,
-		valueMap:   valueMap,
+		BaseFolder:        path.Base(baseFolder),
+		keyMap:            keyMap,
+		valueMap:          valueMap,
+		tempEncodedValues: make([]int, len(keyMap)+8),
 	}
 	//index.Print()
 
@@ -96,8 +100,9 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 
 func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 	index := &TagIndex{
-		keyMap:   keyMap,
-		valueMap: valueMap,
+		keyMap:            keyMap,
+		valueMap:          valueMap,
+		tempEncodedValues: make([]int, len(keyMap)+8),
 	}
 
 	index.keyReverseMap = map[string]int{}
@@ -185,6 +190,10 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	i.keyReverseMap = keyReverseMap
 	i.valueMap = valueMap
 	i.updateValueReverseMap()
+	i.tempEncodedValues = make([]int, len(i.keyMap)+8)
+	for j := 0; j < len(i.tempEncodedValues); j++ {
+		i.tempEncodedValues[j] = -1
+	}
 
 	importDuration := time.Since(importStartTime)
 	//i.Print()
@@ -263,9 +272,6 @@ func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 
 	encodedKeys := make([]byte, len(i.keyMap)/8+1)
 
-	// Contains the values for each keyIndex, or nil if the key is not set. The empty places will be removed below.
-	tempEncodedValues := make([]*int, len(encodedKeys)*8)
-
 	for _, tag := range tags {
 		keyIndex := i.keyReverseMap[tag.Key]
 		valueIndex := i.valueReverseMap[keyIndex][tag.Value]
@@ -274,17 +280,26 @@ func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 		bin := keyIndex / 8      // Element of the array
 		idxInBin := keyIndex % 8 // Bit position within the byte
 		encodedKeys[bin] |= 1 << idxInBin
-		tempEncodedValues[keyIndex] = &valueIndex
+		i.tempEncodedValues[keyIndex] = valueIndex
 	}
 
 	// Now we know all keys that are set and can determine the order of the values for the array.
 	encodedValues := make([]int, len(tags))
 	encodedValuesCounter := 0
-	for pos := 0; pos < len(tempEncodedValues); pos++ {
-		if tempEncodedValues[pos] != nil {
+	for pos := 0; pos < len(i.tempEncodedValues); pos++ {
+		if i.tempEncodedValues[pos] != -1 {
 			// Key at "pos" is set -> store its value
-			encodedValues[encodedValuesCounter] = *tempEncodedValues[pos]
+			encodedValues[encodedValuesCounter] = i.tempEncodedValues[pos]
 			encodedValuesCounter++
+		}
+	}
+
+	// Reset all elements to -1 for later uses of this function
+	fieldsReset := 0
+	for j := 0; j < len(i.tempEncodedValues) && fieldsReset < len(tags); j++ {
+		if i.tempEncodedValues[j] != -1 {
+			i.tempEncodedValues[j] = -1
+			fieldsReset++
 		}
 	}
 
