@@ -12,7 +12,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"runtime"
 	"soq/feature"
 	"soq/util"
 	"strconv"
@@ -105,6 +104,7 @@ type GridIndex struct {
 	BaseFolder           string
 	cacheFileHandles     map[string]*os.File
 	cacheFileWriters     map[string]*bufio.Writer
+	cacheFileMutex       *sync.Mutex
 	checkFeatureValidity bool
 	nodeToPositionMap    map[osm.NodeID]orb.Point
 	nodeToWayMap         map[osm.NodeID]osm.Ways
@@ -127,6 +127,7 @@ func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64
 		checkFeatureValidity: checkFeatureValidity,
 		featureCache:         map[string][]feature.EncodedFeature{},
 		featureCacheMutex:    &sync.Mutex{},
+		cacheFileMutex:       &sync.Mutex{},
 	}
 }
 
@@ -142,6 +143,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	g.nodeToWayMap = map[osm.NodeID]osm.Ways{}
 	g.featureCache = map[string][]feature.EncodedFeature{}
 	g.featureCacheMutex = &sync.Mutex{}
+	g.cacheFileMutex = &sync.Mutex{}
 
 	time.Sleep(10 * time.Second)
 
@@ -161,7 +163,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	}
 	//g.nodeToPositionMap = map[osm.NodeID]orb.Point{}
 
-	runtime.GC()
+	//runtime.GC()
 
 	sigolo.Debugf("Close remaining open file handles")
 	for filename, file := range g.cacheFileHandles {
@@ -181,7 +183,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
 
-	runtime.GC()
+	//runtime.GC()
 
 	g.addWayIdsToNodesInCells(cells)
 
@@ -339,7 +341,7 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 					err = g.writeOsmObjectToCell(cell.X(), cell.Y(), node)
 					sigolo.FatalCheck(err)
 				}
-				runtime.GC()
+				//runtime.GC()
 			}
 		}()
 
@@ -367,7 +369,7 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 		//}
 		//
 		//g.featureCache = map[string][]feature.EncodedFeature{}
-		runtime.GC()
+		//runtime.GC()
 	}
 }
 
@@ -480,11 +482,14 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 	var cached bool
 	var err error
 
+	g.cacheFileMutex.Lock()
 	writer, cached = g.cacheFileWriters[cellFileName]
 	if cached {
+		g.cacheFileMutex.Unlock()
 		sigolo.Tracef("Cell file %s already exist and cached", cellFileName)
 		return writer, nil
 	}
+	g.cacheFileMutex.Unlock()
 
 	// Cell file not cached
 	var file *os.File
@@ -518,10 +523,12 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
 	}
 
+	g.cacheFileMutex.Lock()
 	g.cacheFileHandles[cellFileName] = file
 
 	writer = bufio.NewWriter(file)
 	g.cacheFileWriters[cellFileName] = writer
+	g.cacheFileMutex.Unlock()
 
 	return writer, nil
 }
