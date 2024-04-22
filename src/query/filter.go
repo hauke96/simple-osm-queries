@@ -60,7 +60,8 @@ func (f LogicalFilterExpression) Applies(feature feature.EncodedFeature, context
 
 	if f.operator == LogicOpOr || f.operator == LogicOpAnd {
 		aApplies, err := f.statementA.Applies(feature, context)
-		if err != nil {
+		if err != nil || (f.operator == LogicOpAnd && !aApplies) {
+			// Error or early exit for "and" expressions where statementA doesn't apply
 			return false, err
 		}
 		bApplies, err := f.statementB.Applies(feature, context)
