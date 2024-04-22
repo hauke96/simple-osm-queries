@@ -32,7 +32,6 @@ var (
 			&util.BinaryDataItem{FieldName: "Lat", BinaryType: util.DatatypeFloat32},
 			&util.BinaryRawCollectionItem{FieldName: "EncodedKeys", BinaryType: util.DatatypeByte},
 			&util.BinaryRawCollectionItem{FieldName: "EncodedValues", BinaryType: util.DatatypeInt24},
-			&util.BinaryRawCollectionItem{FieldName: "WayIds", BinaryType: util.DatatypeInt64},
 		},
 	}
 
@@ -63,16 +62,14 @@ type NodeBinaryDao struct {
 	Lat           float64
 	EncodedKeys   []byte
 	EncodedValues []int
-	WayIds        []int64
 }
 
 func (d NodeBinaryDao) getExpectedByteSize() int {
 	encodedKeysSize := 4 + len(d.EncodedKeys)
 	encodedValuesSize := 4 + len(d.EncodedValues)*3 // *3 because of the Int24 type
-	wayIdsSize := 4 + len(d.WayIds)*8
 
 	// ID + size of lat/lon + the lists
-	return 8 + 4 + 4 + encodedKeysSize + encodedValuesSize + wayIdsSize
+	return 8 + 4 + 4 + encodedKeysSize + encodedValuesSize
 }
 
 type WayNodeBinaryDao struct {
@@ -185,16 +182,6 @@ func (g *GridIndex) Import(inputFile string) error {
 				} else {
 					cellDataMap[cell] = append(cellDataMap[cell], osmObj)
 				}
-
-				// Add way to node mapping if not already exists (ways to contain duplicate nodes, i.e. polygons,
-				// some roundabout, etc.).
-				_, found := g.nodeToWayMap[node.ID]
-				if !found {
-					g.nodeToWayMap[node.ID] = osm.Ways{}
-				}
-				if !util.Contains(g.nodeToWayMap[node.ID], osmObj) {
-					g.nodeToWayMap[node.ID] = append(g.nodeToWayMap[node.ID], osmObj)
-				}
 			}
 			amountOfObjects++
 		}
@@ -270,7 +257,7 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, e
 		if err != nil {
 			return err
 		}
-		err = g.writeNodeData(encodedFeature.(*feature.EncodedNodeFeature), f)
+		err = g.writeNodeData(osmObj.ID, encodedFeature.(*feature.EncodedNodeFeature), f)
 		if err != nil {
 			return errors.Wrapf(err, "Unable to write node %d to cell x=%d, y=%d", osmObj.ID, cellX, cellY)
 		}
@@ -347,7 +334,7 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 	return writer, nil
 }
 
-func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f io.Writer) error {
+func (g *GridIndex) writeNodeData(osmId osm.NodeID, encodedFeature *feature.EncodedNodeFeature, f io.Writer) error {
 	// The number of key-bins to store is determined by the bin with the highest index that is not empty (i.e. all 0s).
 	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
@@ -359,30 +346,24 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 		}
 	}
 
-	wayIdInts := make([]int64, len(encodedFeature.WayIds))
-	for i, wayId := range encodedFeature.WayIds {
-		wayIdInts[i] = int64(wayId)
-	}
-
 	dao := NodeBinaryDao{
 		ID:            encodedFeature.ID,
 		Lon:           encodedFeature.Geometry.(*orb.Point).Lon(),
 		Lat:           encodedFeature.Geometry.(*orb.Point).Lat(),
 		EncodedKeys:   encodedFeature.GetKeys()[0:encodedKeyBytes],
 		EncodedValues: encodedFeature.GetValues(),
-		WayIds:        wayIdInts,
 	}
 
 	data := make([]byte, dao.getExpectedByteSize())
 
 	_, err := nodeBinarySchema.Write(dao, data, 0)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to create binary data for node %d", encodedFeature.ID)
+		return errors.Wrapf(err, "Unable to create binary data for node %d", osmId)
 	}
 
 	_, err = f.Write(data)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to write node %d to cell file", encodedFeature.ID)
+		return errors.Wrapf(err, "Unable to write node %d to cell file", osmId)
 	}
 
 	return nil
@@ -437,53 +418,24 @@ func (g *GridIndex) GetCellIndexForCoordinate(x float64, y float64) CellIndex {
 }
 
 func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, error) {
-	switch osmObj := obj.(type) {
-	case *osm.Node:
-		var wayIds []osm.WayID
-		for _, way := range g.nodeToWayMap[osmObj.ID] {
-			wayIds = append(wayIds, way.ID)
-		}
-
-		return g.toEncodedNodeFeature(osmObj, wayIds)
-	case *osm.Way:
-		return g.toEncodedWayFeature(osmObj)
-	}
-	// TODO Implement relation handling
-	//case *osm.Relation:
-
-	return nil, errors.Errorf("Converting OSM object of type '%s' not supported", obj.ObjectID().Type())
-}
-
-func (g *GridIndex) toEncodedNodeFeature(obj *osm.Node, wayIds []osm.WayID) (*feature.EncodedNodeFeature, error) {
-	var geometry orb.Geometry
-
-	point := obj.Point()
-	geometry = &point
-
-	encodedKeys, encodedValues := g.TagIndex.encodeTags(obj.Tags)
-
-	abstractEncodedFeature := feature.AbstractEncodedFeature{
-		ID:       uint64(obj.ID),
-		Geometry: geometry,
-		Keys:     encodedKeys,
-		Values:   encodedValues,
-	}
-
-	return &feature.EncodedNodeFeature{
-		AbstractEncodedFeature: abstractEncodedFeature,
-		WayIds:                 wayIds,
-	}, nil
-}
-
-func (g *GridIndex) toEncodedWayFeature(obj *osm.Way) (*feature.EncodedWayFeature, error) {
 	var tags osm.Tags
 	var geometry orb.Geometry
 	var osmId uint64
 
-	tags = obj.Tags
-	lineString := obj.LineString()
-	geometry = &lineString
-	osmId = uint64(obj.ID)
+	switch osmObj := obj.(type) {
+	case *osm.Node:
+		tags = osmObj.Tags
+		point := osmObj.Point()
+		geometry = &point
+		osmId = uint64(osmObj.ID)
+	case *osm.Way:
+		tags = osmObj.Tags
+		lineString := osmObj.LineString()
+		geometry = &lineString
+		osmId = uint64(osmObj.ID)
+	}
+	// TODO Implement relation handling
+	//case *osm.Relation:
 
 	encodedKeys, encodedValues := g.TagIndex.encodeTags(tags)
 
@@ -494,10 +446,21 @@ func (g *GridIndex) toEncodedWayFeature(obj *osm.Way) (*feature.EncodedWayFeatur
 		Values:   encodedValues,
 	}
 
-	return &feature.EncodedWayFeature{
-		AbstractEncodedFeature: abstractEncodedFeature,
-		Nodes:                  obj.Nodes,
-	}, nil
+	switch osmObj := obj.(type) {
+	case *osm.Node:
+		return &feature.EncodedNodeFeature{
+			AbstractEncodedFeature: abstractEncodedFeature,
+		}, nil
+	case *osm.Way:
+		return &feature.EncodedWayFeature{
+			AbstractEncodedFeature: abstractEncodedFeature,
+			Nodes:                  osmObj.Nodes,
+		}, nil
+	}
+	// TODO Implement relation handling
+	//case *osm.Relation:
+
+	return nil, errors.Errorf("Converting OSM object of type '%s' not supported", obj.ObjectID().Type())
 }
 
 func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error) {
@@ -706,11 +669,6 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 		pos, err = nodeBinarySchema.Read(&dao, data, pos)
 		sigolo.FatalCheck(err) // TODO better return error?
 
-		wayIds := make([]osm.WayID, len(dao.WayIds))
-		for i, wayId := range dao.WayIds {
-			wayIds[i] = osm.WayID(wayId)
-		}
-
 		encodedFeature := &feature.EncodedNodeFeature{
 			AbstractEncodedFeature: feature.AbstractEncodedFeature{
 				ID:       dao.ID,
@@ -718,7 +676,6 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 				Keys:     dao.EncodedKeys,
 				Values:   dao.EncodedValues,
 			},
-			WayIds: wayIds,
 		}
 
 		if g.checkFeatureValidity {

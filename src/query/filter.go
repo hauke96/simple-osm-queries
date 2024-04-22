@@ -3,7 +3,6 @@ package query
 import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/pkg/errors"
-	"reflect"
 	"soq/feature"
 	"soq/index"
 	"soq/util"
@@ -187,9 +186,6 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	cells := map[index.CellIndex]index.CellIndex{} // Map instead of array to have quick lookups
 
 	switch contextFeature := context.(type) {
-	case *feature.EncodedNodeFeature:
-		cell := geometryIndex.GetCellIndexForCoordinate(contextFeature.GetLon(), contextFeature.GetLat())
-		cells[cell] = cell
 	case *feature.EncodedWayFeature:
 		for _, node := range contextFeature.Nodes {
 			cell := geometryIndex.GetCellIndexForCoordinate(node.Lon, node.Lat)
@@ -197,8 +193,6 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 				cells[cell] = cell
 			}
 		}
-	default:
-		return false, errors.Errorf("Unsupported object type %s for sub-statement expression", reflect.TypeOf(context).String())
 	}
 	if len(cells) == 0 {
 		return false, errors.Errorf("No cells found for context feature %d", context.GetID())
@@ -244,20 +238,12 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 
 	// Check whether at least one sub-feature of the context is within the list of IDs that fulfill the sub-statement.
 	switch contextFeature := context.(type) {
-	case *feature.EncodedNodeFeature:
-		for _, wayId := range contextFeature.WayIds {
-			if _, ok := f.idCache[uint64(wayId)]; ok {
-				return true, nil
-			}
-		}
 	case *feature.EncodedWayFeature:
 		for _, node := range contextFeature.Nodes {
 			if _, ok := f.idCache[uint64(node.ID)]; ok {
 				return true, nil
 			}
 		}
-	default:
-		return false, errors.Errorf("Unsupported object type %s for sub-statement expression", reflect.TypeOf(context).String())
 	}
 
 	return false, nil

@@ -96,9 +96,6 @@ func featurePrint(f EncodedFeature) {
 
 type EncodedNodeFeature struct {
 	AbstractEncodedFeature
-
-	// An ID list of all ways this node is part of.
-	WayIds []osm.WayID
 }
 
 func (f *EncodedNodeFeature) GetID() uint64 {
@@ -107,14 +104,6 @@ func (f *EncodedNodeFeature) GetID() uint64 {
 
 func (f *EncodedNodeFeature) GetGeometry() orb.Geometry {
 	return f.Geometry
-}
-
-func (f *EncodedNodeFeature) GetLon() float64 {
-	return f.Geometry.(*orb.Point).Lon()
-}
-
-func (f *EncodedNodeFeature) GetLat() float64 {
-	return f.Geometry.(*orb.Point).Lat()
 }
 
 func (f *EncodedNodeFeature) GetKeys() []byte {

@@ -84,9 +84,7 @@ func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.Geometr
 		case feature.OsmObjNode:
 			return geometryIndex.GetNodes(encodedFeature.GetNodes())
 		}
-		return nil, errors.Errorf("Unsupported object type %s for context-aware expression of way", objectType.String())
-	default:
-		return nil, errors.Errorf("Unsupported feature type %s for context-aware expression", reflect.TypeOf(context).String())
+		return nil, errors.Errorf("Unsupported object type %s for context-aware query of way", objectType.String())
 	}
 
 	return nil, errors.Errorf("Encoded feature type '%s' of context object not supported", reflect.TypeOf(context).String())
