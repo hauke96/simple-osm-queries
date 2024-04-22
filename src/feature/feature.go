@@ -180,6 +180,16 @@ func (f *EncodedWayFeature) HasTag(keyIndex int, valueIndex int) bool {
 	return featureHasTag(f, keyIndex, valueIndex)
 }
 
+func (f *EncodedWayFeature) HasNode(id uint64) bool {
+	nodeId := osm.NodeID(id)
+	for _, node := range f.Nodes {
+		if node.ID == nodeId {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *EncodedWayFeature) Print() {
 	featurePrint(f)
 }

@@ -3,8 +3,6 @@ package index
 import (
 	"bufio"
 	"context"
-	"encoding/xml"
-	"fmt"
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
@@ -14,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"runtime"
 	"soq/feature"
 	"soq/util"
 	"strconv"
@@ -110,6 +109,7 @@ type GridIndex struct {
 	nodeToPositionMap    map[osm.NodeID]orb.Point
 	nodeToWayMap         map[osm.NodeID]osm.Ways
 	featureCache         map[string][]feature.EncodedFeature // Filename to feature within it
+	featureCacheMutex    *sync.Mutex
 }
 
 type CellIndex [2]int
@@ -126,6 +126,7 @@ func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64
 		BaseFolder:           path.Join(indexBaseFolder, GridIndexFolder),
 		checkFeatureValidity: checkFeatureValidity,
 		featureCache:         map[string][]feature.EncodedFeature{},
+		featureCacheMutex:    &sync.Mutex{},
 	}
 }
 
@@ -137,76 +138,71 @@ func (g *GridIndex) Import(inputFile string) error {
 
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
-	g.nodeToPositionMap = map[osm.NodeID]orb.Point{}
+	//g.nodeToPositionMap = map[osm.NodeID]orb.Point{}
 	g.nodeToWayMap = map[osm.NodeID]osm.Ways{}
+	g.featureCache = map[string][]feature.EncodedFeature{}
+	g.featureCacheMutex = &sync.Mutex{}
 
-	amountOfObjects := 0
-	cellDataMap := map[CellIndex]osm.Objects{}
+	time.Sleep(10 * time.Second)
 
-	file, scanner, err := g.getScanner(inputFile)
-	if err != nil {
-		return err
-	}
-
-	defer file.Close()
-	defer scanner.Close()
+	//amountOfObjects := 0
+	//cellDataMap := map[CellIndex]osm.Objects{}
 
 	sigolo.Infof("Start processing geometries from input file %s", inputFile)
 	importStartTime := time.Now()
 
-	cells := map[CellIndex]*bufio.Writer{}
+	cells := map[CellIndex]CellIndex{}
 
-	for scanner.Scan() {
-		obj := scanner.Object()
+	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
-		switch osmObj := obj.(type) {
-		case *osm.Node:
-			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
+	err = g.convertOsmToRawEncodedFeatures(inputFile, cells)
+	if err != nil {
+		return err
+	}
+	//g.nodeToPositionMap = map[osm.NodeID]orb.Point{}
 
-			if _, hasDataInCell := cells[cell]; !hasDataInCell {
-				err = os.MkdirAll(fmt.Sprintf(".tmp/%d", cell.X()), os.ModePerm)
-				sigolo.FatalCheck(err)
-				f, err := os.Create(fmt.Sprintf(".tmp/%d/%d.osm", cell.X(), cell.Y()))
-				sigolo.FatalCheck(err)
-				cells[cell] = bufio.NewWriter(f)
-				_, err = cells[cell].WriteString("<?xml version='1.0' encoding='UTF-8'?>\n<osm version='0.6' generator=''>\n")
-				sigolo.FatalCheck(err)
-			}
+	runtime.GC()
 
-			nodeXml, err := xml.Marshal(osmObj)
-			sigolo.FatalCheck(err)
-			_, err = cells[cell].Write(nodeXml)
-			sigolo.FatalCheck(err)
-			_, err = cells[cell].WriteRune('\n')
-			sigolo.FatalCheck(err)
+	sigolo.Debugf("Close remaining open file handles")
+	for filename, file := range g.cacheFileHandles {
+		if file != nil {
+			sigolo.Tracef("Close cell file %s", file.Name())
 
-			g.nodeToPositionMap[osmObj.ID] = orb.Point{osmObj.Lon, osmObj.Lat}
-		case *osm.Way:
-			for i, node := range osmObj.Nodes {
-				node.Lon = g.nodeToPositionMap[node.ID][0]
-				node.Lat = g.nodeToPositionMap[node.ID][1]
-				osmObj.Nodes[i] = node
-			}
-			for _, node := range osmObj.Nodes {
-				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
-				wayXml, err := xml.Marshal(osmObj)
-				sigolo.FatalCheck(err)
-				_, err = cells[cell].Write(wayXml)
-				sigolo.FatalCheck(err)
-			}
+			writer := g.cacheFileWriters[filename]
+			err = writer.Flush()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
+
+			err = file.Close()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
+		} else {
+			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
 		}
-		// TODO	 Implement relation handling
-		//case *osm.Relation:
 	}
+	g.cacheFileHandles = map[string]*os.File{}
+	g.cacheFileWriters = map[string]*bufio.Writer{}
 
-	for _, writer := range cells {
-		_, err = writer.WriteString("</osm>")
-		sigolo.FatalCheck(err)
-		err = writer.Flush()
-		sigolo.FatalCheck(err)
+	runtime.GC()
+
+	g.addWayIdsToNodesInCells(cells)
+
+	sigolo.Debugf("Close remaining open file handles")
+	for filename, file := range g.cacheFileHandles {
+		if file != nil {
+			sigolo.Tracef("Close cell file %s", file.Name())
+
+			writer := g.cacheFileWriters[filename]
+			err = writer.Flush()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
+
+			err = file.Close()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
+		} else {
+			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
+		}
 	}
+	g.cacheFileHandles = map[string]*os.File{}
+	g.cacheFileWriters = map[string]*bufio.Writer{}
 
-	sigolo.Debugf("Read all osm objects from OSM file")
 	//for scanner.Scan() {
 	//	obj := scanner.Object()
 	//
@@ -256,42 +252,172 @@ func (g *GridIndex) Import(inputFile string) error {
 	//	//case *osm.Relation:
 	//
 	//}
-	sigolo.Infof("Read %d objects in %d cells", amountOfObjects, len(cellDataMap))
-
-	sigolo.Debugf("Write OSM objects")
-	for cell, objects := range cellDataMap {
-		for _, obj := range objects {
-			encodedFeature, err := g.toEncodedFeature(obj)
-			if err != nil {
-				return err
-			}
-
-			err = g.writeOsmObjectToCell(cell[0], cell[1], obj, encodedFeature)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	sigolo.Debugf("Close remaining open file handles")
-	for filename, file := range g.cacheFileHandles {
-		if file != nil {
-			sigolo.Tracef("Close cell file %s", file.Name())
-
-			writer := g.cacheFileWriters[filename]
-			err = writer.Flush()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
-
-			err = file.Close()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
-		} else {
-			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
-		}
-	}
+	//sigolo.Infof("Read %d objects in %d cells", amountOfObjects, len(cellDataMap))
+	//
+	//sigolo.Debugf("Write OSM objects")
+	//for cell, objects := range cellDataMap {
+	//	for _, obj := range objects {
+	//		encodedFeature, err := g.toEncodedFeature(obj)
+	//		if err != nil {
+	//			return err
+	//		}
+	//
+	//		err = g.writeOsmObjectToCell(cell[0], cell[1], encodedFeature)
+	//		if err != nil {
+	//			return err
+	//		}
+	//	}
+	//}
+	//
+	//sigolo.Debugf("Close remaining open file handles")
+	//for filename, file := range g.cacheFileHandles {
+	//	if file != nil {
+	//		sigolo.Tracef("Close cell file %s", file.Name())
+	//
+	//		writer := g.cacheFileWriters[filename]
+	//		err = writer.Flush()
+	//		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
+	//
+	//		err = file.Close()
+	//		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
+	//	} else {
+	//		sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
+	//	}
+	//}
 
 	importDuration := time.Since(importStartTime)
 	sigolo.Infof("Created OSM object index from OSM data in %s", importDuration)
 
+	return nil
+}
+
+func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
+	sigolo.Debugf("Add way IDs to nodes")
+
+	for cell, _ := range cells {
+		sigolo.Debugf("Process cell %v", cell)
+
+		sigolo.Debug("Collect node-way-relationship")
+		nodeToWays, err := g.readNodeToWayMappingFromCellData(cell.X(), cell.Y())
+
+		// TODO Collect relation IDs as well
+
+		//g.featureCache = map[string][]feature.EncodedFeature{}
+		//runtime.GC()
+
+		cellFolderName := path.Join(g.BaseFolder, feature.OsmObjNode.String(), strconv.Itoa(cell.X()))
+		cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
+
+		if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
+			sigolo.Tracef("Cell file %s does not exist, I'll return an empty feature list", cellFileName)
+			//return nil, nil
+			return
+		} else if err != nil {
+			//return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
+			return
+		}
+
+		sigolo.Tracef("Read cell file %s", cellFileName)
+		data, err := os.ReadFile(cellFileName)
+		if err != nil {
+			//return nil, errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, objectType)
+			return
+		}
+
+		readFeatureChannel := make(chan []feature.EncodedFeature)
+		go func() {
+			for nodes := range readFeatureChannel {
+				for _, node := range nodes {
+					if node == nil {
+						continue
+					}
+
+					if wayIds, ok := nodeToWays[node.GetID()]; ok {
+						node.(*feature.EncodedNodeFeature).WayIds = wayIds
+					}
+
+					err = g.writeOsmObjectToCell(cell.X(), cell.Y(), node)
+					sigolo.FatalCheck(err)
+				}
+				runtime.GC()
+			}
+		}()
+
+		g.readNodesFromCellData(readFeatureChannel, data)
+
+		close(readFeatureChannel)
+
+		// Add way information to nodes
+		//sigolo.Debugf("Add way IDs for nodes in cell %v", cell)
+		//nodes, err := g.readFeaturesFromCellFile(cell.X(), cell.Y(), feature.OsmObjNode.String())
+		//sigolo.FatalCheck(err)
+		//err = g.clearCellFile(cell, feature.OsmObjNode.String())
+		//sigolo.FatalCheck(err)
+		//for _, node := range nodes {
+		//	if node == nil {
+		//		continue
+		//	}
+		//
+		//	if wayIds, ok := nodeToWays[node.GetID()]; ok {
+		//		node.(*feature.EncodedNodeFeature).WayIds = wayIds
+		//	}
+		//
+		//	err = g.writeOsmObjectToCell(cell.X(), cell.Y(), node)
+		//	sigolo.FatalCheck(err)
+		//}
+		//
+		//g.featureCache = map[string][]feature.EncodedFeature{}
+		runtime.GC()
+	}
+}
+
+func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[CellIndex]CellIndex) error {
+	file, scanner, err := g.getScanner(inputFile)
+	if err != nil {
+		return err
+	}
+
+	defer file.Close()
+	defer scanner.Close()
+
+	var emptyWayIds []osm.WayID
+	//nodeToPositionMap := map[osm.NodeID][2]float32{}
+
+	for scanner.Scan() {
+		obj := scanner.Object()
+
+		switch osmObj := obj.(type) {
+		case *osm.Node:
+			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
+
+			nodeFeature, err := g.toEncodedNodeFeature(osmObj, emptyWayIds)
+			sigolo.FatalCheck(err)
+			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), nodeFeature)
+			sigolo.FatalCheck(err)
+
+			cells[cell] = cell
+			//nodeToPositionMap[osmObj.ID] = [2]float32{float32(osmObj.Lon), float32(osmObj.Lat)}
+		case *osm.Way:
+			//for i, node := range osmObj.Nodes {
+			//	node.Lon = float64(nodeToPositionMap[node.ID][0])
+			//	node.Lat = float64(nodeToPositionMap[node.ID][1])
+			//	osmObj.Nodes[i] = node
+			//}
+
+			wayFeature, err := g.toEncodedWayFeature(osmObj)
+			sigolo.FatalCheck(err)
+
+			for _, node := range osmObj.Nodes {
+				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
+
+				err = g.writeOsmObjectToCell(cell.X(), cell.Y(), wayFeature)
+				sigolo.FatalCheck(err)
+			}
+		}
+		// TODO	 Implement relation handling
+		//case *osm.Relation:
+	}
+	//sigolo.Debugf("Stored %d entries in nodeToPositionMap", len(nodeToPositionMap))
 	return nil
 }
 
@@ -312,36 +438,35 @@ func (g *GridIndex) getScanner(inputFile string) (*os.File, osm.Scanner, error) 
 	return f, scanner, err
 }
 
-func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, obj osm.Object, encodedFeature feature.EncodedFeature) error {
+func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, encodedFeature feature.EncodedFeature) error {
 	var f io.Writer
 	var err error
 
-	sigolo.Tracef("Write OSM object to cell x=%d, y=%d, obj=%#v", cellX, cellY, obj.ObjectID())
+	sigolo.Tracef("Write OSM object to cell x=%d, y=%d, obj=%#v", cellX, cellY, encodedFeature.GetID())
 
-	switch osmObj := obj.(type) {
-	case *osm.Node:
+	switch featureObj := encodedFeature.(type) {
+	case *feature.EncodedNodeFeature:
 		f, err = g.getCellFile(cellX, cellY, "node")
 		if err != nil {
 			return err
 		}
-		err = g.writeNodeData(encodedFeature.(*feature.EncodedNodeFeature), f)
+		err = g.writeNodeData(featureObj, f)
 		if err != nil {
-			return errors.Wrapf(err, "Unable to write node %d to cell x=%d, y=%d", osmObj.ID, cellX, cellY)
+			return errors.Wrapf(err, "Unable to write node %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
 		}
 		return nil
-	case *osm.Way:
+	case *feature.EncodedWayFeature:
 		f, err = g.getCellFile(cellX, cellY, "way")
 		if err != nil {
 			return err
 		}
-		err = g.writeWayData(osmObj.ID, osmObj.Nodes, encodedFeature.(*feature.EncodedWayFeature), f)
+		err = g.writeWayData(featureObj, f)
 		if err != nil {
-			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", osmObj.ID, cellX, cellY)
+			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
 		}
 		return nil
 	}
 	// TODO	 Implement relation handling: Store nodes (ID with lat+lon) and ways (ID with first cell index, because the way appears in all cells it covers, so just store the first one)
-	//case *osm.Relation:
 
 	return nil
 }
@@ -401,6 +526,12 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 	return writer, nil
 }
 
+func (g *GridIndex) clearCellFile(cell CellIndex, objectType string) error {
+	cellFolderName := g.BaseFolder + "/" + objectType + "/" + strconv.Itoa(cell.X())
+	cellFileName := cellFolderName + "/" + strconv.Itoa(cell.Y()) + ".cell"
+	return os.Remove(cellFileName)
+}
+
 func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f io.Writer) error {
 	// The number of key-bins to store is determined by the bin with the highest index that is not empty (i.e. all 0s).
 	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
@@ -442,7 +573,7 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 	return nil
 }
 
-func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, encodedFeature *feature.EncodedWayFeature, f io.Writer) error {
+func (g *GridIndex) writeWayData(encodedFeature *feature.EncodedWayFeature, f io.Writer) error {
 	// The number of key-bins to store is determined by the bin with the highest index that is not empty (i.e. all 0s).
 	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
@@ -455,7 +586,7 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, encodedFea
 	}
 
 	var nodeDaos []WayNodeBinaryDao
-	for _, node := range nodes {
+	for _, node := range encodedFeature.Nodes {
 		nodeDaos = append(nodeDaos, WayNodeBinaryDao{
 			ID:  uint64(node.ID),
 			Lon: node.Lon,
@@ -464,7 +595,7 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, encodedFea
 	}
 
 	dao := WayBinaryDao{
-		ID:            uint64(osmId),
+		ID:            encodedFeature.ID,
 		EncodedKeys:   encodedFeature.GetKeys()[0:encodedKeyBytes],
 		EncodedValues: encodedFeature.GetValues(),
 		Nodes:         nodeDaos,
@@ -474,12 +605,12 @@ func (g *GridIndex) writeWayData(osmId osm.WayID, nodes osm.WayNodes, encodedFea
 
 	_, err := wayBinarySchema.Write(dao, data, 0)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to create binary data for node %d", osmId)
+		return errors.Wrapf(err, "Unable to create binary data for node %d", encodedFeature.ID)
 	}
 
 	_, err = f.Write(data)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to write node %d to cell file", osmId)
+		return errors.Wrapf(err, "Unable to write node %d to cell file", encodedFeature.ID)
 	}
 
 	return nil
@@ -715,37 +846,42 @@ func (g *GridIndex) readFeaturesFromCellFile(cellX int, cellY int, objectType st
 		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
 	}
 
+	g.featureCacheMutex.Lock()
 	if _, ok := g.featureCache[cellFileName]; ok {
 		sigolo.Tracef("Use features from cache for cell file %s", cellFileName)
+		g.featureCacheMutex.Unlock()
+		return g.featureCache[cellFileName], nil
 	} else {
-		sigolo.Tracef("Read cell file %s", cellFileName)
-		data, err := os.ReadFile(cellFileName)
-		if err != nil {
-			return nil, errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, objectType)
-		}
-
 		g.featureCache[cellFileName] = []feature.EncodedFeature{}
-
-		readFeatureChannel := make(chan []feature.EncodedFeature)
-		go func() {
-			for readFeatures := range readFeatureChannel {
-				// TODO not-null check needed for the features?
-				// TODO Prevent concurrent map writes
-				g.featureCache[cellFileName] = append(g.featureCache[cellFileName], readFeatures...)
-			}
-		}()
-
-		switch objectType {
-		case "node":
-			g.readNodesFromCellData(readFeatureChannel, data)
-		case "way":
-			g.readWaysFromCellData(readFeatureChannel, data)
-		default:
-			panic("Unsupported object type to read: " + objectType)
-		}
-
-		close(readFeatureChannel)
 	}
+	g.featureCacheMutex.Unlock()
+
+	sigolo.Tracef("Read cell file %s", cellFileName)
+	data, err := os.ReadFile(cellFileName)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, objectType)
+	}
+
+	readFeatureChannel := make(chan []feature.EncodedFeature)
+	go func() {
+		for readFeatures := range readFeatureChannel {
+			// TODO not-null check needed for the features?
+			g.featureCacheMutex.Lock()
+			g.featureCache[cellFileName] = append(g.featureCache[cellFileName], readFeatures...)
+			g.featureCacheMutex.Unlock()
+		}
+	}()
+
+	switch objectType {
+	case "node":
+		g.readNodesFromCellData(readFeatureChannel, data)
+	case "way":
+		g.readWaysFromCellData(readFeatureChannel, data)
+	default:
+		panic("Unsupported object type to read: " + objectType)
+	}
+
+	close(readFeatureChannel)
 
 	return g.featureCache[cellFileName], nil
 }
@@ -840,6 +976,42 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 	}
 
 	output <- outputBuffer
+}
+
+func (g *GridIndex) readNodeToWayMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.WayID, error) {
+	cellFolderName := path.Join(g.BaseFolder, feature.OsmObjWay.String(), strconv.Itoa(cellX))
+	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
+
+	if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
+		sigolo.Tracef("Cell file %s does not exist, I'll return an empty feature list", cellFileName)
+		return nil, nil
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
+	}
+
+	sigolo.Tracef("Read cell file %s", cellFileName)
+	data, err := os.ReadFile(cellFileName)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, feature.OsmObjWay.String())
+	}
+
+	nodeToWays := map[uint64][]osm.WayID{}
+
+	dao := WayBinaryDao{} // TODO Test if this recycling really works
+	for pos := 0; pos < len(data); {
+		pos, err = wayBinarySchema.Read(&dao, data, pos)
+		sigolo.FatalCheck(err) // TODO better return error?
+
+		for _, nodeDao := range dao.Nodes {
+			if _, ok := nodeToWays[nodeDao.ID]; !ok {
+				nodeToWays[nodeDao.ID] = []osm.WayID{osm.WayID(dao.ID)}
+			} else {
+				nodeToWays[nodeDao.ID] = append(nodeToWays[nodeDao.ID], osm.WayID(dao.ID))
+			}
+		}
+	}
+
+	return nodeToWays, nil
 }
 
 func (g *GridIndex) checkValidity(encodedFeature feature.EncodedFeature) {

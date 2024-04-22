@@ -5,6 +5,7 @@
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/soq-index" />
       <excludeFolder url="file://$MODULE_DIR$/soq-index_germany-pre-sort-adjustment" />
+      <excludeFolder url="file://$MODULE_DIR$/src/soq-index" />
       <excludePattern pattern="soq-index.*" />
     </content>
     <orderEntry type="inheritedJdk" />
