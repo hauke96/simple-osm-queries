@@ -142,17 +142,25 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	var valueMap [][]string              // [key-index][value-index] -> value-string
 	var valueReverseMap []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
 
+	firstWayHasBeenProcessed := false
+
+	sigolo.Debug("Start processing node tags (1/2)")
 	for scanner.Scan() {
 		var tags osm.Tags
 		switch osmObj := scanner.Object().(type) {
 		case *osm.Node:
 			tags = osmObj.Tags
 		case *osm.Way:
+			if !firstWayHasBeenProcessed {
+				sigolo.Debug("Start processing way tags (2/2)")
+				firstWayHasBeenProcessed = true
+			}
 			tags = osmObj.Tags
 		case *osm.Relation:
 			tags = osmObj.Tags
 		}
 
+		// Add the keys and values to the maps for the index.
 		for _, tag := range tags {
 			// Search for the given key in the key map to get its index
 			keyIndex, keyAlreadyStored := keyReverseMap[tag.Key]
@@ -180,12 +188,13 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 
 	// Make sure the values are sorted so that comparison operators work. We can change the order as we want, because
 	// OSM objects are not yet stored, this happens in a separate index.
+	sigolo.Debug("Sort values for each key")
 	for i, values := range valueMap {
 		valueMap[i] = util.Sort(values)
 	}
 
 	// Update the newly sorted value reverse map. Otherwise the value indices are all mixed up
-
+	sigolo.Debug("Store results and reset tempEncodedValues")
 	i.keyMap = keyMap
 	i.keyReverseMap = keyReverseMap
 	i.valueMap = valueMap
@@ -196,7 +205,6 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	}
 
 	importDuration := time.Since(importStartTime)
-	//i.Print()
 	sigolo.Infof("Created tag-index from OSM data in %s", importDuration)
 
 	return i.SaveToFile(TagIndexFilename)

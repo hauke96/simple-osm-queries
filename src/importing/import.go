@@ -6,6 +6,7 @@ import (
 	"path"
 	"soq/index"
 	"strings"
+	"time"
 )
 
 func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFolder string) error {
@@ -13,6 +14,9 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		sigolo.Error("Input file must be an .osm or .pbf file")
 		os.Exit(1)
 	}
+
+	sigolo.Infof("Start import of file %s", inputFile)
+	importStartTime := time.Now()
 
 	tagIndex := &index.TagIndex{
 		BaseFolder: indexBaseFolder,
@@ -28,5 +32,13 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		CellHeight: cellHeight,
 		BaseFolder: path.Join(indexBaseFolder, index.GridIndexFolder),
 	}
-	return gridIndex.Import(inputFile)
+	err = gridIndex.Import(inputFile)
+	if err != nil {
+		return err
+	}
+
+	importDuration := time.Since(importStartTime)
+	sigolo.Infof("Finished import in %s", importDuration)
+
+	return nil
 }

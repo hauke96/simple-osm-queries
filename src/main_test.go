@@ -6,5 +6,5 @@ import (
 )
 
 func TestMainImport(t *testing.T) {
-	importing.Import("../hamburg-latest.osm.pbf", defaultCellSize, defaultCellSize, indexBaseFolder)
+	importing.Import("../test.osm.pbf", defaultCellSize, defaultCellSize, indexBaseFolder)
 }
