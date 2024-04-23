@@ -179,28 +179,95 @@ func (g *GridIndex) Import(inputFile string) error {
 	return nil
 }
 
-func (g *GridIndex) closeOpenFileHandles() {
-	var err error
-	g.cacheFileMutex.Lock()
-	sigolo.Debugf("Close remaining open file handles")
-	for filename, file := range g.cacheFileHandles {
-		if file != nil {
-			sigolo.Tracef("Close cell file %s", file.Name())
+func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[CellIndex]CellIndex) error {
+	sigolo.Info("Start converting OSM data to raw encoded features")
+	importStartTime := time.Now()
 
-			writer := g.cacheFileWriters[filename]
-			err = writer.Flush()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
+	file, scanner, err := g.getScanner(inputFile)
+	if err != nil {
+		return err
+	}
 
-			err = file.Close()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
-		} else {
-			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
+	defer file.Close()
+	defer scanner.Close()
+
+	var emptyWayIds []osm.WayID
+
+	firstWayHasBeenProcessed := false
+
+	numThreads := 10
+	osmWayQueue := make(chan *osm.Way, numThreads*2)
+	osmWaySync := &sync.WaitGroup{}
+	for i := 0; i < numThreads; i++ {
+		osmWaySync.Add(1)
+		go g.createAndWriteRawWayFeature(osmWayQueue, osmWaySync)
+	}
+
+	sigolo.Debug("Start processing nodes (1/2)")
+	for scanner.Scan() {
+		obj := scanner.Object()
+
+		switch osmObj := obj.(type) {
+		case *osm.Node:
+			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
+
+			nodeFeature, err := g.toEncodedNodeFeature(osmObj, emptyWayIds)
+			sigolo.FatalCheck(err)
+			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), nodeFeature)
+			sigolo.FatalCheck(err)
+
+			cells[cell] = cell
+			//nodeToPositionMap[osmObj.ID] = [2]float32{float32(osmObj.Lon), float32(osmObj.Lat)}
+		case *osm.Way:
+			if !firstWayHasBeenProcessed {
+				sigolo.Debug("Start processing ways (2/2)")
+				firstWayHasBeenProcessed = true
+			}
+			//for i, node := range osmObj.Nodes {
+			//	node.Lon = float64(nodeToPositionMap[node.ID][0])
+			//	node.Lat = float64(nodeToPositionMap[node.ID][1])
+			//	osmObj.Nodes[i] = node
+			//}
+
+			osmWayQueue <- osmObj
+		}
+		// TODO	 Implement relation handling
+		//case *osm.Relation:
+	}
+
+	close(osmWayQueue)
+	osmWaySync.Wait()
+
+	importDuration := time.Since(importStartTime)
+	sigolo.Infof("Created raw encoded features from OSM data in %s", importDuration)
+
+	return nil
+}
+
+func (g *GridIndex) createAndWriteRawWayFeature(osmWayChannel chan *osm.Way, waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
+
+	for osmObj := range osmWayChannel {
+		wayFeature, err := g.toEncodedWayFeature(osmObj)
+		sigolo.FatalCheck(err)
+
+		wayFeatureData := g.getWayData(wayFeature)
+
+		savedCells := map[CellIndex]bool{}
+		for _, node := range osmObj.Nodes {
+			cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
+
+			if _, ok := savedCells[cell]; !ok {
+				f, err := g.getCellFile(cell.X(), cell.Y(), feature.OsmObjWay.String())
+				sigolo.FatalCheck(err)
+
+				err = g.writeData(wayFeature, wayFeatureData, f)
+				sigolo.FatalCheck(err)
+
+				savedCells[cell] = true
+			}
 		}
 	}
-	g.cacheFileHandles = map[string]*os.File{}
-	g.cacheFileWriters = map[string]*bufio.Writer{}
-	g.cacheFileMutexes = map[io.Writer]*sync.Mutex{}
-	g.cacheFileMutex.Unlock()
 }
 
 func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
@@ -304,97 +371,6 @@ func (g *GridIndex) addWayIdsToNodesInCell(cellChannel chan CellIndex, waitGroup
 		//
 		//g.featureCache = map[string][]feature.EncodedFeature{}
 		//runtime.GC()
-	}
-}
-
-func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[CellIndex]CellIndex) error {
-	sigolo.Info("Start converting OSM data to raw encoded features")
-	importStartTime := time.Now()
-
-	file, scanner, err := g.getScanner(inputFile)
-	if err != nil {
-		return err
-	}
-
-	defer file.Close()
-	defer scanner.Close()
-
-	var emptyWayIds []osm.WayID
-
-	firstWayHasBeenProcessed := false
-
-	numThreads := 10
-	osmWayQueue := make(chan *osm.Way, numThreads*2)
-	osmWaySync := &sync.WaitGroup{}
-	for i := 0; i < numThreads; i++ {
-		osmWaySync.Add(1)
-		go g.createAndWriteRawWayFeature(osmWayQueue, osmWaySync)
-	}
-
-	sigolo.Debug("Start processing nodes (1/2)")
-	for scanner.Scan() {
-		obj := scanner.Object()
-
-		switch osmObj := obj.(type) {
-		case *osm.Node:
-			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
-
-			nodeFeature, err := g.toEncodedNodeFeature(osmObj, emptyWayIds)
-			sigolo.FatalCheck(err)
-			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), nodeFeature)
-			sigolo.FatalCheck(err)
-
-			cells[cell] = cell
-			//nodeToPositionMap[osmObj.ID] = [2]float32{float32(osmObj.Lon), float32(osmObj.Lat)}
-		case *osm.Way:
-			if !firstWayHasBeenProcessed {
-				sigolo.Debug("Start processing ways (2/2)")
-				firstWayHasBeenProcessed = true
-			}
-			//for i, node := range osmObj.Nodes {
-			//	node.Lon = float64(nodeToPositionMap[node.ID][0])
-			//	node.Lat = float64(nodeToPositionMap[node.ID][1])
-			//	osmObj.Nodes[i] = node
-			//}
-
-			osmWayQueue <- osmObj
-		}
-		// TODO	 Implement relation handling
-		//case *osm.Relation:
-	}
-
-	close(osmWayQueue)
-	osmWaySync.Wait()
-
-	importDuration := time.Since(importStartTime)
-	sigolo.Infof("Created raw encoded features from OSM data in %s", importDuration)
-
-	return nil
-}
-
-func (g *GridIndex) createAndWriteRawWayFeature(osmWayChannel chan *osm.Way, waitGroup *sync.WaitGroup) {
-	defer waitGroup.Done()
-
-	for osmObj := range osmWayChannel {
-		wayFeature, err := g.toEncodedWayFeature(osmObj)
-		sigolo.FatalCheck(err)
-
-		wayFeatureData := g.getWayData(wayFeature)
-
-		savedCells := map[CellIndex]bool{}
-		for _, node := range osmObj.Nodes {
-			cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
-
-			if _, ok := savedCells[cell]; !ok {
-				f, err := g.getCellFile(cell.X(), cell.Y(), feature.OsmObjWay.String())
-				sigolo.FatalCheck(err)
-
-				err = g.writeData(wayFeature, wayFeatureData, f)
-				sigolo.FatalCheck(err)
-
-				savedCells[cell] = true
-			}
-		}
 	}
 }
 
@@ -577,6 +553,41 @@ func (g *GridIndex) writeWayData(encodedFeature *feature.EncodedWayFeature, f io
 	return g.writeData(encodedFeature, data, f)
 }
 
+func (g *GridIndex) writeData(encodedFeature feature.EncodedFeature, data []byte, f io.Writer) error {
+	m := g.cacheFileMutexes[f]
+	m.Lock()
+	_, err := f.Write(data)
+	m.Unlock()
+	if err != nil {
+		return errors.Wrapf(err, "Unable to write %s %d to cell file", reflect.TypeOf(encodedFeature).Name(), encodedFeature.GetID())
+	}
+	return nil
+}
+
+func (g *GridIndex) closeOpenFileHandles() {
+	var err error
+	g.cacheFileMutex.Lock()
+	sigolo.Debugf("Close remaining open file handles")
+	for filename, file := range g.cacheFileHandles {
+		if file != nil {
+			sigolo.Tracef("Close cell file %s", file.Name())
+
+			writer := g.cacheFileWriters[filename]
+			err = writer.Flush()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
+
+			err = file.Close()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
+		} else {
+			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
+		}
+	}
+	g.cacheFileHandles = map[string]*os.File{}
+	g.cacheFileWriters = map[string]*bufio.Writer{}
+	g.cacheFileMutexes = map[io.Writer]*sync.Mutex{}
+	g.cacheFileMutex.Unlock()
+}
+
 func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte {
 	/*
 		Entry format:
@@ -647,17 +658,6 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 	}
 
 	return data
-}
-
-func (g *GridIndex) writeData(encodedFeature feature.EncodedFeature, data []byte, f io.Writer) error {
-	m := g.cacheFileMutexes[f]
-	m.Lock()
-	_, err := f.Write(data)
-	m.Unlock()
-	if err != nil {
-		return errors.Wrapf(err, "Unable to write %s %d to cell file", reflect.TypeOf(encodedFeature).Name(), encodedFeature.GetID())
-	}
-	return nil
 }
 
 // GetCellIndexForCoordinate returns the cell index (i.e. position) for the given coordinate.
