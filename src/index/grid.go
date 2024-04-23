@@ -306,6 +306,14 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 
 	firstWayHasBeenProcessed := false
 
+	numThreads := 5
+	osmWayQueue := make(chan *osm.Way, numThreads)
+	osmWaySync := &sync.WaitGroup{}
+	for i := 0; i < numThreads; i++ {
+		osmWaySync.Add(1)
+		go g.createAndWriteRawWayFeature(osmWayQueue, osmWaySync)
+	}
+
 	sigolo.Debugf("Start processing nodes (1/2)")
 	for scanner.Scan() {
 		obj := scanner.Object()
@@ -332,25 +340,37 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 			//	osmObj.Nodes[i] = node
 			//}
 
-			wayFeature, err := g.toEncodedWayFeature(osmObj)
-			sigolo.FatalCheck(err)
-
-			savedCells := map[CellIndex]bool{}
-			for _, node := range osmObj.Nodes {
-				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
-
-				if _, ok := savedCells[cell]; !ok {
-					err = g.writeOsmObjectToCell(cell.X(), cell.Y(), wayFeature)
-					sigolo.FatalCheck(err)
-					savedCells[cell] = true
-				}
-			}
+			osmWayQueue <- osmObj
 		}
 		// TODO	 Implement relation handling
 		//case *osm.Relation:
 	}
+
+	close(osmWayQueue)
+	osmWaySync.Wait()
+
 	sigolo.Debug("Done converting OSM data to raw features")
 	return nil
+}
+
+func (g *GridIndex) createAndWriteRawWayFeature(osmWayChannel chan *osm.Way, waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
+
+	for osmObj := range osmWayChannel {
+		wayFeature, err := g.toEncodedWayFeature(osmObj)
+		sigolo.FatalCheck(err)
+
+		savedCells := map[CellIndex]bool{}
+		for _, node := range osmObj.Nodes {
+			cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
+
+			if _, ok := savedCells[cell]; !ok {
+				err = g.writeOsmObjectToCell(cell.X(), cell.Y(), wayFeature)
+				sigolo.FatalCheck(err)
+				savedCells[cell] = true
+			}
+		}
+	}
 }
 
 func (g *GridIndex) getScanner(inputFile string) (*os.File, osm.Scanner, error) {
