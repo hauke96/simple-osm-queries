@@ -87,53 +87,12 @@ func (g *GridIndex) Import(inputFile string) error {
 	if err != nil {
 		return err
 	}
-	//g.nodeToPositionMap = map[osm.NodeID]orb.Point{}
-
-	//runtime.GC()
-
-	g.cacheFileMutex.Lock()
-	sigolo.Debugf("Close remaining open file handles")
-	for filename, file := range g.cacheFileHandles {
-		if file != nil {
-			sigolo.Tracef("Close cell file %s", file.Name())
-
-			writer := g.cacheFileWriters[filename]
-			err = writer.Flush()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
-
-			err = file.Close()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
-		} else {
-			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
-		}
-	}
-	g.cacheFileHandles = map[string]*os.File{}
-	g.cacheFileWriters = map[string]*bufio.Writer{}
-	g.cacheFileMutex.Unlock()
+	g.closeOpenFileHandles()
 
 	//runtime.GC()
 
 	g.addWayIdsToNodesInCells(cells)
-
-	g.cacheFileMutex.Lock()
-	sigolo.Debugf("Close remaining open file handles")
-	for filename, file := range g.cacheFileHandles {
-		if file != nil {
-			sigolo.Tracef("Close cell file %s", file.Name())
-
-			writer := g.cacheFileWriters[filename]
-			err = writer.Flush()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
-
-			err = file.Close()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
-		} else {
-			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
-		}
-	}
-	g.cacheFileHandles = map[string]*os.File{}
-	g.cacheFileWriters = map[string]*bufio.Writer{}
-	g.cacheFileMutex.Unlock()
+	g.closeOpenFileHandles()
 
 	//for scanner.Scan() {
 	//	obj := scanner.Object()
@@ -223,13 +182,36 @@ func (g *GridIndex) Import(inputFile string) error {
 	return nil
 }
 
+func (g *GridIndex) closeOpenFileHandles() {
+	var err error
+	g.cacheFileMutex.Lock()
+	sigolo.Debugf("Close remaining open file handles")
+	for filename, file := range g.cacheFileHandles {
+		if file != nil {
+			sigolo.Tracef("Close cell file %s", file.Name())
+
+			writer := g.cacheFileWriters[filename]
+			err = writer.Flush()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
+
+			err = file.Close()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
+		} else {
+			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
+		}
+	}
+	g.cacheFileHandles = map[string]*os.File{}
+	g.cacheFileWriters = map[string]*bufio.Writer{}
+	g.cacheFileMutex.Unlock()
+}
+
 func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
-	sigolo.Debugf("Add way IDs to nodes")
-
+	currentCell := 1
+	numberOfCells := len(cells)
 	for cell, _ := range cells {
-		sigolo.Debugf("Process cell %v", cell)
+		sigolo.Debugf("Process cell %v (%d/%d)", cell, currentCell, numberOfCells)
 
-		sigolo.Debug("Collect node-way-relationship")
+		sigolo.Tracef("[Cell %v] Collect node-way-relationship", cell)
 		nodeToWays, err := g.readNodeToWayMappingFromCellData(cell.X(), cell.Y())
 
 		// TODO Collect relation IDs as well
@@ -249,13 +231,14 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 			return
 		}
 
-		sigolo.Tracef("Read cell file %s", cellFileName)
+		sigolo.Tracef("[Cell %v] Read cell file %s", cell, cellFileName)
 		data, err := os.ReadFile(cellFileName)
 		if err != nil {
 			//return nil, errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, objectType)
 			return
 		}
 
+		sigolo.Tracef("[Cell %v] Read nodes from cell and write them including way IDs", cell)
 		readFeatureChannel := make(chan []feature.EncodedFeature)
 		var finishWaitGroup sync.WaitGroup
 		finishWaitGroup.Add(1)
@@ -303,6 +286,7 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 		//
 		//g.featureCache = map[string][]feature.EncodedFeature{}
 		//runtime.GC()
+		currentCell++
 	}
 }
 
@@ -316,9 +300,10 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 	defer scanner.Close()
 
 	var emptyWayIds []osm.WayID
-	//nodeToPositionMap := map[osm.NodeID][2]float32{}
-	savedCells := map[CellIndex]bool{}
 
+	firstWayHasBeenProcessed := false
+
+	sigolo.Debugf("Start processing nodes (1/2)")
 	for scanner.Scan() {
 		obj := scanner.Object()
 
@@ -334,6 +319,10 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 			cells[cell] = cell
 			//nodeToPositionMap[osmObj.ID] = [2]float32{float32(osmObj.Lon), float32(osmObj.Lat)}
 		case *osm.Way:
+			if !firstWayHasBeenProcessed {
+				sigolo.Debugf("Start processing ways (2/2)")
+				firstWayHasBeenProcessed = true
+			}
 			//for i, node := range osmObj.Nodes {
 			//	node.Lon = float64(nodeToPositionMap[node.ID][0])
 			//	node.Lat = float64(nodeToPositionMap[node.ID][1])
@@ -343,25 +332,21 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 			wayFeature, err := g.toEncodedWayFeature(osmObj)
 			sigolo.FatalCheck(err)
 
+			savedCells := map[CellIndex]bool{}
 			for _, node := range osmObj.Nodes {
 				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 
-				if hasAlreadyBeenSaved, ok := savedCells[cell]; !ok || !hasAlreadyBeenSaved {
+				if _, ok := savedCells[cell]; !ok {
 					err = g.writeOsmObjectToCell(cell.X(), cell.Y(), wayFeature)
 					sigolo.FatalCheck(err)
 					savedCells[cell] = true
 				}
 			}
-
-			// Reset map but without new memory allocation
-			for cell, _ := range savedCells {
-				savedCells[cell] = false
-			}
 		}
 		// TODO	 Implement relation handling
 		//case *osm.Relation:
 	}
-	//sigolo.Debugf("Stored %d entries in nodeToPositionMap", len(nodeToPositionMap))
+	sigolo.Debug("Done converting OSM data to raw features")
 	return nil
 }
 
@@ -437,7 +422,7 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 
 	if _, err = os.Stat(cellFileName); err == nil {
 		// Cell file does exist -> open it
-		sigolo.Debugf("Cell file %s already exist but is not cached, I'll open it", cellFileName)
+		sigolo.Tracef("Cell file %s already exist but is not cached, I'll open it", cellFileName)
 		file, err = os.OpenFile(cellFileName, os.O_RDWR, 0666)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
@@ -447,7 +432,7 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 
 		// Ensure the folder exists
 		if _, err = os.Stat(cellFolderName); os.IsNotExist(err) {
-			sigolo.Debugf("Cell folder %s doesn't exist, I'll create it", cellFolderName)
+			sigolo.Tracef("Cell folder %s doesn't exist, I'll create it", cellFolderName)
 			err = os.MkdirAll(cellFolderName, os.ModePerm)
 			if err != nil {
 				return nil, errors.Wrapf(err, "Unable to create cell folder %s for cellY=%d", cellFolderName, cellY)
@@ -455,7 +440,7 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 		}
 
 		// Create cell file
-		sigolo.Debugf("Cell file %s does not exist, I'll create it", cellFileName)
+		sigolo.Tracef("Cell file %s does not exist, I'll create it", cellFileName)
 		file, err = os.Create(cellFileName)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to create new cell file %s", cellFileName)

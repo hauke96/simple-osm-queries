@@ -266,7 +266,8 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 
 func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 	// See EncodedFeature for details on the array that are created here.
-	if len(tags) == 0 {
+	numberOfTags := len(tags)
+	if numberOfTags == 0 {
 		return []byte{}, []int{}
 	}
 
@@ -284,23 +285,16 @@ func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 	}
 
 	// Now we know all keys that are set and can determine the order of the values for the array.
-	encodedValues := make([]int, len(tags))
+	encodedValues := make([]int, numberOfTags)
 	encodedValuesCounter := 0
-	for pos := 0; pos < len(i.tempEncodedValues); pos++ {
-		if i.tempEncodedValues[pos] != -1 {
+	for pos := 0; encodedValuesCounter < numberOfTags; pos++ {
+		valueAtPos := i.tempEncodedValues[pos]
+		if valueAtPos != -1 {
 			// Key at "pos" is set -> store its value
-			encodedValues[encodedValuesCounter] = i.tempEncodedValues[pos]
+			encodedValues[encodedValuesCounter] = valueAtPos
 			encodedValuesCounter++
 		}
-	}
-
-	// Reset all elements to -1 for later uses of this function
-	fieldsReset := 0
-	for j := 0; j < len(i.tempEncodedValues) && fieldsReset < len(tags); j++ {
-		if i.tempEncodedValues[j] != -1 {
-			i.tempEncodedValues[j] = -1
-			fieldsReset++
-		}
+		i.tempEncodedValues[pos] = -1
 	}
 
 	return encodedKeys, encodedValues
