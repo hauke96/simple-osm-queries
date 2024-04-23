@@ -30,6 +30,7 @@ type GridIndex struct {
 	BaseFolder           string
 	cacheFileHandles     map[string]*os.File
 	cacheFileWriters     map[string]*bufio.Writer
+	cacheFileMutexes     map[string]*sync.Mutex
 	cacheFileMutex       *sync.Mutex
 	checkFeatureValidity bool
 	nodeToPositionMap    map[osm.NodeID]orb.Point
@@ -65,6 +66,7 @@ func (g *GridIndex) Import(inputFile string) error {
 
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
+	g.cacheFileMutexes = map[string]*sync.Mutex{}
 	//g.nodeToPositionMap = map[osm.NodeID]orb.Point{}
 	g.nodeToWayMap = map[osm.NodeID]osm.Ways{}
 	g.featureCache = map[string][]feature.EncodedFeature{}
@@ -202,6 +204,7 @@ func (g *GridIndex) closeOpenFileHandles() {
 	}
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
+	g.cacheFileMutexes = map[string]*sync.Mutex{}
 	g.cacheFileMutex.Unlock()
 }
 
@@ -368,28 +371,25 @@ func (g *GridIndex) getScanner(inputFile string) (*os.File, osm.Scanner, error) 
 }
 
 func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, encodedFeature feature.EncodedFeature) error {
-	var f io.Writer
-	var err error
-
 	sigolo.Tracef("Write OSM object to cell x=%d, y=%d, obj=%#v", cellX, cellY, encodedFeature.GetID())
 
 	switch featureObj := encodedFeature.(type) {
 	case *feature.EncodedNodeFeature:
-		f, err = g.getCellFile(cellX, cellY, "node")
+		f, mutex, err := g.getCellFile(cellX, cellY, "node")
 		if err != nil {
 			return err
 		}
-		err = g.writeNodeData(featureObj, f)
+		err = g.writeNodeData(featureObj, f, mutex)
 		if err != nil {
 			return errors.Wrapf(err, "Unable to write node %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
 		}
 		return nil
 	case *feature.EncodedWayFeature:
-		f, err = g.getCellFile(cellX, cellY, "way")
+		f, mutex, err := g.getCellFile(cellX, cellY, "way")
 		if err != nil {
 			return err
 		}
-		err = g.writeWayData(featureObj, f)
+		err = g.writeWayData(featureObj, f, mutex)
 		if err != nil {
 			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
 		}
@@ -400,7 +400,7 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, encodedFeature fe
 	return nil
 }
 
-func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Writer, error) {
+func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Writer, *sync.Mutex, error) {
 	// Not filepath.Join because in this case it's slower than simple concatenation
 	cellFolderName := g.BaseFolder + "/" + objectType + "/" + strconv.Itoa(cellX)
 	cellFileName := cellFolderName + "/" + strconv.Itoa(cellY) + ".cell"
@@ -410,11 +410,12 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 	var err error
 
 	g.cacheFileMutex.Lock()
+
 	writer, cached = g.cacheFileWriters[cellFileName]
-	g.cacheFileMutex.Unlock()
 	if cached {
+		g.cacheFileMutex.Unlock()
 		sigolo.Tracef("Cell file %s already exist and cached", cellFileName)
-		return writer, nil
+		return writer, g.cacheFileMutexes[cellFileName], nil
 	}
 
 	// Cell file not cached
@@ -425,7 +426,7 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 		sigolo.Tracef("Cell file %s already exist but is not cached, I'll open it", cellFileName)
 		file, err = os.OpenFile(cellFileName, os.O_RDWR, 0666)
 		if err != nil {
-			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
+			return nil, nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		// Cell file does NOT exist -> create its folder (if needed) and the file itself
@@ -435,7 +436,7 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 			sigolo.Tracef("Cell folder %s doesn't exist, I'll create it", cellFolderName)
 			err = os.MkdirAll(cellFolderName, os.ModePerm)
 			if err != nil {
-				return nil, errors.Wrapf(err, "Unable to create cell folder %s for cellY=%d", cellFolderName, cellY)
+				return nil, nil, errors.Wrapf(err, "Unable to create cell folder %s for cellY=%d", cellFolderName, cellY)
 			}
 		}
 
@@ -443,23 +444,23 @@ func (g *GridIndex) getCellFile(cellX int, cellY int, objectType string) (io.Wri
 		sigolo.Tracef("Cell file %s does not exist, I'll create it", cellFileName)
 		file, err = os.Create(cellFileName)
 		if err != nil {
-			return nil, errors.Wrapf(err, "Unable to create new cell file %s", cellFileName)
+			return nil, nil, errors.Wrapf(err, "Unable to create new cell file %s", cellFileName)
 		}
 	} else {
-		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
+		return nil, nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
 	}
-
-	g.cacheFileMutex.Lock()
-	g.cacheFileHandles[cellFileName] = file
 
 	writer = bufio.NewWriter(file)
 	g.cacheFileWriters[cellFileName] = writer
+	g.cacheFileHandles[cellFileName] = file
+	g.cacheFileMutexes[cellFileName] = &sync.Mutex{}
+
 	g.cacheFileMutex.Unlock()
 
-	return writer, nil
+	return writer, g.cacheFileMutexes[cellFileName], nil
 }
 
-func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f io.Writer) error {
+func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f io.Writer, mutex *sync.Mutex) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -520,14 +521,16 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 
 	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d, numWays=%d", encodedFeature.ID, point, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.WayIds))
 
+	mutex.Lock()
 	_, err := f.Write(data)
+	mutex.Unlock()
 	if err != nil {
 		return errors.Wrapf(err, "Unable to write node %d to cell file", encodedFeature.ID)
 	}
 	return nil
 }
 
-func (g *GridIndex) writeWayData(encodedFeature *feature.EncodedWayFeature, f io.Writer) error {
+func (g *GridIndex) writeWayData(encodedFeature *feature.EncodedWayFeature, f io.Writer, mutex *sync.Mutex) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -598,7 +601,9 @@ func (g *GridIndex) writeWayData(encodedFeature *feature.EncodedWayFeature, f io
 
 	sigolo.Tracef("Write feature %d byteCount=%d, numKeys=%d, numValues=%d, numNodeIds=%d", encodedFeature.ID, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.Nodes))
 
+	mutex.Lock()
 	_, err := f.Write(data)
+	mutex.Unlock()
 	if err != nil {
 		return errors.Wrapf(err, "Unable to write node %d to cell file", encodedFeature.ID)
 	}

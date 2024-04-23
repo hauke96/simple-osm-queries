@@ -287,7 +287,7 @@ func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
 	// Now we know all keys that are set and can determine the order of the values for the array.
 	encodedValues := make([]int, numberOfTags)
 	encodedValuesCounter := 0
-	for pos := 0; encodedValuesCounter < numberOfTags; pos++ {
+	for pos := 0; pos < len(i.tempEncodedValues) && encodedValuesCounter < numberOfTags; pos++ {
 		valueAtPos := i.tempEncodedValues[pos]
 		if valueAtPos != -1 {
 			// Key at "pos" is set -> store its value
