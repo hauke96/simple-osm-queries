@@ -32,7 +32,8 @@ type TagIndex struct {
 	valueReverseMap []map[string]int // Helper map: value-string -> value-index in value[key-index]-array
 
 	// Contains the values for each keyIndex, or nil if the key is not set. The empty places will be removed below.
-	tempEncodedValues []int
+	tempEncodedValues       []int
+	tempEncodedValuesLength int
 }
 
 func LoadTagIndex(baseFolder string) (*TagIndex, error) {
@@ -88,10 +89,11 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 	}
 
 	index := &TagIndex{
-		BaseFolder:        path.Base(baseFolder),
-		keyMap:            keyMap,
-		valueMap:          valueMap,
-		tempEncodedValues: make([]int, len(keyMap)+8),
+		BaseFolder:              path.Base(baseFolder),
+		keyMap:                  keyMap,
+		valueMap:                valueMap,
+		tempEncodedValues:       make([]int, len(keyMap)+8),
+		tempEncodedValuesLength: len(keyMap) + 8,
 	}
 	//index.Print()
 
@@ -100,9 +102,10 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 
 func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 	index := &TagIndex{
-		keyMap:            keyMap,
-		valueMap:          valueMap,
-		tempEncodedValues: make([]int, len(keyMap)+8),
+		keyMap:                  keyMap,
+		valueMap:                valueMap,
+		tempEncodedValues:       make([]int, len(keyMap)+8),
+		tempEncodedValuesLength: len(keyMap) + 8,
 	}
 
 	index.keyReverseMap = map[string]int{}
@@ -203,6 +206,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	for j := 0; j < len(i.tempEncodedValues); j++ {
 		i.tempEncodedValues[j] = -1
 	}
+	i.tempEncodedValuesLength = len(i.tempEncodedValues)
 
 	importDuration := time.Since(importStartTime)
 	sigolo.Infof("Created tag-index from OSM data in %s", importDuration)
@@ -272,37 +276,43 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 	return valueMap[value]
 }
 
-func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
-	// See EncodedFeature for details on the array that are created here.
+// newTempEncodedValueArray creates a new int array, which is used as temporary storage during the encodeTags function.
+// Creating this array manually is a performance enhancement, since it can be reused.
+func (i *TagIndex) newTempEncodedValueArray() []int {
+	return make([]int, len(i.keyMap)+8)
+}
+
+// encodeTags returns the encoded keys and values. The tempEncodedValues array can be reused to enhance performance
+// by not allocating a new array for each call of this function.
+func (i *TagIndex) encodeTags(tags osm.Tags, tempEncodedValues []int) ([]byte, []int) {
 	numberOfTags := len(tags)
 	if numberOfTags == 0 {
 		return []byte{}, []int{}
 	}
 
 	encodedKeys := make([]byte, len(i.keyMap)/8+1)
-
-	for _, tag := range tags {
-		keyIndex := i.keyReverseMap[tag.Key]
-		valueIndex := i.valueReverseMap[keyIndex][tag.Value]
+	for pos := 0; pos < numberOfTags; pos++ {
+		keyIndex := i.keyReverseMap[tags[pos].Key]
+		valueIndex := i.valueReverseMap[keyIndex][tags[pos].Value]
 
 		// Set 1 for the given key because it's set
 		bin := keyIndex / 8      // Element of the array
 		idxInBin := keyIndex % 8 // Bit position within the byte
 		encodedKeys[bin] |= 1 << idxInBin
-		i.tempEncodedValues[keyIndex] = valueIndex
+		tempEncodedValues[keyIndex] = valueIndex + 1 // +1 to make 0 the "no value set"-value
 	}
 
 	// Now we know all keys that are set and can determine the order of the values for the array.
 	encodedValues := make([]int, numberOfTags)
 	encodedValuesCounter := 0
-	for pos := 0; pos < len(i.tempEncodedValues) && encodedValuesCounter < numberOfTags; pos++ {
-		valueAtPos := i.tempEncodedValues[pos]
-		if valueAtPos != -1 {
+	for pos := 0; encodedValuesCounter < numberOfTags; pos++ {
+		valueAtPos := tempEncodedValues[pos]
+		if valueAtPos != 0 {
 			// Key at "pos" is set -> store its value
-			encodedValues[encodedValuesCounter] = valueAtPos
+			encodedValues[encodedValuesCounter] = valueAtPos - 1 // compensate the "+1" from above
 			encodedValuesCounter++
+			tempEncodedValues[pos] = 0
 		}
-		i.tempEncodedValues[pos] = -1
 	}
 
 	return encodedKeys, encodedValues

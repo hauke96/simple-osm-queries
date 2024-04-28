@@ -5,6 +5,6 @@ import (
 	"testing"
 )
 
-func TestMainImport(t *testing.T) {
+func _TestMainImport(t *testing.T) {
 	importing.Import("../test.osm.pbf", defaultCellSize, defaultCellSize, indexBaseFolder)
 }

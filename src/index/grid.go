@@ -111,6 +111,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 		osmWaySync.Add(1)
 		go g.createAndWriteRawWayFeature(osmWayQueue, osmWaySync)
 	}
+	tempEncodedValues := g.TagIndex.newTempEncodedValueArray()
 
 	sigolo.Debug("Start processing nodes (1/2)")
 	for scanner.Scan() {
@@ -120,7 +121,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 		case *osm.Node:
 			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
 
-			nodeFeature, err := g.toEncodedNodeFeature(osmObj, emptyWayIds)
+			nodeFeature, err := g.toEncodedNodeFeature(osmObj, emptyWayIds, tempEncodedValues)
 			sigolo.FatalCheck(err)
 			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), nodeFeature)
 			sigolo.FatalCheck(err)
@@ -150,8 +151,10 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 func (g *GridIndex) createAndWriteRawWayFeature(osmWayChannel chan *osm.Way, waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 
+	tempEncodedValues := g.TagIndex.newTempEncodedValueArray()
+
 	for osmObj := range osmWayChannel {
-		wayFeature, err := g.toEncodedWayFeature(osmObj)
+		wayFeature, err := g.toEncodedWayFeature(osmObj, tempEncodedValues)
 		sigolo.FatalCheck(err)
 
 		wayFeatureData := g.getWayData(wayFeature)
@@ -445,7 +448,9 @@ func (g *GridIndex) writeWayData(encodedFeature *feature.EncodedWayFeature, f io
 }
 
 func (g *GridIndex) writeData(encodedFeature feature.EncodedFeature, data []byte, f io.Writer) error {
+	g.cacheFileMutex.Lock()
 	m := g.cacheFileMutexes[f]
+	g.cacheFileMutex.Unlock()
 	m.Lock()
 	_, err := f.Write(data)
 	m.Unlock()
@@ -562,6 +567,7 @@ func (g *GridIndex) GetCellIndexForCoordinate(x float64, y float64) CellIndex {
 	return CellIndex{int(x / g.CellWidth), int(y / g.CellHeight)}
 }
 
+// TODO remove if not needed
 func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, error) {
 	switch osmObj := obj.(type) {
 	case *osm.Node:
@@ -570,9 +576,9 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, er
 			wayIds = append(wayIds, way.ID)
 		}
 
-		return g.toEncodedNodeFeature(osmObj, wayIds)
+		return g.toEncodedNodeFeature(osmObj, wayIds, g.TagIndex.newTempEncodedValueArray())
 	case *osm.Way:
-		return g.toEncodedWayFeature(osmObj)
+		return g.toEncodedWayFeature(osmObj, g.TagIndex.newTempEncodedValueArray())
 	}
 	// TODO Implement relation handling
 	//case *osm.Relation:
@@ -580,13 +586,13 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, er
 	return nil, errors.Errorf("Converting OSM object of type '%s' not supported", obj.ObjectID().Type())
 }
 
-func (g *GridIndex) toEncodedNodeFeature(obj *osm.Node, wayIds []osm.WayID) (*feature.EncodedNodeFeature, error) {
+func (g *GridIndex) toEncodedNodeFeature(obj *osm.Node, wayIds []osm.WayID, tempEncodedValues []int) (*feature.EncodedNodeFeature, error) {
 	var geometry orb.Geometry
 
 	point := obj.Point()
 	geometry = &point
 
-	encodedKeys, encodedValues := g.TagIndex.encodeTags(obj.Tags)
+	encodedKeys, encodedValues := g.TagIndex.encodeTags(obj.Tags, tempEncodedValues)
 
 	abstractEncodedFeature := feature.AbstractEncodedFeature{
 		ID:       uint64(obj.ID),
@@ -601,17 +607,15 @@ func (g *GridIndex) toEncodedNodeFeature(obj *osm.Node, wayIds []osm.WayID) (*fe
 	}, nil
 }
 
-func (g *GridIndex) toEncodedWayFeature(obj *osm.Way) (*feature.EncodedWayFeature, error) {
-	var tags osm.Tags
+func (g *GridIndex) toEncodedWayFeature(obj *osm.Way, tempEncodedValues []int) (*feature.EncodedWayFeature, error) {
 	var geometry orb.Geometry
 	var osmId uint64
 
-	tags = obj.Tags
 	lineString := obj.LineString()
 	geometry = &lineString
 	osmId = uint64(obj.ID)
 
-	encodedKeys, encodedValues := g.TagIndex.encodeTags(tags)
+	encodedKeys, encodedValues := g.TagIndex.encodeTags(obj.Tags, tempEncodedValues)
 
 	abstractEncodedFeature := feature.AbstractEncodedFeature{
 		ID:       osmId,
