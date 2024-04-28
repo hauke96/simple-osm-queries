@@ -405,17 +405,30 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 	binary.LittleEndian.PutUint32(data[20:], uint32(len(encodedFeature.GetValues())))
 	binary.LittleEndian.PutUint16(data[24:], uint16(len(encodedFeature.WayIds)))
 
-	copy(data[headerBytesCount:], encodedFeature.GetKeys()[0:numKeys])
-	for i, v := range encodedFeature.GetValues() {
-		b := data[headerBytesCount+encodedKeyBytes+i*3:]
-		b[0] = byte(v)
-		b[1] = byte(v >> 8)
-		b[2] = byte(v >> 16)
+	pos := headerBytesCount
+
+	/*
+		Write keys
+	*/
+	copy(data[pos:], encodedFeature.GetKeys()[0:numKeys])
+	pos += numKeys
+
+	/*
+		Write values
+	*/
+	for _, v := range encodedFeature.GetValues() {
+		data[pos] = byte(v)
+		data[pos+1] = byte(v >> 8)
+		data[pos+2] = byte(v >> 16)
+		pos += 3
 	}
 
-	wayIdsStartIndex := headerBytesCount + encodedKeyBytes + encodedValueBytes
-	for i, wayId := range encodedFeature.WayIds {
-		binary.LittleEndian.PutUint64(data[wayIdsStartIndex+i*8:], uint64(wayId))
+	/*
+		Write way-IDs
+	*/
+	for _, wayId := range encodedFeature.WayIds {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(wayId))
+		pos += 8
 	}
 
 	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d, numWays=%d", encodedFeature.ID, point, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.WayIds))
@@ -487,21 +500,20 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
 	// by a factor of ten!
-	numKeys := 0
+	numEncodedKeyBytes := 0
 	for i := 0; i < len(encodedFeature.GetKeys()); i++ {
 		if encodedFeature.GetKeys()[i] != 0 {
-			numKeys = i + 1
+			numEncodedKeyBytes = i + 1
 		}
 	}
 
-	encodedKeyBytes := numKeys                               // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
-	nodeIdBytes := len(encodedFeature.Nodes) * 16            // Each ID is a 64-bit int
+	numEncodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
+	nodeIdBytes := len(encodedFeature.Nodes) * 16               // Each ID is a 64-bit int
 
 	headerByteCount := 8 + 4 + 4 + 2
 	byteCount := headerByteCount
-	byteCount += encodedKeyBytes
-	byteCount += encodedValueBytes
+	byteCount += numEncodedKeyBytes
+	byteCount += numEncodedValueBytes
 	byteCount += nodeIdBytes
 
 	data := make([]byte, byteCount)
@@ -510,29 +522,36 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 		Write header
 	*/
 	binary.LittleEndian.PutUint64(data[0:], encodedFeature.ID)
-	binary.LittleEndian.PutUint32(data[8:], uint32(numKeys))
+	binary.LittleEndian.PutUint32(data[8:], uint32(numEncodedKeyBytes))
 	binary.LittleEndian.PutUint32(data[12:], uint32(len(encodedFeature.GetValues())))
 	binary.LittleEndian.PutUint16(data[16:], uint16(len(encodedFeature.Nodes)))
 
+	pos := headerByteCount
+
 	/*
-		Write keys and values
+		Write keys
 	*/
-	copy(data[headerByteCount:], encodedFeature.GetKeys()[0:numKeys])
-	for i, v := range encodedFeature.GetValues() {
-		b := data[headerByteCount+encodedKeyBytes+i*3:]
-		b[0] = byte(v)
-		b[1] = byte(v >> 8)
-		b[2] = byte(v >> 16)
+	copy(data[pos:], encodedFeature.GetKeys()[0:numEncodedKeyBytes])
+	pos += numEncodedKeyBytes
+
+	/*
+		Write value
+	*/
+	for _, v := range encodedFeature.GetValues() {
+		data[pos] = byte(v)
+		data[pos+1] = byte(v >> 8)
+		data[pos+2] = byte(v >> 16)
+		pos += 3
 	}
 
 	/*
 		Write nodes
 	*/
-	nodeIdStartIndex := headerByteCount + encodedKeyBytes + len(encodedFeature.GetValues())*3
-	for i, node := range encodedFeature.Nodes {
-		binary.LittleEndian.PutUint64(data[nodeIdStartIndex+i*16:], uint64(node.ID))
-		binary.LittleEndian.PutUint32(data[nodeIdStartIndex+i*16+8:], math.Float32bits(float32(node.Lon)))
-		binary.LittleEndian.PutUint32(data[nodeIdStartIndex+i*16+12:], math.Float32bits(float32(node.Lat)))
+	for _, node := range encodedFeature.Nodes {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(node.ID))
+		binary.LittleEndian.PutUint32(data[pos+8:], math.Float32bits(float32(node.Lon)))
+		binary.LittleEndian.PutUint32(data[pos+12:], math.Float32bits(float32(node.Lat)))
+		pos += 16
 	}
 
 	return data
@@ -813,33 +832,46 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 
 	for pos := 0; pos < len(data); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
+
+		/*
+			Read header fields
+		*/
 		osmId := binary.LittleEndian.Uint64(data[pos+0:])
 		lon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+8:]))
 		lat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
 		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+16:]))
 		numValues := int(binary.LittleEndian.Uint32(data[pos+20:]))
 		numWayIds := int(binary.LittleEndian.Uint16(data[pos+24:]))
-		wayIdsBytes := numWayIds * 8
 
 		headerBytesCount := 8 + 4 + 4 + 4 + 4 + 2 // = 26
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, lon=%f, lat=%f, numKeys=%d, numValues=%d", pos, osmId, lon, lat, numEncodedKeyBytes, numValues)
 
-		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
+		pos += headerBytesCount
 
+		/*
+			Read keys
+		*/
 		encodedKeys := make([]byte, numEncodedKeyBytes)
 		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos+headerBytesCount:])
+		copy(encodedKeys[:], data[pos:])
+		pos += numEncodedKeyBytes
 
+		/*
+			Read values
+		*/
 		for i := 0; i < numValues; i++ {
-			b := data[pos+headerBytesCount+numEncodedKeyBytes+i*3:]
-			encodedValues[i] = int(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16)
+			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
+			pos += 3
 		}
 
+		/*
+			Read way-IDs
+		*/
 		wayIds := make([]osm.WayID, numWayIds)
-		wayIdsStartIndex := pos + headerBytesCount + numEncodedKeyBytes + encodedValuesBytes
 		for i := 0; i < numWayIds; i++ {
-			wayIds[i] = osm.WayID(binary.LittleEndian.Uint64(data[wayIdsStartIndex+i*8:]))
+			wayIds[i] = osm.WayID(binary.LittleEndian.Uint64(data[pos:]))
+			pos += 8
 		}
 
 		encodedFeature := &feature.EncodedNodeFeature{
@@ -864,8 +896,6 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 			outputBuffer = make([]feature.EncodedFeature, len(outputBuffer))
 			currentBufferPos = 0
 		}
-
-		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + wayIdsBytes
 	}
 
 	output <- outputBuffer
@@ -880,46 +910,46 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 		// See format details (bit position, field sizes, etc.) in function "writeWayData".
 
 		/*
-			Read general information of the feature
+			Read header fields
 		*/
 		osmId := binary.LittleEndian.Uint64(data[pos+0:])
 		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+8:]))
 		numValues := int(binary.LittleEndian.Uint32(data[pos+12:]))
-		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
 		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
-		nodeBytes := numNodes * 16
 
 		headerBytesCount := 8 + 4 + 4 + 2
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
 
+		pos += headerBytesCount
+
 		/*
-			Read the keys and tags of the feature
+			Read keys
 		*/
 		encodedKeys := make([]byte, numEncodedKeyBytes)
 		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos+headerBytesCount:])
+		copy(encodedKeys[:], data[pos:])
+		pos += numEncodedKeyBytes
 
-		encodedValuesStartIndex := pos + headerBytesCount + numEncodedKeyBytes
+		/*
+			Read values
+		*/
 		for i := 0; i < numValues; i++ {
-			b := data[encodedValuesStartIndex+i*3:]
-			encodedValues[i] = int(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16)
+			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
+			pos += 3
 		}
 
 		/*
-			Read the node-IDs of the way
+			Read node-IDs
 		*/
 		var nodes osm.WayNodes
-		nodesStartIndex := encodedValuesStartIndex + encodedValuesBytes
 		for i := 0; i < numNodes; i++ {
-			nodeIdIndex := nodesStartIndex + i*16
-			lonIndex := nodesStartIndex + i*16 + 8
-			latIndex := nodesStartIndex + i*16 + 12
 			nodes = append(nodes, osm.WayNode{
-				ID:  osm.NodeID(binary.LittleEndian.Uint64(data[nodeIdIndex:])),
-				Lon: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[lonIndex:]))),
-				Lat: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[latIndex:]))),
+				ID:  osm.NodeID(binary.LittleEndian.Uint64(data[pos:])),
+				Lon: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[(pos + 8):]))),
+				Lat: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[(pos + 12):]))),
 			})
+			pos += 16
 		}
 
 		/*
@@ -952,7 +982,6 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 			currentBufferPos = 0
 		}
 
-		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + nodeBytes
 		totalReadFeatures++
 	}
 
