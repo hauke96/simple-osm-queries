@@ -34,7 +34,6 @@ type GridIndex struct {
 	cacheFileMutexes     map[io.Writer]*sync.Mutex
 	cacheFileMutex       *sync.Mutex
 	checkFeatureValidity bool
-	nodeToPositionMap    map[osm.NodeID]orb.Point
 	nodeToWayMap         map[osm.NodeID]osm.Ways
 	featureCache         map[string][]feature.EncodedFeature // Filename to feature within it
 	featureCacheMutex    *sync.Mutex
@@ -68,16 +67,10 @@ func (g *GridIndex) Import(inputFile string) error {
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
 	g.cacheFileMutexes = map[io.Writer]*sync.Mutex{}
-	//g.nodeToPositionMap = map[osm.NodeID]orb.Point{}
 	g.nodeToWayMap = map[osm.NodeID]osm.Ways{}
 	g.featureCache = map[string][]feature.EncodedFeature{}
 	g.featureCacheMutex = &sync.Mutex{}
 	g.cacheFileMutex = &sync.Mutex{}
-
-	//time.Sleep(10 * time.Second)
-
-	//amountOfObjects := 0
-	//cellDataMap := map[CellIndex]osm.Objects{}
 
 	cells := map[CellIndex]CellIndex{}
 
@@ -89,92 +82,8 @@ func (g *GridIndex) Import(inputFile string) error {
 	}
 	g.closeOpenFileHandles()
 
-	//runtime.GC()
-
 	g.addWayIdsToNodesInCells(cells)
 	g.closeOpenFileHandles()
-
-	//for scanner.Scan() {
-	//	obj := scanner.Object()
-	//
-	//	if obj.ObjectID().Type() != osm.TypeNode && obj.ObjectID().Type() != osm.TypeWay {
-	//		// TODO Add relation support
-	//		continue
-	//	}
-	//
-	//	switch osmObj := obj.(type) {
-	//	case *osm.Node:
-	//		cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
-	//
-	//		if _, hasDataInCell := cellDataMap[cell]; !hasDataInCell {
-	//			cellDataMap[cell] = osm.Objects{osmObj}
-	//		} else {
-	//			cellDataMap[cell] = append(cellDataMap[cell], osmObj)
-	//		}
-	//
-	//		g.nodeToPositionMap[osmObj.ID] = orb.Point{osmObj.Lon, osmObj.Lat}
-	//		amountOfObjects++
-	//	case *osm.Way:
-	//		for i, node := range osmObj.Nodes {
-	//			node.Lon = g.nodeToPositionMap[node.ID][0]
-	//			node.Lat = g.nodeToPositionMap[node.ID][1]
-	//			osmObj.Nodes[i] = node
-	//
-	//			cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
-	//			if _, hasDataInCell := cellDataMap[cell]; !hasDataInCell {
-	//				cellDataMap[cell] = osm.Objects{osmObj}
-	//			} else {
-	//				cellDataMap[cell] = append(cellDataMap[cell], osmObj)
-	//			}
-	//
-	//			// Add way to node mapping if not already exists (ways to contain duplicate nodes, i.e. polygons,
-	//			// some roundabout, etc.).
-	//			_, found := g.nodeToWayMap[node.ID]
-	//			if !found {
-	//				g.nodeToWayMap[node.ID] = osm.Ways{}
-	//			}
-	//			if !util.Contains(g.nodeToWayMap[node.ID], osmObj) {
-	//				g.nodeToWayMap[node.ID] = append(g.nodeToWayMap[node.ID], osmObj)
-	//			}
-	//		}
-	//		amountOfObjects++
-	//	}
-	//	// TODO	 Implement relation handling
-	//	//case *osm.Relation:
-	//
-	//}
-	//sigolo.Infof("Read %d objects in %d cells", amountOfObjects, len(cellDataMap))
-	//
-	//sigolo.Debugf("Write OSM objects")
-	//for cell, objects := range cellDataMap {
-	//	for _, obj := range objects {
-	//		encodedFeature, err := g.toEncodedFeature(obj)
-	//		if err != nil {
-	//			return err
-	//		}
-	//
-	//		err = g.writeOsmObjectToCell(cell[0], cell[1], encodedFeature)
-	//		if err != nil {
-	//			return err
-	//		}
-	//	}
-	//}
-	//
-	//sigolo.Debugf("Close remaining open file handles")
-	//for filename, file := range g.cacheFileHandles {
-	//	if file != nil {
-	//		sigolo.Tracef("Close cell file %s", file.Name())
-	//
-	//		writer := g.cacheFileWriters[filename]
-	//		err = writer.Flush()
-	//		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
-	//
-	//		err = file.Close()
-	//		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
-	//	} else {
-	//		sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
-	//	}
-	//}
 
 	return nil
 }
@@ -217,17 +126,11 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 			sigolo.FatalCheck(err)
 
 			cells[cell] = cell
-			//nodeToPositionMap[osmObj.ID] = [2]float32{float32(osmObj.Lon), float32(osmObj.Lat)}
 		case *osm.Way:
 			if !firstWayHasBeenProcessed {
 				sigolo.Debug("Start processing ways (2/2)")
 				firstWayHasBeenProcessed = true
 			}
-			//for i, node := range osmObj.Nodes {
-			//	node.Lon = float64(nodeToPositionMap[node.ID][0])
-			//	node.Lat = float64(nodeToPositionMap[node.ID][1])
-			//	osmObj.Nodes[i] = node
-			//}
 
 			osmWayQueue <- osmObj
 		}
@@ -306,11 +209,6 @@ func (g *GridIndex) addWayIdsToNodesInCell(cellChannel chan CellIndex, waitGroup
 		sigolo.Tracef("[Cell %v] Collect node-way-relationship", cell)
 		nodeToWays, err := g.readNodeToWayMappingFromCellData(cell.X(), cell.Y())
 
-		// TODO Collect relation IDs as well
-
-		//g.featureCache = map[string][]feature.EncodedFeature{}
-		//runtime.GC()
-
 		cellFolderName := path.Join(g.BaseFolder, feature.OsmObjNode.String(), strconv.Itoa(cell.X()))
 		cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
 
@@ -351,26 +249,6 @@ func (g *GridIndex) addWayIdsToNodesInCell(cellChannel chan CellIndex, waitGroup
 
 		close(readFeatureChannel)
 		finishWaitGroup.Wait()
-
-		// Add way information to nodes
-		//sigolo.Debugf("Add way IDs for nodes in cell %v", cell)
-		//nodes, err := g.readFeaturesFromCellFile(cell.X(), cell.Y(), feature.OsmObjNode.String())
-		//sigolo.FatalCheck(err)
-		//for _, node := range nodes {
-		//	if node == nil {
-		//		continue
-		//	}
-		//
-		//	if wayIds, ok := nodeToWays[node.GetID()]; ok {
-		//		node.(*feature.EncodedNodeFeature).WayIds = wayIds
-		//	}
-		//
-		//	err = g.writeOsmObjectToCell(cell.X(), cell.Y(), node)
-		//	sigolo.FatalCheck(err)
-		//}
-		//
-		//g.featureCache = map[string][]feature.EncodedFeature{}
-		//runtime.GC()
 	}
 }
 
@@ -1081,6 +959,9 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 	output <- outputBuffer
 }
 
+// readNodeToWayMappingFromCellData is a simplified version of the general way-reading function. It returns a mapping of
+// node-ID to way-IDs for the given cell file. Therefore, it can be used to determine which ways a node belongs to,
+// without reading whole encoded features.
 func (g *GridIndex) readNodeToWayMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.WayID, error) {
 	cellFolderName := path.Join(g.BaseFolder, feature.OsmObjWay.String(), strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
