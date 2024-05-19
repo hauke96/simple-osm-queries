@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	bboxLocationExpression = "bbox"
-	locationExpressions    = []string{bboxLocationExpression}
+	bboxLocationExpression         = "bbox"
+	contextAwareLocationExpression = "this"
+	locationExpressions            = []string{bboxLocationExpression}
 
 	objectTypeNodeExpression      = "nodes"
 	objectTypeWaysExpression      = "ways"
@@ -95,44 +96,38 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 	// Parse location expression, such as "bbox(...)" but also context aware expressions like "this.ways"
 	var locationExpression query.LocationExpression
 	token := p.currentToken()
-	if token.kind == TokenKindKeyword && token.lexeme == "this" {
-		thisPosition := token.startPosition
-		token = p.moveToNextToken()
-		if token == nil {
-			return nil, errors.Errorf("Expected '.' after 'this' (at position %d) but token stream ended", thisPosition)
-		}
-		if token.kind != TokenKindExpressionSeparator {
-			return nil, errors.Errorf("Expected '.' after 'this' (at position %d) but found kind=%d with lexeme=%s", thisPosition, token.kind, token.lexeme)
-		}
-
-		locationExpression = query.NewContextAwareLocationExpression()
-	} else {
-		// We start with a fresh baseExpression, so the first thing we expect is a location expression
-		locationExpression, err = p.parseLocationExpression()
-		if err != nil {
-			return nil, err
-		}
-
-		// Then a '.'
-		previousToken := token
-		token = p.moveToNextToken()
-		if token == nil {
-			return nil, errors.Errorf("Expected '.' after token '%s' (at position %d) but token stream ended", previousToken.lexeme, previousToken.startPosition)
-		}
-		if token.kind != TokenKindExpressionSeparator {
-			return nil, errors.Errorf("Expected '.' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
-		}
+	if token == nil {
+		return nil, errors.Errorf("Expected location expression after token '%s' (at position %d) but token stream ended", token.lexeme, token.startPosition)
+	}
+	if token.kind != TokenKindKeyword {
+		return nil, errors.Errorf("Expected location expression keyword at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
-	// Then object type
+	// We start with a fresh baseExpression, so the first thing we expect is a location expression (e.g. "bbox")
+	locationExpression, err = p.parseLocationExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	// Then a '.'
+	previousToken := token
+	token = p.moveToNextToken()
+	if token == nil {
+		return nil, errors.Errorf("Expected '.' after token '%s' (at position %d) but token stream ended", previousToken.lexeme, previousToken.startPosition)
+	}
+	if token.kind != TokenKindExpressionSeparator {
+		return nil, errors.Errorf("Expected '.' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
+	}
+
+	// Then object type (e.g. "nodes")
 	p.moveToNextToken()
 	objectType, err := p.parseOsmObjectType()
 	if err != nil {
 		return nil, err
 	}
 
-	// Expect "{"
-	previousToken := p.currentToken()
+	// Then "{"
+	previousToken = p.currentToken()
 	token = p.moveToNextToken()
 	if token == nil {
 		return nil, errors.Errorf("Expected '{' after token '%s' (at position %d) but token stream ended", previousToken.lexeme, previousToken.startPosition)
@@ -147,7 +142,7 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 		return nil, err
 	}
 
-	// Expect "}"
+	// Then finally "}"
 	previousToken = p.currentToken()
 	token = p.moveToNextToken()
 	if token == nil {
@@ -165,7 +160,7 @@ func (p *Parser) parseLocationExpression() (query.LocationExpression, error) {
 	if token == nil {
 		return nil, errors.Errorf("Expected keyword to parse location expression but token stream ended")
 	}
-	if token.kind != TokenKindKeyword || !util.Contains(locationExpressions, token.lexeme) {
+	if token.kind != TokenKindKeyword || !util.Contains(locationExpressions, token.lexeme) && token.lexeme != contextAwareLocationExpression {
 		return nil, errors.Errorf("Expected location expression at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
@@ -175,6 +170,8 @@ func (p *Parser) parseLocationExpression() (query.LocationExpression, error) {
 	switch token.lexeme {
 	case bboxLocationExpression:
 		locationExpression, err = p.parseBboxLocationExpression()
+	case contextAwareLocationExpression:
+		locationExpression, err = query.NewContextAwareLocationExpression(), nil
 	default:
 		err = errors.Errorf("Expected location expression at position %d (one of: %s) but found kind=%d with lexeme=%s", token.startPosition, strings.Join(locationExpressions, ", "), token.kind, token.lexeme)
 	}
@@ -223,16 +220,6 @@ func (p *Parser) parseBboxLocationExpression() (*query.BboxLocationExpression, e
 		Min: orb.Point{coordinates[0], coordinates[1]},
 		Max: orb.Point{coordinates[2], coordinates[3]},
 	}), nil
-}
-
-func (p *Parser) parseContextAwareLocationExpression() (*query.ContextAwareLocationExpression, error) {
-	token := p.currentToken()
-	notAContextAwareSpecifier := token.lexeme != objectTypeNodeExpression && token.lexeme != objectTypeWaysExpression && token.lexeme != objectTypeRelationsExpression
-	if token.kind != TokenKindKeyword || notAContextAwareSpecifier {
-		return nil, errors.Errorf("Error parsing BBOX-Expression: Expected start at bbox-token at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
-	}
-
-	return query.NewContextAwareLocationExpression(), nil
 }
 
 func (p *Parser) parseOsmObjectType() (feature.OsmObjectType, error) {

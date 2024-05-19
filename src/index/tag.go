@@ -30,6 +30,10 @@ type TagIndex struct {
 	// index from disk).
 	keyReverseMap   map[string]int   // Helper map: key-string -> key-index
 	valueReverseMap []map[string]int // Helper map: value-string -> value-index in value[key-index]-array
+
+	// Contains the values for each keyIndex, or nil if the key is not set. The empty places will be removed below.
+	tempEncodedValues       []int
+	tempEncodedValuesLength int
 }
 
 func LoadTagIndex(baseFolder string) (*TagIndex, error) {
@@ -85,9 +89,11 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 	}
 
 	index := &TagIndex{
-		BaseFolder: path.Base(baseFolder),
-		keyMap:     keyMap,
-		valueMap:   valueMap,
+		BaseFolder:              path.Base(baseFolder),
+		keyMap:                  keyMap,
+		valueMap:                valueMap,
+		tempEncodedValues:       make([]int, len(keyMap)+8),
+		tempEncodedValuesLength: len(keyMap) + 8,
 	}
 	//index.Print()
 
@@ -96,8 +102,10 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 
 func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 	index := &TagIndex{
-		keyMap:   keyMap,
-		valueMap: valueMap,
+		keyMap:                  keyMap,
+		valueMap:                valueMap,
+		tempEncodedValues:       make([]int, len(keyMap)+8),
+		tempEncodedValuesLength: len(keyMap) + 8,
 	}
 
 	index.keyReverseMap = map[string]int{}
@@ -137,17 +145,25 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	var valueMap [][]string              // [key-index][value-index] -> value-string
 	var valueReverseMap []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
 
+	firstWayHasBeenProcessed := false
+
+	sigolo.Debug("Start processing node tags (1/2)")
 	for scanner.Scan() {
 		var tags osm.Tags
 		switch osmObj := scanner.Object().(type) {
 		case *osm.Node:
 			tags = osmObj.Tags
 		case *osm.Way:
+			if !firstWayHasBeenProcessed {
+				sigolo.Debug("Start processing way tags (2/2)")
+				firstWayHasBeenProcessed = true
+			}
 			tags = osmObj.Tags
 		case *osm.Relation:
 			tags = osmObj.Tags
 		}
 
+		// Add the keys and values to the maps for the index.
 		for _, tag := range tags {
 			// Search for the given key in the key map to get its index
 			keyIndex, keyAlreadyStored := keyReverseMap[tag.Key]
@@ -175,19 +191,24 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 
 	// Make sure the values are sorted so that comparison operators work. We can change the order as we want, because
 	// OSM objects are not yet stored, this happens in a separate index.
+	sigolo.Debug("Sort values for each key")
 	for i, values := range valueMap {
 		valueMap[i] = util.Sort(values)
 	}
 
 	// Update the newly sorted value reverse map. Otherwise the value indices are all mixed up
-
+	sigolo.Debug("Store results and reset tempEncodedValues")
 	i.keyMap = keyMap
 	i.keyReverseMap = keyReverseMap
 	i.valueMap = valueMap
 	i.updateValueReverseMap()
+	i.tempEncodedValues = make([]int, len(i.keyMap)+8)
+	for j := 0; j < len(i.tempEncodedValues); j++ {
+		i.tempEncodedValues[j] = -1
+	}
+	i.tempEncodedValuesLength = len(i.tempEncodedValues)
 
 	importDuration := time.Since(importStartTime)
-	//i.Print()
 	sigolo.Infof("Created tag-index from OSM data in %s", importDuration)
 
 	return i.SaveToFile(TagIndexFilename)
@@ -255,36 +276,42 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 	return valueMap[value]
 }
 
-func (i *TagIndex) encodeTags(tags osm.Tags) ([]byte, []int) {
-	// See EncodedFeature for details on the array that are created here.
-	if len(tags) == 0 {
+// newTempEncodedValueArray creates a new int array, which is used as temporary storage during the encodeTags function.
+// Creating this array manually is a performance enhancement, since it can be reused.
+func (i *TagIndex) newTempEncodedValueArray() []int {
+	return make([]int, len(i.keyMap)+8)
+}
+
+// encodeTags returns the encoded keys and values. The tempEncodedValues array can be reused to enhance performance
+// by not allocating a new array for each call of this function.
+func (i *TagIndex) encodeTags(tags osm.Tags, tempEncodedValues []int) ([]byte, []int) {
+	numberOfTags := len(tags)
+	if numberOfTags == 0 {
 		return []byte{}, []int{}
 	}
 
 	encodedKeys := make([]byte, len(i.keyMap)/8+1)
-
-	// Contains the values for each keyIndex, or nil if the key is not set. The empty places will be removed below.
-	tempEncodedValues := make([]*int, len(encodedKeys)*8)
-
-	for _, tag := range tags {
-		keyIndex := i.keyReverseMap[tag.Key]
-		valueIndex := i.valueReverseMap[keyIndex][tag.Value]
+	for pos := 0; pos < numberOfTags; pos++ {
+		keyIndex := i.keyReverseMap[tags[pos].Key]
+		valueIndex := i.valueReverseMap[keyIndex][tags[pos].Value]
 
 		// Set 1 for the given key because it's set
 		bin := keyIndex / 8      // Element of the array
 		idxInBin := keyIndex % 8 // Bit position within the byte
 		encodedKeys[bin] |= 1 << idxInBin
-		tempEncodedValues[keyIndex] = &valueIndex
+		tempEncodedValues[keyIndex] = valueIndex + 1 // +1 to make 0 the "no value set"-value
 	}
 
 	// Now we know all keys that are set and can determine the order of the values for the array.
-	encodedValues := make([]int, len(tags))
+	encodedValues := make([]int, numberOfTags)
 	encodedValuesCounter := 0
-	for pos := 0; pos < len(tempEncodedValues); pos++ {
-		if tempEncodedValues[pos] != nil {
+	for pos := 0; encodedValuesCounter < numberOfTags; pos++ {
+		valueAtPos := tempEncodedValues[pos]
+		if valueAtPos != 0 {
 			// Key at "pos" is set -> store its value
-			encodedValues[encodedValuesCounter] = *tempEncodedValues[pos]
+			encodedValues[encodedValuesCounter] = valueAtPos - 1 // compensate the "+1" from above
 			encodedValuesCounter++
+			tempEncodedValues[pos] = 0
 		}
 	}
 

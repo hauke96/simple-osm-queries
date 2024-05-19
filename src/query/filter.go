@@ -181,6 +181,9 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 		sigolo.Tracef("SubStatementFilterExpression for object %d?", featureToCheck.GetID())
 	}
 
+	// From now on, the context of the expression and all its sub-expressions is the current feature we want to check.
+	// This is necessary since there might be more context-aware expressions nested in the current sub-expression, which
+	// would need the correct context to work.
 	context = featureToCheck
 
 	var err error
