@@ -1,8 +1,28 @@
 # Simple OSM queries
 
-Proof of concept of a tool to query OSM data, which is simple in its implementation as well as its usage.
+Simple tool to query OSM data, filter for tags and traverse the hierarchy of the three object types (nodes, ways and relations) of OSM.
+This project is still in an early development stage.
+
+## Motivation and Design
+
+##### Why creating a new query tool?
+I use Overpass regularly for simple queries but would like to use it for more complex queries as well.
+Unfortunately the syntax is rather complicated and for me personally quite unintuitive.
+Another reason is, that I cannot host overpass easily on my own system, where easy means "one CLI command".
+Therefore, I designed my own query language.
+
+##### Design of the language
+I wanted a query language that feels more like programming, which is something I'm used to.
+
+##### Simplicity vs. feature completeness
+So far, the language only supports simple queries like "give me all restaurant without phone number".
+In the near future queries will be possible that look at the surrounding area of an object, e.g. "give me all waste baskets that are 5m or closer to a bench".
+However, tiny edge-cases (i.e. feature not relevant for a large portion of users) will probably not be implemented.
 
 ## Usage
+
+1. Import OSM data (in form of a `.osm.pbf` file)
+2. Execute queries (via CLI or a simple web-interface)
 
 ### Import
 
@@ -33,10 +53,10 @@ HTTP POST requests with the query as body go to [localhost:8080/query](http://lo
 
 Queries consist of *statements*, *object types* and *expressions*.
 
-A statement is the bigger picture and consists of several elements:
-* A *location expression* defining *where* to search. 
-* An *object type* defining what *type* to consider.
-* A list of *filter expressions* defining *what* to search. This list might contain sub-statements (s. below).
+A statement is the high-level structure and consists of several elements:
+* A *location expression* defining *where* to search. Example: `bbox(1,2,3,4)`.
+* An *object type* defining *what type* to consider. Example: `ways`
+* A list of *filter expressions* defining *what tags* to consider. This list might contain sub-statements (s. "Sub-statements" below). Multiple expressions can be combined using logical operators (s. "Operators" below). Example: `highway=*`.
 
 A statement has the following form: `<location-expression>.<object-type>{ <filter-expression> }`.
 For example `bbox(1,2,3,4).nodes{ natural=tree }`.
@@ -45,6 +65,14 @@ For example `bbox(1,2,3,4).nodes{ natural=tree }`.
 
 Only top-level statements, i.e. statements that are not nested within some other statements (s. below), determine the output of the whole query.
 Meaning: Any object fulfilling the filter criterion will be part of the output.
+
+### Operators
+
+Filter expressions support the following logical operators:
+
+* `!<expr>`: Negation, usable for e.g. sub-statements (like `!this.ways{...}`).
+* `<A> AND <B>`: Conjunction, which means both expressions `A` and `B` must be true so that the overall result of this combined expression is also true.
+* `<A> OR <B>`: Disjunction, which means at least one expression `A` or `B` must be true so that the overall result of this combined expression is also true. 
 
 ### Sub-statements
 
