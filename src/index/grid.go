@@ -34,7 +34,7 @@ type GridIndex struct {
 	cacheFileMutexes     map[io.Writer]*sync.Mutex
 	cacheFileMutex       *sync.Mutex
 	checkFeatureValidity bool
-	nodeToWayMap         map[osm.NodeID]osm.Ways
+	nodeToWayMap         map[osm.NodeID]osm.Ways             // TODO remove if not needed
 	featureCache         map[string][]feature.EncodedFeature // Filename to feature within it
 	featureCacheMutex    *sync.Mutex
 }
@@ -101,6 +101,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 	defer scanner.Close()
 
 	var emptyWayIds []osm.WayID
+	var emptyRelationIds []osm.RelationID
 
 	firstWayHasBeenProcessed := false
 
@@ -121,7 +122,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 		case *osm.Node:
 			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
 
-			nodeFeature, err := g.toEncodedNodeFeature(osmObj, emptyWayIds, tempEncodedValues)
+			nodeFeature, err := g.toEncodedNodeFeature(osmObj, emptyWayIds, emptyRelationIds, tempEncodedValues)
 			sigolo.FatalCheck(err)
 			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), nodeFeature)
 			sigolo.FatalCheck(err)
@@ -152,9 +153,10 @@ func (g *GridIndex) createAndWriteRawWayFeature(osmWayChannel chan *osm.Way, wai
 	defer waitGroup.Done()
 
 	tempEncodedValues := g.TagIndex.newTempEncodedValueArray()
+	var emptyRelationIds []osm.RelationID
 
 	for osmObj := range osmWayChannel {
-		wayFeature, err := g.toEncodedWayFeature(osmObj, tempEncodedValues)
+		wayFeature, err := g.toEncodedWayFeature(osmObj, emptyRelationIds, tempEncodedValues)
 		sigolo.FatalCheck(err)
 
 		wayFeatureData := g.getWayData(wayFeature)
@@ -368,8 +370,8 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 		// TODO Store nodes with ways (only IDs to relations, because it can be fetched from the cell of the node) and relations (only IDs to relations, because it can be fetched from the cell of the node)
 
-		Names: | osmId | lon | lat | num. keys | num. values | num. ways |   encodedKeys   |   encodedValues   |       ways      |
-		Bytes: |   8   |  4  |  4  |     4     |      4      |     2     | <num. keys> / 8 | <num. values> * 3 | <num. ways> * 8 |
+		Names: | osmId | lon | lat | num. keys | num. values | num. ways | num. rels |   encodedKeys   |   encodedValues   |     way IDs     |   relation IDs  |
+		Bytes: |   8   |  4  |  4  |     4     |      4      |     2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. ways> * 8 | <num. rels> * 8 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
@@ -389,13 +391,15 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 
 	encodedKeyBytes := numKeys                               // Is already a byte-array -> no division by 8 needed
 	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
-	wayIdBytes := len(encodedFeature.WayIds) * 8             // Int array and int = 4 bytes
+	wayIdBytes := len(encodedFeature.WayIds) * 8             // IDs are all 64-bit integers
+	relationIdBytes := len(encodedFeature.RelationIds) * 8   // IDs are all 64-bit integers
 
-	headerBytesCount := 8 + 4 + 4 + 4 + 4 + 2 // = 26
+	headerBytesCount := 8 + 4 + 4 + 4 + 4 + 2 + 2 // = 28
 	byteCount := headerBytesCount
 	byteCount += encodedKeyBytes
 	byteCount += encodedValueBytes
 	byteCount += wayIdBytes
+	byteCount += relationIdBytes
 
 	data := make([]byte, byteCount)
 
@@ -407,6 +411,7 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 	binary.LittleEndian.PutUint32(data[16:], uint32(numKeys))
 	binary.LittleEndian.PutUint32(data[20:], uint32(len(encodedFeature.GetValues())))
 	binary.LittleEndian.PutUint16(data[24:], uint16(len(encodedFeature.WayIds)))
+	binary.LittleEndian.PutUint16(data[28:], uint16(len(encodedFeature.RelationIds)))
 
 	pos := headerBytesCount
 
@@ -434,7 +439,15 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 		pos += 8
 	}
 
-	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d, numWays=%d", encodedFeature.ID, point, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.WayIds))
+	/*
+		Write relation-IDs
+	*/
+	for _, relationId := range encodedFeature.RelationIds {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
+		pos += 8
+	}
+
+	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d, numWays=%d, numRels=%d", encodedFeature.ID, point, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.WayIds), len(encodedFeature.RelationIds))
 
 	return g.writeData(encodedFeature, data, f)
 }
@@ -490,8 +503,8 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 		// TODO Store relations: only IDs to relations, because its data can be fetched from the cell of the way
 
-		Names: | osmId | num. keys | num. values | num. nodes |   encodedKeys   |   encodedValues   |       nodes       |
-		Bytes: |   8   |     4     |      4      |      2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 |
+		Names: | osmId | num. keys | num. values | num. nodes | num. rels |   encodedKeys   |   encodedValues   |       nodes       |       rels      |
+		Bytes: |   8   |     4     |      4      |      2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 | <num. rels> * 8 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
@@ -513,13 +526,15 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 	}
 
 	numEncodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
-	nodeIdBytes := len(encodedFeature.Nodes) * 16               // Each ID is a 64-bit int
+	nodeIdBytes := len(encodedFeature.Nodes) * 16               // Each ID is a 64-bit int + 2*4 bytes for lat/lon
+	relationIdBytes := len(encodedFeature.RelationIds) * 8      // Each ID is a 64-bit int
 
-	headerByteCount := 8 + 4 + 4 + 2
+	headerByteCount := 8 + 4 + 4 + 2 + 2
 	byteCount := headerByteCount
 	byteCount += numEncodedKeyBytes
 	byteCount += numEncodedValueBytes
 	byteCount += nodeIdBytes
+	byteCount += relationIdBytes
 
 	data := make([]byte, byteCount)
 
@@ -530,6 +545,7 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 	binary.LittleEndian.PutUint32(data[8:], uint32(numEncodedKeyBytes))
 	binary.LittleEndian.PutUint32(data[12:], uint32(len(encodedFeature.GetValues())))
 	binary.LittleEndian.PutUint16(data[16:], uint16(len(encodedFeature.Nodes)))
+	binary.LittleEndian.PutUint16(data[18:], uint16(len(encodedFeature.RelationIds)))
 
 	pos := headerByteCount
 
@@ -559,6 +575,14 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 		pos += 16
 	}
 
+	/*
+		Write relation-IDs
+	*/
+	for _, relationId := range encodedFeature.RelationIds {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
+		pos += 8
+	}
+
 	return data
 }
 
@@ -576,9 +600,9 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, er
 			wayIds = append(wayIds, way.ID)
 		}
 
-		return g.toEncodedNodeFeature(osmObj, wayIds, g.TagIndex.newTempEncodedValueArray())
+		return g.toEncodedNodeFeature(osmObj, wayIds, nil, g.TagIndex.newTempEncodedValueArray())
 	case *osm.Way:
-		return g.toEncodedWayFeature(osmObj, g.TagIndex.newTempEncodedValueArray())
+		return g.toEncodedWayFeature(osmObj, nil, g.TagIndex.newTempEncodedValueArray())
 	}
 	// TODO Implement relation handling
 	//case *osm.Relation:
@@ -586,7 +610,7 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, er
 	return nil, errors.Errorf("Converting OSM object of type '%s' not supported", obj.ObjectID().Type())
 }
 
-func (g *GridIndex) toEncodedNodeFeature(obj *osm.Node, wayIds []osm.WayID, tempEncodedValues []int) (*feature.EncodedNodeFeature, error) {
+func (g *GridIndex) toEncodedNodeFeature(obj *osm.Node, wayIds []osm.WayID, relationIds []osm.RelationID, tempEncodedValues []int) (*feature.EncodedNodeFeature, error) {
 	var geometry orb.Geometry
 
 	point := obj.Point()
@@ -604,10 +628,11 @@ func (g *GridIndex) toEncodedNodeFeature(obj *osm.Node, wayIds []osm.WayID, temp
 	return &feature.EncodedNodeFeature{
 		AbstractEncodedFeature: abstractEncodedFeature,
 		WayIds:                 wayIds,
+		RelationIds:            relationIds,
 	}, nil
 }
 
-func (g *GridIndex) toEncodedWayFeature(obj *osm.Way, tempEncodedValues []int) (*feature.EncodedWayFeature, error) {
+func (g *GridIndex) toEncodedWayFeature(obj *osm.Way, relationIds []osm.RelationID, tempEncodedValues []int) (*feature.EncodedWayFeature, error) {
 	var geometry orb.Geometry
 	var osmId uint64
 
@@ -627,6 +652,7 @@ func (g *GridIndex) toEncodedWayFeature(obj *osm.Way, tempEncodedValues []int) (
 	return &feature.EncodedWayFeature{
 		AbstractEncodedFeature: abstractEncodedFeature,
 		Nodes:                  obj.Nodes,
+		RelationIds:            relationIds,
 	}, nil
 }
 
@@ -846,8 +872,9 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+16:]))
 		numValues := int(binary.LittleEndian.Uint32(data[pos+20:]))
 		numWayIds := int(binary.LittleEndian.Uint16(data[pos+24:]))
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+26:]))
 
-		headerBytesCount := 8 + 4 + 4 + 4 + 4 + 2 // = 26
+		headerBytesCount := 8 + 4 + 4 + 4 + 4 + 2 + 2 // = 28
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, lon=%f, lat=%f, numKeys=%d, numValues=%d", pos, osmId, lon, lat, numEncodedKeyBytes, numValues)
 
@@ -878,6 +905,18 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 			pos += 8
 		}
 
+		/*
+			Read relation-IDs
+		*/
+		relationIds := make([]osm.RelationID, numRelationIds)
+		for i := 0; i < numRelationIds; i++ {
+			relationIds[i] = osm.RelationID(binary.LittleEndian.Uint64(data[pos:]))
+			pos += 8
+		}
+
+		/*
+			Create encoded feature from raw data
+		*/
 		encodedFeature := &feature.EncodedNodeFeature{
 			AbstractEncodedFeature: feature.AbstractEncodedFeature{
 				ID:       osmId,
@@ -885,7 +924,8 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 				Keys:     encodedKeys,
 				Values:   encodedValues,
 			},
-			WayIds: wayIds,
+			WayIds:      wayIds,
+			RelationIds: relationIds,
 		}
 		if g.checkFeatureValidity {
 			sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
@@ -920,8 +960,9 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+8:]))
 		numValues := int(binary.LittleEndian.Uint32(data[pos+12:]))
 		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
+		numRelationIDs := int(binary.LittleEndian.Uint16(data[pos+18:]))
 
-		headerBytesCount := 8 + 4 + 4 + 2
+		headerBytesCount := 8 + 4 + 4 + 2 + 2
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
 
@@ -957,7 +998,16 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 		}
 
 		/*
-			Actually create the encoded feature
+			Read relation-IDs
+		*/
+		var relationIds []osm.RelationID
+		for i := 0; i < numRelationIDs; i++ {
+			relationIds = append(relationIds, osm.RelationID(binary.LittleEndian.Uint64(data[pos:])))
+			pos += 8
+		}
+
+		/*
+			Create encoded feature from raw data
 		*/
 		var lineString orb.LineString
 		for _, node := range nodes {
@@ -970,7 +1020,8 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 				Values:   encodedValues,
 				Geometry: &lineString,
 			},
-			Nodes: nodes,
+			Nodes:       nodes,
+			RelationIds: relationIds,
 		}
 		if g.checkFeatureValidity {
 			sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
@@ -1026,8 +1077,10 @@ func (g *GridIndex) readNodeToWayMappingFromCellData(cellX int, cellY int) (map[
 		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
 		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
 		nodeBytes := numNodes * 16
+		numRelationIDs := int(binary.LittleEndian.Uint16(data[pos+18:]))
+		relationIDBytes := numRelationIDs * 8
 
-		headerBytesCount := 8 + 4 + 4 + 2
+		headerBytesCount := 8 + 4 + 4 + 2 + 2
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
 
@@ -1048,7 +1101,7 @@ func (g *GridIndex) readNodeToWayMappingFromCellData(cellX int, cellY int) (map[
 			}
 		}
 
-		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + nodeBytes
+		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + nodeBytes + relationIDBytes
 	}
 
 	return nodeToWays, nil

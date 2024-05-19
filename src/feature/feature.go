@@ -96,9 +96,8 @@ func featurePrint(f EncodedFeature) {
 
 type EncodedNodeFeature struct {
 	AbstractEncodedFeature
-
-	// An ID list of all ways this node is part of.
-	WayIds []osm.WayID
+	WayIds      []osm.WayID      // An ID list of all ways this node is part of.
+	RelationIds []osm.RelationID // An ID list of all relations this node is part of.
 }
 
 func (f *EncodedNodeFeature) GetID() uint64 {
@@ -143,9 +142,8 @@ func (f *EncodedNodeFeature) Print() {
 
 type EncodedWayFeature struct {
 	AbstractEncodedFeature
-
-	// A list of all nodes of the way. These nodes only contain their ID, lat and lon.
-	Nodes osm.WayNodes
+	Nodes       osm.WayNodes     // A list of all nodes of the way. These nodes only contain their ID, lat and lon.
+	RelationIds []osm.RelationID // An ID list of all relations this way is part of.
 }
 
 func (f *EncodedWayFeature) GetNodes() osm.WayNodes {
