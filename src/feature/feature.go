@@ -34,6 +34,38 @@ type AbstractEncodedFeature struct {
 	Values []int
 }
 
+func (f *AbstractEncodedFeature) GetID() uint64 {
+	return f.ID
+}
+
+func (f *AbstractEncodedFeature) GetGeometry() orb.Geometry {
+	return f.Geometry
+}
+
+func (f *AbstractEncodedFeature) GetKeys() []byte {
+	return f.Keys
+}
+
+func (f *AbstractEncodedFeature) GetValues() []int {
+	return f.Values
+}
+
+func (f *AbstractEncodedFeature) HasKey(keyIndex int) bool {
+	return featureHasKey(f, keyIndex)
+}
+
+func (f *AbstractEncodedFeature) GetValueIndex(keyIndex int) int {
+	return featureGetValueIndex(f, keyIndex)
+}
+
+func (f *AbstractEncodedFeature) HasTag(keyIndex int, valueIndex int) bool {
+	return featureHasTag(f, keyIndex, valueIndex)
+}
+
+func (f *AbstractEncodedFeature) Print() {
+	featurePrint(f)
+}
+
 func featureHasKey(f EncodedFeature, keyIndex int) bool {
 	if keyIndex == -1 {
 		return false
@@ -100,44 +132,12 @@ type EncodedNodeFeature struct {
 	RelationIds []osm.RelationID // An ID list of all relations this node is part of.
 }
 
-func (f *EncodedNodeFeature) GetID() uint64 {
-	return f.ID
-}
-
-func (f *EncodedNodeFeature) GetGeometry() orb.Geometry {
-	return f.Geometry
-}
-
 func (f *EncodedNodeFeature) GetLon() float64 {
 	return f.Geometry.(*orb.Point).Lon()
 }
 
 func (f *EncodedNodeFeature) GetLat() float64 {
 	return f.Geometry.(*orb.Point).Lat()
-}
-
-func (f *EncodedNodeFeature) GetKeys() []byte {
-	return f.Keys
-}
-
-func (f *EncodedNodeFeature) GetValues() []int {
-	return f.Values
-}
-
-func (f *EncodedNodeFeature) HasKey(keyIndex int) bool {
-	return featureHasKey(f, keyIndex)
-}
-
-func (f *EncodedNodeFeature) GetValueIndex(keyIndex int) int {
-	return featureGetValueIndex(f, keyIndex)
-}
-
-func (f *EncodedNodeFeature) HasTag(keyIndex int, valueIndex int) bool {
-	return featureHasTag(f, keyIndex, valueIndex)
-}
-
-func (f *EncodedNodeFeature) Print() {
-	featurePrint(f)
 }
 
 type EncodedWayFeature struct {
@@ -150,34 +150,6 @@ func (f *EncodedWayFeature) GetNodes() osm.WayNodes {
 	return f.Nodes
 }
 
-func (f *EncodedWayFeature) GetID() uint64 {
-	return f.ID
-}
-
-func (f *EncodedWayFeature) GetGeometry() orb.Geometry {
-	return f.Geometry
-}
-
-func (f *EncodedWayFeature) GetKeys() []byte {
-	return f.Keys
-}
-
-func (f *EncodedWayFeature) GetValues() []int {
-	return f.Values
-}
-
-func (f *EncodedWayFeature) HasKey(keyIndex int) bool {
-	return featureHasKey(f, keyIndex)
-}
-
-func (f *EncodedWayFeature) GetValueIndex(keyIndex int) int {
-	return featureGetValueIndex(f, keyIndex)
-}
-
-func (f *EncodedWayFeature) HasTag(keyIndex int, valueIndex int) bool {
-	return featureHasTag(f, keyIndex, valueIndex)
-}
-
 func (f *EncodedWayFeature) HasNode(id uint64) bool {
 	nodeId := osm.NodeID(id)
 	for _, node := range f.Nodes {
@@ -188,6 +160,16 @@ func (f *EncodedWayFeature) HasNode(id uint64) bool {
 	return false
 }
 
-func (f *EncodedWayFeature) Print() {
-	featurePrint(f)
+type EncodedRelationFeature struct {
+	AbstractEncodedFeature
+	NodeIDs []osm.NodeID
+	WayIDs  []osm.WayID
+}
+
+func (f EncodedRelationFeature) GetNodeIDs() []osm.NodeID {
+	return f.NodeIDs
+}
+
+func (f EncodedRelationFeature) GetWayIDs() []osm.WayID {
+	return f.WayIDs
 }
