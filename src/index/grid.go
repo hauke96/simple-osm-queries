@@ -149,6 +149,23 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 	return nil
 }
 
+func (g *GridIndex) getScanner(inputFile string) (*os.File, osm.Scanner, error) {
+	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
+		return nil, nil, errors.Errorf("Input file %s must be an .osm or .pbf file", inputFile)
+	}
+
+	f, err := os.Open(inputFile)
+	sigolo.FatalCheck(err)
+
+	var scanner osm.Scanner
+	if strings.HasSuffix(inputFile, ".osm") {
+		scanner = osmxml.New(context.Background(), f)
+	} else if strings.HasSuffix(inputFile, ".pbf") {
+		scanner = osmpbf.New(context.Background(), f, 1)
+	}
+	return f, scanner, err
+}
+
 func (g *GridIndex) createAndWriteRawWayFeature(osmWayChannel chan *osm.Way, waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 
@@ -176,6 +193,30 @@ func (g *GridIndex) createAndWriteRawWayFeature(osmWayChannel chan *osm.Way, wai
 			}
 		}
 	}
+}
+
+func (g *GridIndex) closeOpenFileHandles() {
+	var err error
+	g.cacheFileMutex.Lock()
+	sigolo.Debugf("Close remaining open file handles")
+	for filename, file := range g.cacheFileHandles {
+		if file != nil {
+			sigolo.Tracef("Close cell file %s", file.Name())
+
+			writer := g.cacheFileWriters[filename]
+			err = writer.Flush()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
+
+			err = file.Close()
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
+		} else {
+			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
+		}
+	}
+	g.cacheFileHandles = map[string]*os.File{}
+	g.cacheFileWriters = map[string]*bufio.Writer{}
+	g.cacheFileMutexes = map[io.Writer]*sync.Mutex{}
+	g.cacheFileMutex.Unlock()
 }
 
 func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
@@ -255,23 +296,6 @@ func (g *GridIndex) addWayIdsToNodesInCell(cellChannel chan CellIndex, waitGroup
 		close(readFeatureChannel)
 		finishWaitGroup.Wait()
 	}
-}
-
-func (g *GridIndex) getScanner(inputFile string) (*os.File, osm.Scanner, error) {
-	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
-		return nil, nil, errors.Errorf("Input file %s must be an .osm or .pbf file", inputFile)
-	}
-
-	f, err := os.Open(inputFile)
-	sigolo.FatalCheck(err)
-
-	var scanner osm.Scanner
-	if strings.HasSuffix(inputFile, ".osm") {
-		scanner = osmxml.New(context.Background(), f)
-	} else if strings.HasSuffix(inputFile, ".pbf") {
-		scanner = osmpbf.New(context.Background(), f, 1)
-	}
-	return f, scanner, err
 }
 
 func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, encodedFeature feature.EncodedFeature) error {
@@ -473,30 +497,6 @@ func (g *GridIndex) writeData(encodedFeature feature.EncodedFeature, data []byte
 	return nil
 }
 
-func (g *GridIndex) closeOpenFileHandles() {
-	var err error
-	g.cacheFileMutex.Lock()
-	sigolo.Debugf("Close remaining open file handles")
-	for filename, file := range g.cacheFileHandles {
-		if file != nil {
-			sigolo.Tracef("Close cell file %s", file.Name())
-
-			writer := g.cacheFileWriters[filename]
-			err = writer.Flush()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
-
-			err = file.Close()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
-		} else {
-			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
-		}
-	}
-	g.cacheFileHandles = map[string]*os.File{}
-	g.cacheFileWriters = map[string]*bufio.Writer{}
-	g.cacheFileMutexes = map[io.Writer]*sync.Mutex{}
-	g.cacheFileMutex.Unlock()
-}
-
 func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte {
 	/*
 		Entry format:
@@ -584,11 +584,6 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 	}
 
 	return data
-}
-
-// GetCellIndexForCoordinate returns the cell index (i.e. position) for the given coordinate.
-func (g *GridIndex) GetCellIndexForCoordinate(x float64, y float64) CellIndex {
-	return CellIndex{int(x / g.CellWidth), int(y / g.CellHeight)}
 }
 
 // TODO remove if not needed
@@ -757,6 +752,11 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error
 	}()
 
 	return resultChannel, nil
+}
+
+// GetCellIndexForCoordinate returns the cell index (i.e. position) for the given coordinate.
+func (g *GridIndex) GetCellIndexForCoordinate(x float64, y float64) CellIndex {
+	return CellIndex{int(x / g.CellWidth), int(y / g.CellHeight)}
 }
 
 func (g *GridIndex) GetFeaturesForCells(cells []CellIndex, objectType string) chan *GetFeaturesResult {
