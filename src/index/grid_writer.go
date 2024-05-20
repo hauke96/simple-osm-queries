@@ -150,8 +150,17 @@ func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, encodedFeature fe
 			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
 		}
 		return nil
+	case *feature.EncodedRelationFeature:
+		f, err := g.getCellFile(cellX, cellY, feature.OsmObjRelation.String())
+		if err != nil {
+			return err
+		}
+		err = g.writeRelationData(featureObj, f)
+		if err != nil {
+			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
+		}
+		return nil
 	}
-	// TODO	 Implement relation handling: Store nodes (ID with lat+lon) and ways (ID with first cell index, because the way appears in all cells it covers, so just store the first one)
 
 	return nil
 }
@@ -220,7 +229,6 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
-		// TODO Store nodes with ways (only IDs to relations, because it can be fetched from the cell of the node) and relations (only IDs to relations, because it can be fetched from the cell of the node)
 
 		Names: | osmId | lon | lat | num. keys | num. values | num. ways | num. rels |   encodedKeys   |   encodedValues   |     way IDs     |   relation IDs  |
 		Bytes: |   8   |  4  |  4  |     4     |      4      |     2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. ways> * 8 | <num. rels> * 8 |
@@ -329,7 +337,6 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
-		// TODO Store relations: only IDs to relations, because its data can be fetched from the cell of the way
 
 		Names: | osmId | num. keys | num. values | num. nodes | num. rels |   encodedKeys   |   encodedValues   |       nodes       |       rels      |
 		Bytes: |   8   |     4     |      4      |      2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 | <num. rels> * 8 |
@@ -414,6 +421,105 @@ func (g *GridIndex) getWayData(encodedFeature *feature.EncodedWayFeature) []byte
 	return data
 }
 
+func (g *GridIndex) writeRelationData(encodedFeature *feature.EncodedRelationFeature, f io.Writer) error {
+	/*
+		Entry format:
+		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
+
+		Names: | osmId | bbox | num. keys | num. values | num. nodes | num. ways | num. rels |   encodedKeys   |   encodedValues   |     node IDs     |     way IDs     |   relation IDs  |
+		Bytes: |   8   |  16  |     4     |      4      |      2     |     2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 8 | <num. ways> * 8 | <num. rels> * 8 |
+
+		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
+		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
+		is an int-array, therefore, we need the multiplication with 4.
+
+		The "bbox" field are 4 32-bit floats for the min-lon, min-lat, max-lon and max-lat values.
+
+		// TODO store real geometry. Including geometry of sub-relations?
+	*/
+	numKeys := 0
+	for i := 0; i < len(encodedFeature.GetKeys()); i++ {
+		if encodedFeature.GetKeys()[i] != 0 {
+			numKeys = i + 1
+		}
+	}
+
+	encodedKeyBytes := numKeys                               // Is already a byte-array -> no division by 8 needed
+	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
+	nodeIdBytes := len(encodedFeature.NodeIDs) * 8           // IDs are all 64-bit integers
+	wayIdBytes := len(encodedFeature.WayIDs) * 8             // IDs are all 64-bit integers
+	relationIdBytes := len(encodedFeature.RelationIDs) * 8   // IDs are all 64-bit integers
+
+	headerBytesCount := 8 + 16 + 4 + 4 + 2 + 2 + 2 // = 38
+	byteCount := headerBytesCount
+	byteCount += encodedKeyBytes
+	byteCount += encodedValueBytes
+	byteCount += nodeIdBytes
+	byteCount += wayIdBytes
+	byteCount += relationIdBytes
+
+	data := make([]byte, byteCount)
+
+	bbox := encodedFeature.Geometry.Bound()
+
+	binary.LittleEndian.PutUint64(data[0:], encodedFeature.ID)
+	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(bbox.Min.Lon())))
+	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(bbox.Min.Lat())))
+	binary.LittleEndian.PutUint32(data[16:], math.Float32bits(float32(bbox.Max.Lon())))
+	binary.LittleEndian.PutUint32(data[20:], math.Float32bits(float32(bbox.Max.Lat())))
+	binary.LittleEndian.PutUint32(data[24:], uint32(numKeys))
+	binary.LittleEndian.PutUint32(data[28:], uint32(len(encodedFeature.GetValues())))
+	binary.LittleEndian.PutUint16(data[32:], uint16(len(encodedFeature.NodeIDs)))
+	binary.LittleEndian.PutUint16(data[34:], uint16(len(encodedFeature.WayIDs)))
+	binary.LittleEndian.PutUint16(data[36:], uint16(len(encodedFeature.RelationIDs)))
+
+	pos := headerBytesCount
+
+	/*
+		Write keys
+	*/
+	copy(data[pos:], encodedFeature.GetKeys()[0:numKeys])
+	pos += numKeys
+
+	/*
+		Write values
+	*/
+	for _, v := range encodedFeature.GetValues() {
+		data[pos] = byte(v)
+		data[pos+1] = byte(v >> 8)
+		data[pos+2] = byte(v >> 16)
+		pos += 3
+	}
+
+	/*
+		Write node-IDs
+	*/
+	for _, nodeId := range encodedFeature.NodeIDs {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(nodeId))
+		pos += 8
+	}
+
+	/*
+		Write way-IDs
+	*/
+	for _, wayId := range encodedFeature.WayIDs {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(wayId))
+		pos += 8
+	}
+
+	/*
+		Write relation-IDs
+	*/
+	for _, relationId := range encodedFeature.RelationIDs {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
+		pos += 8
+	}
+
+	sigolo.Tracef("Write feature %d bbox=%#v, byteCount=%d, numKeys=%d, numValues=%d, numNodes=%d, numWays=%d, numRels=%d", encodedFeature.ID, bbox, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.NodeIDs), len(encodedFeature.WayIDs), len(encodedFeature.RelationIDs))
+
+	return g.writeData(encodedFeature, data, f)
+}
+
 // TODO remove if not needed
 func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, error) {
 	switch osmObj := obj.(type) {
@@ -427,7 +533,6 @@ func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, er
 	case *osm.Way:
 		return g.toEncodedWayFeature(osmObj, nil, g.TagIndex.newTempEncodedValueArray())
 	}
-	// TODO Implement relation handling
 	//case *osm.Relation:
 
 	return nil, errors.Errorf("Converting OSM object of type '%s' not supported", obj.ObjectID().Type())
@@ -476,5 +581,27 @@ func (g *GridIndex) toEncodedWayFeature(obj *osm.Way, relationIds []osm.Relation
 		AbstractEncodedFeature: abstractEncodedFeature,
 		Nodes:                  obj.Nodes,
 		RelationIds:            relationIds,
+	}, nil
+}
+
+func (g *GridIndex) toEncodedRelationFeature(obj *osm.Relation, bbox *orb.Bound, nodeIds []osm.NodeID, wayIds []osm.WayID, relationIds []osm.RelationID, tempEncodedValues []int) (*feature.EncodedRelationFeature, error) {
+	// This is probably temporary until the real geometry collection is stored
+	geometry := bbox.ToPolygon()
+	osmId := uint64(obj.ID)
+
+	encodedKeys, encodedValues := g.TagIndex.encodeTags(obj.Tags, tempEncodedValues)
+
+	abstractEncodedFeature := feature.AbstractEncodedFeature{
+		ID:       osmId,
+		Geometry: geometry,
+		Keys:     encodedKeys,
+		Values:   encodedValues,
+	}
+
+	return &feature.EncodedRelationFeature{
+		AbstractEncodedFeature: abstractEncodedFeature,
+		NodeIDs:                nodeIds,
+		WayIDs:                 wayIds,
+		RelationIDs:            relationIds,
 	}, nil
 }

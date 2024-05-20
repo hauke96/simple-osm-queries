@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
 	"github.com/paulmach/osm/osmpbf"
 	"github.com/paulmach/osm/osmxml"
@@ -47,7 +48,7 @@ func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64
 	}
 }
 
-func (g *GridIndex) Import(inputFile string) error {
+func (g *GridIndex) Import(inputFile string, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) error {
 	err := os.RemoveAll(g.BaseFolder)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", g.BaseFolder)
@@ -65,7 +66,7 @@ func (g *GridIndex) Import(inputFile string) error {
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
-	err = g.convertOsmToRawEncodedFeatures(inputFile, cells)
+	err = g.convertOsmToRawEncodedFeatures(inputFile, cells, nodesOfRelations, waysOfRelations)
 	if err != nil {
 		return err
 	}
@@ -77,7 +78,7 @@ func (g *GridIndex) Import(inputFile string) error {
 	return nil
 }
 
-func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[CellIndex]CellIndex) error {
+func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[CellIndex]CellIndex, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) error {
 	sigolo.Info("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 
@@ -89,10 +90,22 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 	defer file.Close()
 	defer scanner.Close()
 
+	var emptyNodeIds []osm.NodeID
 	var emptyWayIds []osm.WayID
 	var emptyRelationIds []osm.RelationID
 
+	nodeToBound := map[osm.NodeID]*orb.Bound{}
+	for _, nodeId := range nodesOfRelations {
+		nodeToBound[nodeId] = nil
+	}
+
+	wayToBound := map[osm.WayID]*orb.Bound{}
+	for _, wayId := range waysOfRelations {
+		wayToBound[wayId] = nil
+	}
+
 	firstWayHasBeenProcessed := false
+	firstRelationHasBeenProcessed := false
 
 	numThreads := 10
 	osmWayQueue := make(chan *osm.Way, numThreads*2)
@@ -103,12 +116,17 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 	}
 	tempEncodedValues := g.TagIndex.newTempEncodedValueArray()
 
-	sigolo.Debug("Start processing nodes (1/2)")
+	sigolo.Debug("Start processing nodes (1/3)")
 	for scanner.Scan() {
 		obj := scanner.Object()
 
 		switch osmObj := obj.(type) {
 		case *osm.Node:
+			if _, ok := nodeToBound[osmObj.ID]; ok {
+				bbox := osmObj.Point().Bound()
+				nodeToBound[osmObj.ID] = &bbox
+			}
+
 			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
 
 			nodeFeature, err := g.toEncodedNodeFeature(osmObj, emptyWayIds, emptyRelationIds, tempEncodedValues)
@@ -119,14 +137,65 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 			cells[cell] = cell
 		case *osm.Way:
 			if !firstWayHasBeenProcessed {
-				sigolo.Debug("Start processing ways (2/2)")
+				sigolo.Debug("Start processing ways (2/3)")
 				firstWayHasBeenProcessed = true
 			}
 
+			if _, ok := wayToBound[osmObj.ID]; ok {
+				bbox := osmObj.LineString().Bound()
+				wayToBound[osmObj.ID] = &bbox
+			}
+
 			osmWayQueue <- osmObj
+		case *osm.Relation:
+			if !firstRelationHasBeenProcessed {
+				sigolo.Debug("Start processing relations (3/3)")
+				firstRelationHasBeenProcessed = true
+			}
+
+			var bbox *orb.Bound
+			var memberBbox *orb.Bound
+
+			for _, member := range osmObj.Members {
+				switch member.Type {
+				case osm.TypeNode:
+					id := osm.NodeID(member.Ref)
+					memberBbox = nodeToBound[id]
+				case osm.TypeWay:
+					id := osm.WayID(member.Ref)
+					memberBbox = wayToBound[id]
+				}
+
+				if memberBbox == nil {
+					// Members can be outside of dataset and therefore do not appear in our map
+					continue
+				}
+
+				if bbox == nil {
+					bbox = memberBbox
+				} else {
+					newBbox := bbox.Union(*memberBbox)
+					bbox = &newBbox
+				}
+			}
+
+			// TODO handle relations that only contain relations and therefore to not (currently) have a bbox
+			if bbox == nil {
+				continue
+			}
+
+			minCell := g.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
+			maxCell := g.GetCellIndexForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
+
+			for cellX := minCell.X(); cellX <= maxCell.X(); cellX++ {
+				for cellY := minCell.Y(); cellY <= maxCell.Y(); cellY++ {
+					nodeFeature, err := g.toEncodedRelationFeature(osmObj, bbox, emptyNodeIds, emptyWayIds, emptyRelationIds, tempEncodedValues)
+					sigolo.FatalCheck(err)
+					err = g.writeOsmObjectToCell(cellX, cellY, nodeFeature)
+					sigolo.FatalCheck(err)
+				}
+			}
 		}
-		// TODO	 Implement relation handling
-		//case *osm.Relation:
 	}
 
 	close(osmWayQueue)

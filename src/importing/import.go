@@ -21,7 +21,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	tagIndex := &index.TagIndex{
 		BaseFolder: indexBaseFolder,
 	}
-	err := tagIndex.ImportAndSave(inputFile)
+	err, nodesOfRelations, waysOfRelations := tagIndex.ImportAndSave(inputFile)
 	if err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		CellHeight: cellHeight,
 		BaseFolder: path.Join(indexBaseFolder, index.GridIndexFolder),
 	}
-	err = gridIndex.Import(inputFile)
+	err = gridIndex.Import(inputFile, nodesOfRelations, waysOfRelations)
 	if err != nil {
 		return err
 	}

@@ -117,7 +117,9 @@ func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 	return index
 }
 
-func (i *TagIndex) ImportAndSave(inputFile string) error {
+// ImportAndSave imports and saves all tags to the tag index on disk. For performance reasons, it also collects all
+// node and way IDs of relations within the input file. This can be used for later indices to correctly store relations.
+func (i *TagIndex) ImportAndSave(inputFile string) (error, []osm.NodeID, []osm.WayID) {
 	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
 		sigolo.Error("Input file must be an .osm or .pbf file")
 		os.Exit(1)
@@ -125,7 +127,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 
 	f, err := os.Open(inputFile)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to open input file %s", inputFile)
+		return errors.Wrapf(err, "Unable to open input file %s", inputFile), nil, nil
 	}
 	defer f.Close()
 
@@ -145,9 +147,13 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	var valueMap [][]string              // [key-index][value-index] -> value-string
 	var valueReverseMap []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
 
-	firstWayHasBeenProcessed := false
+	var nodesOfRelations []osm.NodeID
+	var waysOfRelations []osm.WayID
 
-	sigolo.Debug("Start processing node tags (1/2)")
+	firstWayHasBeenProcessed := false
+	firstRelationHasBeenProcessed := false
+
+	sigolo.Debug("Start processing node tags (1/3)")
 	for scanner.Scan() {
 		var tags osm.Tags
 		switch osmObj := scanner.Object().(type) {
@@ -155,12 +161,25 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 			tags = osmObj.Tags
 		case *osm.Way:
 			if !firstWayHasBeenProcessed {
-				sigolo.Debug("Start processing way tags (2/2)")
+				sigolo.Debug("Start processing way tags (2/3)")
 				firstWayHasBeenProcessed = true
 			}
 			tags = osmObj.Tags
 		case *osm.Relation:
+			if !firstRelationHasBeenProcessed {
+				sigolo.Debug("Start processing relation tags (2/3)")
+				firstRelationHasBeenProcessed = true
+			}
 			tags = osmObj.Tags
+
+			for _, member := range osmObj.Members {
+				switch member.Type {
+				case osm.TypeNode:
+					nodesOfRelations = append(nodesOfRelations, osm.NodeID(member.Ref))
+				case osm.TypeWay:
+					waysOfRelations = append(waysOfRelations, osm.WayID(member.Ref))
+				}
+			}
 		}
 
 		// Add the keys and values to the maps for the index.
@@ -211,7 +230,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) error {
 	importDuration := time.Since(importStartTime)
 	sigolo.Infof("Created tag-index from OSM data in %s", importDuration)
 
-	return i.SaveToFile(TagIndexFilename)
+	return i.SaveToFile(TagIndexFilename), nodesOfRelations, waysOfRelations
 }
 
 // GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.

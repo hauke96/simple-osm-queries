@@ -12,7 +12,7 @@ type GetFeaturesResult struct {
 }
 
 type GeometryIndex interface {
-	Import(filename string) error
+	Import(filename string, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) error
 	Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error)
 	GetFeaturesForCells(cells []CellIndex, objectType string) chan *GetFeaturesResult
 	GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error)
