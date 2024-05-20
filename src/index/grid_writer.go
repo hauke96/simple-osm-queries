@@ -18,6 +18,35 @@ import (
 	"time"
 )
 
+func (g *GridIndex) createAndWriteRawWayFeature(osmWayChannel chan *osm.Way, waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
+
+	tempEncodedValues := g.TagIndex.newTempEncodedValueArray()
+	var emptyRelationIds []osm.RelationID
+
+	for osmObj := range osmWayChannel {
+		wayFeature, err := g.toEncodedWayFeature(osmObj, emptyRelationIds, tempEncodedValues)
+		sigolo.FatalCheck(err)
+
+		wayFeatureData := g.getWayData(wayFeature)
+
+		savedCells := map[CellIndex]bool{}
+		for _, node := range osmObj.Nodes {
+			cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
+
+			if _, ok := savedCells[cell]; !ok {
+				f, err := g.getCellFile(cell.X(), cell.Y(), feature.OsmObjWay.String())
+				sigolo.FatalCheck(err)
+
+				err = g.writeData(wayFeature, wayFeatureData, f)
+				sigolo.FatalCheck(err)
+
+				savedCells[cell] = true
+			}
+		}
+	}
+}
+
 func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 	sigolo.Info("Start adding way IDs to raw encoded nodes")
 	importStartTime := time.Now()
