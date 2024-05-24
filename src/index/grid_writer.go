@@ -271,7 +271,7 @@ func (g *GridIndex) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f 
 	binary.LittleEndian.PutUint32(data[16:], uint32(numKeys))
 	binary.LittleEndian.PutUint32(data[20:], uint32(len(encodedFeature.GetValues())))
 	binary.LittleEndian.PutUint16(data[24:], uint16(len(encodedFeature.WayIds)))
-	binary.LittleEndian.PutUint16(data[28:], uint16(len(encodedFeature.RelationIds)))
+	binary.LittleEndian.PutUint16(data[26:], uint16(len(encodedFeature.RelationIds)))
 
 	pos := headerBytesCount
 
