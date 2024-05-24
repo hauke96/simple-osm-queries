@@ -90,7 +90,6 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 	defer file.Close()
 	defer scanner.Close()
 
-	var emptyNodeIds []osm.NodeID
 	var emptyWayIds []osm.WayID
 	var emptyRelationIds []osm.RelationID
 
@@ -155,15 +154,23 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 
 			var bbox *orb.Bound
 			var memberBbox *orb.Bound
+			var nodeIds []osm.NodeID
+			var wayIds []osm.WayID
+			var relationIds []osm.RelationID
 
 			for _, member := range osmObj.Members {
 				switch member.Type {
 				case osm.TypeNode:
 					id := osm.NodeID(member.Ref)
+					nodeIds = append(nodeIds, id)
 					memberBbox = nodeToBound[id]
 				case osm.TypeWay:
 					id := osm.WayID(member.Ref)
+					wayIds = append(wayIds, id)
 					memberBbox = wayToBound[id]
+				case osm.TypeRelation:
+					id := osm.RelationID(member.Ref)
+					relationIds = append(relationIds, id)
 				}
 
 				if memberBbox == nil {
@@ -189,7 +196,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 
 			for cellX := minCell.X(); cellX <= maxCell.X(); cellX++ {
 				for cellY := minCell.Y(); cellY <= maxCell.Y(); cellY++ {
-					nodeFeature, err := g.toEncodedRelationFeature(osmObj, bbox, emptyNodeIds, emptyWayIds, emptyRelationIds, tempEncodedValues)
+					nodeFeature, err := g.toEncodedRelationFeature(osmObj, bbox, nodeIds, wayIds, relationIds, tempEncodedValues)
 					sigolo.FatalCheck(err)
 					err = g.writeOsmObjectToCell(cellX, cellY, nodeFeature)
 					sigolo.FatalCheck(err)
