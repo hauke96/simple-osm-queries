@@ -218,6 +218,7 @@ func (g *GridIndex) readFeaturesFromCellFile(cellX int, cellY int, objectType st
 
 	close(readFeatureChannel)
 
+	// TODO prevent concurrent map read
 	return g.featureCache[cellFileName], nil
 }
 
@@ -486,10 +487,11 @@ func (g *GridIndex) readRelationsFromCellData(output chan []feature.EncodedFeatu
 		/*
 			Create encoded feature from raw data
 		*/
+		bboxPolygon := bbox.ToPolygon()
 		encodedFeature := &feature.EncodedRelationFeature{
 			AbstractEncodedFeature: feature.AbstractEncodedFeature{
 				ID:       osmId,
-				Geometry: &bbox, // This is probably temporary until the real geometry collection is stored
+				Geometry: &bboxPolygon, // This is probably temporary until the real geometry collection is stored
 				Keys:     encodedKeys,
 				Values:   encodedValues,
 			},
