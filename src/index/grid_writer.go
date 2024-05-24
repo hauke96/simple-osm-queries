@@ -59,7 +59,7 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 	cellSync := &sync.WaitGroup{}
 	for i := 0; i < numThreads; i++ {
 		cellSync.Add(1)
-		go g.addWayIdsToNodesInCell(cellQueue, cellSync)
+		go g.addWayAndRelationIdsToNodesInCell(cellQueue, cellSync)
 	}
 
 	for cell, _ := range cells {
@@ -76,12 +76,14 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 	sigolo.Infof("Done adding way IDs to raw encoded nodes in %s", importDuration)
 }
 
-func (g *GridIndex) addWayIdsToNodesInCell(cellChannel chan CellIndex, waitGroup *sync.WaitGroup) {
+func (g *GridIndex) addWayAndRelationIdsToNodesInCell(cellChannel chan CellIndex, waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 
 	for cell := range cellChannel {
 		sigolo.Tracef("[Cell %v] Collect node-way-relationship", cell)
+		// TODO error handling
 		nodeToWays, err := g.readNodeToWayMappingFromCellData(cell.X(), cell.Y())
+		nodeToRelations, err := g.readNodeToRelationMappingFromCellData(cell.X(), cell.Y())
 
 		cellFolderName := path.Join(g.BaseFolder, feature.OsmObjNode.String(), strconv.Itoa(cell.X()))
 		cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
@@ -109,6 +111,10 @@ func (g *GridIndex) addWayIdsToNodesInCell(cellChannel chan CellIndex, waitGroup
 
 					if wayIds, ok := nodeToWays[node.GetID()]; ok {
 						node.(*feature.EncodedNodeFeature).WayIds = wayIds
+					}
+
+					if relationIds, ok := nodeToRelations[node.GetID()]; ok {
+						node.(*feature.EncodedNodeFeature).RelationIds = relationIds
 					}
 
 					err = g.writeOsmObjectToCell(cell.X(), cell.Y(), node)

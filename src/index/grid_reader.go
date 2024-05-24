@@ -581,6 +581,72 @@ func (g *GridIndex) readNodeToWayMappingFromCellData(cellX int, cellY int) (map[
 	return nodeToWays, nil
 }
 
+// readNodeToRelationMappingFromCellData is a simplified version of the general relations-reading function. It returns
+// a mapping of node-ID to relation-IDs for the given cell file. Therefore, it can be used to determine which relations
+// a node belongs to, without reading whole encoded features.
+func (g *GridIndex) readNodeToRelationMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.RelationID, error) {
+	cellFolderName := path.Join(g.BaseFolder, feature.OsmObjRelation.String(), strconv.Itoa(cellX))
+	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
+
+	if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
+		sigolo.Tracef("Cell file %s does not exist, I'll return an empty feature list", cellFileName)
+		return nil, nil
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
+	}
+
+	sigolo.Tracef("Read cell file %s", cellFileName)
+	data, err := os.ReadFile(cellFileName)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, feature.OsmObjWay.String())
+	}
+
+	nodeToRelations := map[uint64][]osm.RelationID{}
+
+	for pos := 0; pos < len(data); {
+		// See format details (bit position, field sizes, etc.) in function "writeRelationData".
+
+		/*
+			Read general information of the feature
+		*/
+		osmId := binary.LittleEndian.Uint64(data[pos+0:])
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+24:]))
+		numValues := int(binary.LittleEndian.Uint32(data[pos+28:]))
+		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
+		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+32:]))
+		nodeBytes := numNodeIds * 8
+		numWayIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
+		wayBytes := numWayIds * 8
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+36:]))
+		relationBytes := numRelationIds * 8
+
+		headerBytesCount := 8 + 16 + 4 + 4 + 2 + 2 + 2 // = 38
+
+		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
+
+		encodedValuesStartIndex := pos + headerBytesCount + numEncodedKeyBytes
+
+		/*
+			Read the node-IDs of the relation
+		*/
+		nodesStartIndex := encodedValuesStartIndex + encodedValuesBytes
+		for i := 0; i < numNodeIds; i++ {
+			nodeIdIndex := nodesStartIndex + i*8
+			nodeId := binary.LittleEndian.Uint64(data[nodeIdIndex:])
+
+			if _, ok := nodeToRelations[nodeId]; !ok {
+				nodeToRelations[nodeId] = []osm.RelationID{osm.RelationID(osmId)}
+			} else {
+				nodeToRelations[nodeId] = append(nodeToRelations[nodeId], osm.RelationID(osmId))
+			}
+		}
+
+		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + nodeBytes + wayBytes + relationBytes
+	}
+
+	return nodeToRelations, nil
+}
+
 func (g *GridIndex) checkValidity(encodedFeature feature.EncodedFeature) {
 	// Check keys
 	if len(encodedFeature.GetKeys()) > len(g.TagIndex.keyMap) {
