@@ -172,7 +172,7 @@ func NewSubStatementFilterExpression(statement *Statement) *SubStatementFilterEx
 	return &SubStatementFilterExpression{
 		statement:   statement,
 		cachedCells: []index.CellIndex{},
-		idCache:     make(map[uint64]uint64),
+		idCache:     make(map[uint64]uint64), // TODO Shouldn't this be three caches? Since the IDs are only unique for one specific object type.
 	}
 }
 
@@ -198,6 +198,19 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 		for _, node := range contextFeature.Nodes {
 			cell := geometryIndex.GetCellIndexForCoordinate(node.Lon, node.Lat)
 			if _, ok := cells[cell]; !ok {
+				cells[cell] = cell
+			}
+		}
+	case *feature.EncodedRelationFeature:
+		// TODO Use actual coordinated in geometry to determine the minimum amount of cells needed for this relation
+		bbox := contextFeature.AbstractEncodedFeature.Geometry.Bound()
+
+		minCell := geometryIndex.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
+		maxCell := geometryIndex.GetCellIndexForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
+
+		for cellX := minCell.X(); cellX <= maxCell.X(); cellX++ {
+			for cellY := minCell.Y(); cellY <= maxCell.Y(); cellY++ {
+				cell := index.CellIndex{cellX, cellY}
 				cells[cell] = cell
 			}
 		}
@@ -247,6 +260,7 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	}
 
 	// Check whether at least one sub-feature of the context is within the list of IDs that fulfill the sub-statement.
+	// TODO Don't we need if-statement for the different wanted object types? I.e. when the context is a node and the statement is "this.relations{...}" then we don't need to check the way IDs.
 	switch contextFeature := context.(type) {
 	case *feature.EncodedNodeFeature:
 		for _, wayId := range contextFeature.WayIds {
@@ -254,9 +268,36 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 				return true, nil
 			}
 		}
+		for _, relationId := range contextFeature.RelationIds {
+			if _, ok := f.idCache[uint64(relationId)]; ok {
+				return true, nil
+			}
+		}
 	case *feature.EncodedWayFeature:
+		// TODO Statement "bbox(...).ways{this.relations{...}}" not working(?) Maybe a bug in the import?
 		for _, node := range contextFeature.Nodes {
 			if _, ok := f.idCache[uint64(node.ID)]; ok {
+				return true, nil
+			}
+		}
+		for _, relationId := range contextFeature.RelationIds {
+			if _, ok := f.idCache[uint64(relationId)]; ok {
+				return true, nil
+			}
+		}
+	case *feature.EncodedRelationFeature:
+		for _, nodeId := range contextFeature.NodeIDs {
+			if _, ok := f.idCache[uint64(nodeId)]; ok {
+				return true, nil
+			}
+		}
+		for _, wayId := range contextFeature.WayIDs {
+			if _, ok := f.idCache[uint64(wayId)]; ok {
+				return true, nil
+			}
+		}
+		for _, relationId := range contextFeature.RelationIDs {
+			if _, ok := f.idCache[uint64(relationId)]; ok {
 				return true, nil
 			}
 		}

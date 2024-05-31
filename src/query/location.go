@@ -69,6 +69,7 @@ func NewContextAwareLocationExpression() *ContextAwareLocationExpression {
 }
 
 func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
+	// TODO Should never been called since the SubStatementFilterExpression itself queries the features and does some caching.
 	/*
 		Supported expressions for nodes    :    -   .ways .relations
 		Supported expressions for ways     : .nodes   -   .relations
@@ -80,12 +81,14 @@ func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.Geometr
 
 	switch encodedFeature := context.(type) {
 	case *feature.EncodedWayFeature:
+		sigolo.Debug("Get Features context way")
 		switch objectType {
 		case feature.OsmObjNode:
 			return geometryIndex.GetNodes(encodedFeature.GetNodes())
 		}
 		return nil, errors.Errorf("Unsupported object type %s for context-aware expression of way", objectType.String())
 	default:
+		sigolo.Debugf("Unsupported context %s", reflect.TypeOf(context).String())
 		return nil, errors.Errorf("Unsupported feature type %s for context-aware expression", reflect.TypeOf(context).String())
 	}
 
