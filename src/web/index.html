@@ -50,10 +50,13 @@
             }
 
             button {
-                width: 150px;
-                height: 2.5em;
                 border: 1px solid var(--col-gray);
                 background: var(--col-primary-light);
+            }
+
+            .button-container button {
+                min-width: 80px;
+                height: 2.25em;
             }
 
             button:hover:enabled {
@@ -153,6 +156,7 @@
                     <button id="copy-extent-button">Copy current bbox</button>
                 </div>
                 <div>
+                    <button id="clear-button">Clear</button>
                     <button id="export-button">Save as GeoJSON</button>
                     <button id="send-button">Send</button>
                 </div>
@@ -176,6 +180,7 @@
         Set default values
          */
         document.getElementById("export-button").disabled = true;
+        document.getElementById("clear-button").disabled = true;
         document.getElementById("loading-label").style.visibility = "collapse";
         document.getElementById("error-internal-label").style.visibility = "collapse";
         document.getElementById("error-request-label").style.visibility = "collapse";
@@ -237,6 +242,12 @@
             overlays: [overlay]
         });
 
+        const rawExtent = localStorage.getItem("extent");
+        if (rawExtent != null && rawExtent !== "") {
+            const extent = JSON.parse("[" + rawExtent + "]");
+            map.getView().fit(extent);
+        }
+
         /*
         Selection of features
          */
@@ -290,8 +301,14 @@
             return ol.proj.transformExtent(map.getView().calculateExtent(), "EPSG:3857", "EPSG:4326")
         }
 
+        map.on("moveend", () => {
+            const extent = map.getView().calculateExtent();
+            localStorage.setItem("extent", extent);
+        });
+
         document.getElementById("send-button").addEventListener("click", () => {
             document.getElementById("export-button").disabled = true;
+            document.getElementById("clear-button").disabled = true;
             document.getElementById("send-button").disabled = true;
             document.getElementById("loading-label").style.visibility = "visible";
             document.getElementById("info-label").style.visibility = "collapse";
@@ -318,6 +335,7 @@
 
                     lastQueryResponseGeoJSON = responseText;
                     document.getElementById("export-button").disabled = false;
+                    document.getElementById("clear-button").disabled = false;
                     document.getElementById("send-button").disabled = false;
                     document.getElementById("loading-label").style.visibility = "collapse";
                     document.getElementById("error-internal-label").style.visibility = "collapse";
@@ -328,6 +346,7 @@
                 .catch(err => {
                     console.error(err);
                     document.getElementById("export-button").disabled = false;
+                    document.getElementById("clear-button").disabled = false;
                     document.getElementById("send-button").disabled = false;
                     document.getElementById("loading-label").style.visibility = "collapse";
                     if (err.status >= 400 && err.status < 500) {
@@ -345,6 +364,17 @@
             link.download = "output.geojson";
             link.click();
             URL.revokeObjectURL(link.href);
+        });
+
+        document.getElementById("clear-button").addEventListener("click", () => {
+            selectInteraction.getFeatures().clear();
+            dataLayer.getSource().clear();
+
+            document.getElementById("loading-label").style.visibility = "collapse";
+            document.getElementById("error-internal-label").style.visibility = "collapse";
+            document.getElementById("error-request-label").style.visibility = "collapse";
+            document.getElementById("info-label").style.visibility = "visible";
+            document.getElementById("info-label").textContent = "✓ Cleared."
         });
 
         document.getElementById("copy-extent-button").addEventListener("click", () => {
