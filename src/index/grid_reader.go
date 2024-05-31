@@ -196,6 +196,8 @@ func (g *GridIndex) readFeaturesFromCellFile(cellX int, cellY int, objectType st
 	}
 
 	readFeatureChannel := make(chan []feature.EncodedFeature)
+	featureCachedWaitGroup := &sync.WaitGroup{}
+	featureCachedWaitGroup.Add(1)
 	go func() {
 		for readFeatures := range readFeatureChannel {
 			// TODO not-null check needed for the features?
@@ -203,6 +205,7 @@ func (g *GridIndex) readFeaturesFromCellFile(cellX int, cellY int, objectType st
 			g.featureCache[cellFileName] = append(g.featureCache[cellFileName], readFeatures...)
 			g.featureCacheMutex.Unlock()
 		}
+		featureCachedWaitGroup.Done()
 	}()
 
 	switch objectType {
@@ -217,6 +220,7 @@ func (g *GridIndex) readFeaturesFromCellFile(cellX int, cellY int, objectType st
 	}
 
 	close(readFeatureChannel)
+	featureCachedWaitGroup.Wait()
 
 	// TODO prevent concurrent map read
 	return g.featureCache[cellFileName], nil
