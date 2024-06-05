@@ -72,7 +72,7 @@ func (g *GridIndex) Import(inputFile string, nodesOfRelations []osm.NodeID, ways
 	}
 	g.closeOpenFileHandles()
 
-	g.addWayIdsToNodesInCells(cells)
+	g.addAdditionalIdsToObjectsInCells(cells)
 	g.closeOpenFileHandles()
 
 	return nil

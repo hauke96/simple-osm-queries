@@ -47,8 +47,8 @@ func (g *GridIndex) createAndWriteRawWayFeature(osmWayChannel chan *osm.Way, wai
 	}
 }
 
-func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
-	sigolo.Info("Start adding way IDs to raw encoded nodes")
+func (g *GridIndex) addAdditionalIdsToObjectsInCells(cells map[CellIndex]CellIndex) {
+	sigolo.Info("Start adding way and relation IDs to raw encoded nodes")
 	importStartTime := time.Now()
 
 	currentCell := 1
@@ -59,7 +59,7 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 	cellSync := &sync.WaitGroup{}
 	for i := 0; i < numThreads; i++ {
 		cellSync.Add(1)
-		go g.addWayAndRelationIdsToNodesInCell(cellQueue, cellSync)
+		go g.addAdditionalIdsToObjectsInCell(cellQueue, cellSync)
 	}
 
 	for cell, _ := range cells {
@@ -76,60 +76,108 @@ func (g *GridIndex) addWayIdsToNodesInCells(cells map[CellIndex]CellIndex) {
 	sigolo.Infof("Done adding way IDs to raw encoded nodes in %s", importDuration)
 }
 
-func (g *GridIndex) addWayAndRelationIdsToNodesInCell(cellChannel chan CellIndex, waitGroup *sync.WaitGroup) {
+func (g *GridIndex) addAdditionalIdsToObjectsInCell(cellChannel chan CellIndex, waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 
 	for cell := range cellChannel {
-		sigolo.Tracef("[Cell %v] Collect node-way-relationship", cell)
-		// TODO error handling
-		nodeToWays, err := g.readNodeToWayMappingFromCellData(cell.X(), cell.Y())
-		nodeToRelations, err := g.readNodeToRelationMappingFromCellData(cell.X(), cell.Y())
+		sigolo.Tracef("[Cell %v] Collect relationships between nodes, ways and relations", cell)
 
-		cellFolderName := path.Join(g.BaseFolder, feature.OsmObjNode.String(), strconv.Itoa(cell.X()))
-		cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
-
-		if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
-			sigolo.Fatalf("Cell file %s does not exist, this should not have happened", cellFileName)
-			return
+		err := g.addAdditionalIdsToObjectsOfType(feature.OsmObjNode, cell)
+		if err != nil {
+			sigolo.Errorf("Error adding additional IDs to nodes: %+v", err)
+			// TODO return error
 		}
-		sigolo.FatalCheck(errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName))
 
-		sigolo.Tracef("[Cell %v] Read cell file %s", cell, cellFileName)
-		data, err := os.ReadFile(cellFileName)
-		sigolo.FatalCheck(errors.Wrapf(err, "Unable to read node-cell x=%d, y=%d", cell.X(), cell.Y()))
+		err = g.addAdditionalIdsToObjectsOfType(feature.OsmObjWay, cell)
+		if err != nil {
+			sigolo.Errorf("Error adding additional IDs to ways: %+v", err)
+			// TODO return error
+		}
 
-		sigolo.Tracef("[Cell %v] Read nodes from cell and write them including way IDs", cell)
-		readFeatureChannel := make(chan []feature.EncodedFeature)
-		var finishWaitGroup sync.WaitGroup
-		finishWaitGroup.Add(1)
-		go func() {
-			for nodes := range readFeatureChannel {
-				for _, node := range nodes {
-					if node == nil {
-						continue
-					}
-
-					if wayIds, ok := nodeToWays[node.GetID()]; ok {
-						node.(*feature.EncodedNodeFeature).WayIds = wayIds
-					}
-
-					if relationIds, ok := nodeToRelations[node.GetID()]; ok {
-						node.(*feature.EncodedNodeFeature).RelationIds = relationIds
-					}
-
-					err = g.writeOsmObjectToCell(cell.X(), cell.Y(), node)
-					sigolo.FatalCheck(err)
-				}
-				//runtime.GC()
-			}
-			finishWaitGroup.Done()
-		}()
-
-		g.readNodesFromCellData(readFeatureChannel, data)
-
-		close(readFeatureChannel)
-		finishWaitGroup.Wait()
+		// TODO Add additional IDs to relations
 	}
+}
+
+// addAdditionalIdsToObjectsOfType reads the features for the given cell and object type and also the IDs of the objects
+// that should be connected. Example: If the object type is "way" then the way-to-relation-mapping is determined from
+// the relation cell to add the relation IDs to all ways in this cell.
+func (g *GridIndex) addAdditionalIdsToObjectsOfType(objectType feature.OsmObjectType, cell CellIndex) error {
+	var err error
+	var nodeToWays map[uint64][]osm.WayID
+	var nodeToRelations map[uint64][]osm.RelationID
+	var wayToRelations map[uint64][]osm.RelationID
+
+	switch objectType {
+	case feature.OsmObjNode:
+		nodeToWays, err = g.readNodeToWayMappingFromCellData(cell.X(), cell.Y())
+		nodeToRelations, err = g.readNodeToRelationMappingFromCellData(cell.X(), cell.Y())
+	case feature.OsmObjWay:
+		wayToRelations, err = g.readWayToRelationMappingFromCellData(cell.X(), cell.Y())
+	default:
+		return errors.Errorf("Unsupported object type %v to add IDs to", objectType)
+	}
+
+	cellFolderName := path.Join(g.BaseFolder, objectType.String(), strconv.Itoa(cell.X()))
+	cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
+
+	if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
+		return errors.Errorf("Cell file %s does not exist, this should not have happened", cellFileName)
+	}
+	sigolo.FatalCheck(errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName))
+
+	sigolo.Tracef("[Cell %v] Read cell file %s", cell, cellFileName)
+	data, err := os.ReadFile(cellFileName)
+	sigolo.FatalCheck(errors.Wrapf(err, "Unable to read %v-cell x=%d, y=%d", objectType, cell.X(), cell.Y()))
+
+	sigolo.Tracef("[Cell %v] Read %v objects from cell and write them including additional IDs", cell, objectType)
+	readFeatureChannel := make(chan []feature.EncodedFeature)
+	var finishWaitGroup sync.WaitGroup
+	finishWaitGroup.Add(1)
+
+	go func() {
+		for encFeatures := range readFeatureChannel {
+			for _, encFeature := range encFeatures {
+				if encFeature == nil {
+					continue
+				}
+
+				switch objectType {
+				case feature.OsmObjNode:
+					if wayIds, ok := nodeToWays[encFeature.GetID()]; ok {
+						encFeature.(*feature.EncodedNodeFeature).WayIds = wayIds
+					}
+					if relationIds, ok := nodeToRelations[encFeature.GetID()]; ok {
+						encFeature.(*feature.EncodedNodeFeature).RelationIds = relationIds
+					}
+				case feature.OsmObjWay:
+					if relationIds, ok := wayToRelations[encFeature.GetID()]; ok {
+						encFeature.(*feature.EncodedWayFeature).RelationIds = relationIds
+					}
+				default:
+					sigolo.Fatalf("Unsupported object type %v to add IDs to", objectType)
+					return
+				}
+
+				err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encFeature)
+				sigolo.FatalCheck(err)
+			}
+		}
+		finishWaitGroup.Done()
+	}()
+
+	switch objectType {
+	case feature.OsmObjNode:
+		g.readNodesFromCellData(readFeatureChannel, data)
+	case feature.OsmObjWay:
+		g.readWaysFromCellData(readFeatureChannel, data)
+	default:
+		return errors.Errorf("Unsupported object type %v to read data for", objectType)
+	}
+
+	close(readFeatureChannel)
+	finishWaitGroup.Wait()
+
+	return nil
 }
 
 func (g *GridIndex) writeOsmObjectToCell(cellX int, cellY int, encodedFeature feature.EncodedFeature) error {
