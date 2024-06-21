@@ -62,29 +62,29 @@ func (g *GridIndex) Import(inputFile string, nodesOfRelations []osm.NodeID, ways
 	g.featureCacheMutex = &sync.Mutex{}
 	g.cacheFileMutex = &sync.Mutex{}
 
-	cells := map[CellIndex]CellIndex{}
-
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
-	err = g.convertOsmToRawEncodedFeatures(inputFile, cells, nodesOfRelations, waysOfRelations)
+	err, nodeCells := g.convertOsmToRawEncodedFeatures(inputFile, nodesOfRelations, waysOfRelations)
 	if err != nil {
 		return err
 	}
 	g.closeOpenFileHandles()
 
-	g.addAdditionalIdsToObjectsInCells(cells)
+	g.addAdditionalIdsToObjectsInCells(nodeCells)
 	g.closeOpenFileHandles()
 
 	return nil
 }
 
-func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[CellIndex]CellIndex, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) error {
+// convertOsmToRawEncodedFeatures Reads the input PBF file and converts all OSM objects into raw encoded features and
+// writes them into their respective cells. The returned cell map contains all cells that contain nodes.
+func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) (error, map[CellIndex]CellIndex) {
 	sigolo.Info("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 
 	file, scanner, err := g.getScanner(inputFile)
 	if err != nil {
-		return err
+		return err, nil
 	}
 
 	defer file.Close()
@@ -92,6 +92,8 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 
 	var emptyWayIds []osm.WayID
 	var emptyRelationIds []osm.RelationID
+
+	nodeCells := map[CellIndex]CellIndex{}
 
 	nodeToBound := map[osm.NodeID]*orb.Bound{}
 	for _, nodeId := range nodesOfRelations {
@@ -133,7 +135,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), nodeFeature)
 			sigolo.FatalCheck(err)
 
-			cells[cell] = cell
+			nodeCells[cell] = cell
 		case *osm.Way:
 			if !firstWayHasBeenProcessed {
 				sigolo.Debug("Start processing ways (2/3)")
@@ -156,7 +158,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 			var memberBbox *orb.Bound
 			var nodeIds []osm.NodeID
 			var wayIds []osm.WayID
-			var relationIds []osm.RelationID
+			var childRelationIds []osm.RelationID
 
 			for _, member := range osmObj.Members {
 				switch member.Type {
@@ -170,7 +172,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 					memberBbox = wayToBound[id]
 				case osm.TypeRelation:
 					id := osm.RelationID(member.Ref)
-					relationIds = append(relationIds, id)
+					childRelationIds = append(childRelationIds, id)
 				}
 
 				if memberBbox == nil {
@@ -196,7 +198,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 
 			for cellX := minCell.X(); cellX <= maxCell.X(); cellX++ {
 				for cellY := minCell.Y(); cellY <= maxCell.Y(); cellY++ {
-					nodeFeature, err := g.toEncodedRelationFeature(osmObj, bbox, nodeIds, wayIds, relationIds, tempEncodedValues)
+					nodeFeature, err := g.toEncodedRelationFeature(osmObj, bbox, nodeIds, wayIds, childRelationIds, tempEncodedValues)
 					sigolo.FatalCheck(err)
 					err = g.writeOsmObjectToCell(cellX, cellY, nodeFeature)
 					sigolo.FatalCheck(err)
@@ -211,7 +213,7 @@ func (g *GridIndex) convertOsmToRawEncodedFeatures(inputFile string, cells map[C
 	importDuration := time.Since(importStartTime)
 	sigolo.Infof("Created raw encoded features from OSM data in %s", importDuration)
 
-	return nil
+	return nil, nodeCells
 }
 
 func (g *GridIndex) getScanner(inputFile string) (*os.File, osm.Scanner, error) {

@@ -13,6 +13,7 @@ import (
 	"path"
 	"reflect"
 	"soq/feature"
+	"soq/util"
 	"strconv"
 	"sync"
 	"time"
@@ -94,7 +95,11 @@ func (g *GridIndex) addAdditionalIdsToObjectsInCell(cellChannel chan CellIndex, 
 			// TODO return error
 		}
 
-		// TODO Add additional IDs to relations
+		err = g.addAdditionalIdsToObjectsOfType(feature.OsmObjRelation, cell)
+		if err != nil {
+			sigolo.Errorf("Error adding additional IDs to relations: %+v", err)
+			// TODO return error
+		}
 	}
 }
 
@@ -106,6 +111,7 @@ func (g *GridIndex) addAdditionalIdsToObjectsOfType(objectType feature.OsmObject
 	var nodeToWays map[uint64][]osm.WayID
 	var nodeToRelations map[uint64][]osm.RelationID
 	var wayToRelations map[uint64][]osm.RelationID
+	var relationToParentRelations map[uint64][]osm.RelationID
 
 	switch objectType {
 	case feature.OsmObjNode:
@@ -113,6 +119,8 @@ func (g *GridIndex) addAdditionalIdsToObjectsOfType(objectType feature.OsmObject
 		nodeToRelations, err = g.readNodeToRelationMappingFromCellData(cell.X(), cell.Y())
 	case feature.OsmObjWay:
 		wayToRelations, err = g.readWayToRelationMappingFromCellData(cell.X(), cell.Y())
+	case feature.OsmObjRelation:
+		relationToParentRelations, err = g.readRelationToParentRelationMappingFromCellData(cell.X(), cell.Y())
 	default:
 		return errors.Errorf("Unsupported object type %v to add IDs to", objectType)
 	}
@@ -121,7 +129,13 @@ func (g *GridIndex) addAdditionalIdsToObjectsOfType(objectType feature.OsmObject
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
 
 	if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
-		return errors.Errorf("Cell file %s does not exist, this should not have happened", cellFileName)
+		if objectType == feature.OsmObjNode {
+			// We got all the cells in which nodes are. When this cell doesn't exist, then something went really wrong.
+			util.LogFatalBug("Cell file %s for nodes could not be found in the list of node-cells. This is a critical error and should not have happened", cellFileName)
+		}
+		// We found a cell only containing nodes. This might happen sometimes and is ok.
+		sigolo.Debugf("Cell file %s for OSM object type %v does not exist, since it might only contain nodes", cellFileName, objectType)
+		return nil
 	}
 	sigolo.FatalCheck(errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName))
 
@@ -153,6 +167,10 @@ func (g *GridIndex) addAdditionalIdsToObjectsOfType(objectType feature.OsmObject
 					if relationIds, ok := wayToRelations[encFeature.GetID()]; ok {
 						encFeature.(*feature.EncodedWayFeature).RelationIds = relationIds
 					}
+				case feature.OsmObjRelation:
+					if relationIds, ok := relationToParentRelations[encFeature.GetID()]; ok {
+						encFeature.(*feature.EncodedRelationFeature).ParentRelationIDs = relationIds
+					}
 				default:
 					sigolo.Fatalf("Unsupported object type %v to add IDs to", objectType)
 					return
@@ -170,6 +188,8 @@ func (g *GridIndex) addAdditionalIdsToObjectsOfType(objectType feature.OsmObject
 		g.readNodesFromCellData(readFeatureChannel, data)
 	case feature.OsmObjWay:
 		g.readWaysFromCellData(readFeatureChannel, data)
+	case feature.OsmObjRelation:
+		g.readRelationsFromCellData(readFeatureChannel, data)
 	default:
 		return errors.Errorf("Unsupported object type %v to read data for", objectType)
 	}
@@ -480,8 +500,8 @@ func (g *GridIndex) writeRelationData(encodedFeature *feature.EncodedRelationFea
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
-		Names: | osmId | bbox | num. keys | num. values | num. nodes | num. ways | num. rels |   encodedKeys   |   encodedValues   |     node IDs     |     way IDs     |   relation IDs  |
-		Bytes: |   8   |  16  |     4     |      4      |      2     |     2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 8 | <num. ways> * 8 | <num. rels> * 8 |
+		Names: | osmId | bbox | num. keys | num. values | num. nodes | num. ways | num. child rels | num. parent rels |   encodedKeys   |   encodedValues   |     node IDs     |     way IDs     |    child rel. IDs     |    parent rel. IDs     |
+		Bytes: |   8   |  16  |     4     |      4      |      2     |     2     |        2        |         2        | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 8 | <num. ways> * 8 | <num. child rels> * 8 | <num. parent rels> * 8 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
@@ -498,19 +518,21 @@ func (g *GridIndex) writeRelationData(encodedFeature *feature.EncodedRelationFea
 		}
 	}
 
-	encodedKeyBytes := numKeys                               // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
-	nodeIdBytes := len(encodedFeature.NodeIDs) * 8           // IDs are all 64-bit integers
-	wayIdBytes := len(encodedFeature.WayIDs) * 8             // IDs are all 64-bit integers
-	relationIdBytes := len(encodedFeature.RelationIDs) * 8   // IDs are all 64-bit integers
+	encodedKeyBytes := numKeys                                         // Is already a byte-array -> no division by 8 needed
+	encodedValueBytes := len(encodedFeature.GetValues()) * 3           // Int array and int = 4 bytes
+	nodeIdBytes := len(encodedFeature.NodeIDs) * 8                     // IDs are all 64-bit integers
+	wayIdBytes := len(encodedFeature.WayIDs) * 8                       // IDs are all 64-bit integers
+	childRelationIdBytes := len(encodedFeature.ChildRelationIDs) * 8   // IDs are all 64-bit integers
+	parentRelationIdBytes := len(encodedFeature.ParentRelationIDs) * 8 // IDs are all 64-bit integers
 
-	headerBytesCount := 8 + 16 + 4 + 4 + 2 + 2 + 2 // = 38
+	headerBytesCount := 8 + 16 + 4 + 4 + 2 + 2 + 2 + 2 // = 40
 	byteCount := headerBytesCount
 	byteCount += encodedKeyBytes
 	byteCount += encodedValueBytes
 	byteCount += nodeIdBytes
 	byteCount += wayIdBytes
-	byteCount += relationIdBytes
+	byteCount += childRelationIdBytes
+	byteCount += parentRelationIdBytes
 
 	data := make([]byte, byteCount)
 
@@ -525,7 +547,8 @@ func (g *GridIndex) writeRelationData(encodedFeature *feature.EncodedRelationFea
 	binary.LittleEndian.PutUint32(data[28:], uint32(len(encodedFeature.GetValues())))
 	binary.LittleEndian.PutUint16(data[32:], uint16(len(encodedFeature.NodeIDs)))
 	binary.LittleEndian.PutUint16(data[34:], uint16(len(encodedFeature.WayIDs)))
-	binary.LittleEndian.PutUint16(data[36:], uint16(len(encodedFeature.RelationIDs)))
+	binary.LittleEndian.PutUint16(data[36:], uint16(len(encodedFeature.ChildRelationIDs)))
+	binary.LittleEndian.PutUint16(data[38:], uint16(len(encodedFeature.ParentRelationIDs)))
 
 	pos := headerBytesCount
 
@@ -562,14 +585,22 @@ func (g *GridIndex) writeRelationData(encodedFeature *feature.EncodedRelationFea
 	}
 
 	/*
-		Write relation-IDs
+		Write child relation-IDs
 	*/
-	for _, relationId := range encodedFeature.RelationIDs {
+	for _, relationId := range encodedFeature.ChildRelationIDs {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
 		pos += 8
 	}
 
-	sigolo.Tracef("Write feature %d bbox=%#v, byteCount=%d, numKeys=%d, numValues=%d, numNodes=%d, numWays=%d, numRels=%d", encodedFeature.ID, bbox, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.NodeIDs), len(encodedFeature.WayIDs), len(encodedFeature.RelationIDs))
+	/*
+		Write parent relation-IDs
+	*/
+	for _, relationId := range encodedFeature.ParentRelationIDs {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
+		pos += 8
+	}
+
+	sigolo.Tracef("Write feature %d bbox=%#v, byteCount=%d, numKeys=%d, numValues=%d, numNodes=%d, numWays=%d, numChildRels=%d, numParentRels=%d", encodedFeature.ID, bbox, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.NodeIDs), len(encodedFeature.WayIDs), len(encodedFeature.ChildRelationIDs), len(encodedFeature.ParentRelationIDs))
 
 	return g.writeData(encodedFeature, data, f)
 }
@@ -638,7 +669,7 @@ func (g *GridIndex) toEncodedWayFeature(obj *osm.Way, relationIds []osm.Relation
 	}, nil
 }
 
-func (g *GridIndex) toEncodedRelationFeature(obj *osm.Relation, bbox *orb.Bound, nodeIds []osm.NodeID, wayIds []osm.WayID, relationIds []osm.RelationID, tempEncodedValues []int) (*feature.EncodedRelationFeature, error) {
+func (g *GridIndex) toEncodedRelationFeature(obj *osm.Relation, bbox *orb.Bound, nodeIds []osm.NodeID, wayIds []osm.WayID, childRelationIds []osm.RelationID, tempEncodedValues []int) (*feature.EncodedRelationFeature, error) {
 	// This is probably temporary until the real geometry collection is stored
 	geometry := bbox.ToPolygon()
 	osmId := uint64(obj.ID)
@@ -656,6 +687,7 @@ func (g *GridIndex) toEncodedRelationFeature(obj *osm.Relation, bbox *orb.Bound,
 		AbstractEncodedFeature: abstractEncodedFeature,
 		NodeIDs:                nodeIds,
 		WayIDs:                 wayIds,
-		RelationIDs:            relationIds,
+		ChildRelationIDs:       childRelationIds,
+		ParentRelationIDs:      []osm.RelationID{},
 	}, nil
 }

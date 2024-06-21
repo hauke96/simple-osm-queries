@@ -172,7 +172,9 @@ func NewSubStatementFilterExpression(statement *Statement) *SubStatementFilterEx
 	return &SubStatementFilterExpression{
 		statement:   statement,
 		cachedCells: []index.CellIndex{},
-		idCache:     make(map[uint64]uint64), // TODO Shouldn't this be three caches? Since the IDs are only unique for one specific object type.
+		// This cache is used as generic cache for all sorts of objects. However, we only request the features of the
+		// statements objectType, so this cache only contains features of one kind. This means the IDs are unique.
+		idCache: make(map[uint64]uint64),
 	}
 }
 
@@ -202,7 +204,7 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 			}
 		}
 	case *feature.EncodedRelationFeature:
-		// TODO Use actual coordinated in geometry to determine the minimum amount of cells needed for this relation
+		// TODO Use actual coordinates in geometry to determine the minimum amount of cells needed for this relation
 		bbox := contextFeature.AbstractEncodedFeature.Geometry.Bound()
 
 		minCell := geometryIndex.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
@@ -260,47 +262,71 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	}
 
 	// Check whether at least one sub-feature of the context is within the list of IDs that fulfill the sub-statement.
-	// TODO Don't we need if-statement for the different wanted object types? I.e. when the context is a node and the statement is "this.relations{...}" then we don't need to check the way IDs.
 	switch contextFeature := context.(type) {
 	case *feature.EncodedNodeFeature:
-		for _, wayId := range contextFeature.WayIds {
-			if _, ok := f.idCache[uint64(wayId)]; ok {
-				return true, nil
+		switch f.statement.objectType {
+		case feature.OsmObjNode:
+			// TODO error
+		case feature.OsmObjWay:
+			for _, wayId := range contextFeature.WayIds {
+				if _, ok := f.idCache[uint64(wayId)]; ok {
+					return true, nil
+				}
 			}
-		}
-		for _, relationId := range contextFeature.RelationIds {
-			if _, ok := f.idCache[uint64(relationId)]; ok {
-				return true, nil
+		case feature.OsmObjRelation:
+			for _, relationId := range contextFeature.RelationIds {
+				if _, ok := f.idCache[uint64(relationId)]; ok {
+					return true, nil
+				}
 			}
 		}
 	case *feature.EncodedWayFeature:
 		// TODO Statement "bbox(...).ways{this.relations{...}}" not working(?) Maybe a bug in the import?
-		for _, node := range contextFeature.Nodes {
-			if _, ok := f.idCache[uint64(node.ID)]; ok {
-				return true, nil
+
+		switch f.statement.objectType {
+		case feature.OsmObjNode:
+			for _, node := range contextFeature.Nodes {
+				if _, ok := f.idCache[uint64(node.ID)]; ok {
+					return true, nil
+				}
 			}
-		}
-		for _, relationId := range contextFeature.RelationIds {
-			if _, ok := f.idCache[uint64(relationId)]; ok {
-				return true, nil
+		case feature.OsmObjWay:
+			// TODO error
+		case feature.OsmObjRelation:
+			for _, relationId := range contextFeature.RelationIds {
+				if _, ok := f.idCache[uint64(relationId)]; ok {
+					return true, nil
+				}
 			}
 		}
 	case *feature.EncodedRelationFeature:
-		for _, nodeId := range contextFeature.NodeIDs {
-			if _, ok := f.idCache[uint64(nodeId)]; ok {
-				return true, nil
+		switch f.statement.objectType {
+		case feature.OsmObjNode:
+			for _, nodeId := range contextFeature.NodeIDs {
+				if _, ok := f.idCache[uint64(nodeId)]; ok {
+					return true, nil
+				}
+			}
+		case feature.OsmObjWay:
+			for _, wayId := range contextFeature.WayIDs {
+				if _, ok := f.idCache[uint64(wayId)]; ok {
+					return true, nil
+				}
+			}
+		case feature.OsmObjRelation:
+			for _, childRelationId := range contextFeature.ChildRelationIDs {
+				if _, ok := f.idCache[uint64(childRelationId)]; ok {
+					return true, nil
+				}
 			}
 		}
-		for _, wayId := range contextFeature.WayIDs {
-			if _, ok := f.idCache[uint64(wayId)]; ok {
-				return true, nil
-			}
-		}
-		for _, relationId := range contextFeature.RelationIDs {
-			if _, ok := f.idCache[uint64(relationId)]; ok {
-				return true, nil
-			}
-		}
+
+		// TODO Add when object type for parent relations exists #21
+		//for _, parentRelationId := range contextFeature.ParentRelationIDs {
+		//	if _, ok := f.idCache[uint64(parentRelationId)]; ok {
+		//		return true, nil
+		//	}
+		//}
 	default:
 		return false, errors.Errorf("Unsupported object type %s for sub-statement expression", reflect.TypeOf(context).String())
 	}
