@@ -18,22 +18,19 @@ type GridIndexReader struct {
 	baseGridIndex
 
 	checkFeatureValidity bool
-	featureCache         map[string][]feature.EncodedFeature // Filename to feature within it
-	featureCacheMutex    *sync.Mutex
+	cellCache            featureCache
 }
 
 func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, checkFeatureValidity bool, tagIndex *TagIndex) *GridIndexReader {
-	baseGridIndex := baseGridIndex{
-		TagIndex:   tagIndex,
-		CellWidth:  cellWidth,
-		CellHeight: cellHeight,
-		BaseFolder: path.Join(indexBaseFolder, GridIndexFolder),
-	}
 	return &GridIndexReader{
-		baseGridIndex:        baseGridIndex,
+		baseGridIndex: baseGridIndex{
+			TagIndex:   tagIndex,
+			CellWidth:  cellWidth,
+			CellHeight: cellHeight,
+			BaseFolder: path.Join(indexBaseFolder, GridIndexFolder),
+		},
 		checkFeatureValidity: checkFeatureValidity,
-		featureCache:         map[string][]feature.EncodedFeature{},
-		featureCacheMutex:    &sync.Mutex{},
+		cellCache:            newLruCache(10), // TODO make this max-size parameter configurable
 	}
 }
 
@@ -198,14 +195,11 @@ func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectT
 		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
 	}
 
-	g.featureCacheMutex.Lock()
-	if cachedFeatures, ok := g.featureCache[cellFileName]; ok {
+	cachedFeatures, entryIsNew, err := g.cellCache.getOrInsert(cellFileName)
+	if !entryIsNew {
 		sigolo.Tracef("Use features from cache for cell file %s", cellFileName)
-		g.featureCacheMutex.Unlock()
 		return cachedFeatures, nil
 	}
-	g.featureCache[cellFileName] = []feature.EncodedFeature{}
-	g.featureCacheMutex.Unlock()
 
 	sigolo.Tracef("Read cell file %s", cellFileName)
 	data, err := os.ReadFile(cellFileName)
@@ -219,9 +213,7 @@ func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectT
 	go func() {
 		for readFeatures := range readFeatureChannel {
 			// TODO not-null check needed for the features?
-			g.featureCacheMutex.Lock()
-			g.featureCache[cellFileName] = append(g.featureCache[cellFileName], readFeatures...)
-			g.featureCacheMutex.Unlock()
+			cachedFeatures = append(cachedFeatures, readFeatures...)
 		}
 		featureCachedWaitGroup.Done()
 	}()
@@ -240,8 +232,9 @@ func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectT
 	close(readFeatureChannel)
 	featureCachedWaitGroup.Wait()
 
-	// TODO prevent concurrent map read
-	return g.featureCache[cellFileName], nil
+	g.cellCache.insertOrAppend(cellFileName, cachedFeatures)
+
+	return cachedFeatures, nil
 }
 
 func (g *GridIndexReader) readNodesFromCellData(output chan []feature.EncodedFeature, data []byte) {

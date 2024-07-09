@@ -15,11 +15,13 @@ import (
 
 func TestGridIndex_writeNodeData(t *testing.T) {
 	// Arrange
-	gridIndex := &baseGridIndex{
-		TagIndex:         nil,
-		CellWidth:        10,
-		CellHeight:       10,
-		BaseFolder:       "foobar",
+	gridIndex := &GridIndexWriter{
+		baseGridIndex: baseGridIndex{
+			TagIndex:   nil,
+			CellWidth:  10,
+			CellHeight: 10,
+			BaseFolder: "foobar",
+		},
 		cacheFileMutexes: map[io.Writer]*sync.Mutex{},
 		cacheFileMutex:   &sync.Mutex{},
 	}
@@ -75,27 +77,37 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 
 func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	// Arrange
-	gridIndex := &baseGridIndex{
-		TagIndex: &TagIndex{
-			BaseFolder: "",
-			keyMap:     []string{"k1", "k2", "k3"},
-			valueMap: [][]string{ // Indices must match the bit-string on the feature: 1001 0010
-				{"v1_1"}, // Index 0
-				{},
-				{},
-				{"v2_1", "v2_2"}, // Index 3
-				{},
-				{},
-				{"v3_1", "v3_2"}, // Index 6
+	gridIndexWriter := &GridIndexWriter{
+		baseGridIndex: baseGridIndex{
+			TagIndex: &TagIndex{
+				BaseFolder: "",
+				keyMap:     []string{"k1", "k2", "k3"},
+				valueMap: [][]string{ // Indices must match the bit-string on the feature: 1001 0010
+					{"v1_1"}, // Index 0
+					{},
+					{},
+					{"v2_1", "v2_2"}, // Index 3
+					{},
+					{},
+					{"v3_1", "v3_2"}, // Index 6
+				},
+				keyReverseMap:   nil,
+				valueReverseMap: nil,
 			},
-			keyReverseMap:   nil,
-			valueReverseMap: nil,
+			CellWidth:  10,
+			CellHeight: 10,
+			BaseFolder: "foobar",
 		},
-		CellWidth:        10,
-		CellHeight:       10,
-		BaseFolder:       "foobar",
 		cacheFileMutexes: map[io.Writer]*sync.Mutex{},
 		cacheFileMutex:   &sync.Mutex{},
+	}
+	gridIndexReader := &GridIndexReader{
+		baseGridIndex: baseGridIndex{
+			TagIndex:   nil,
+			CellWidth:  10,
+			CellHeight: 10,
+			BaseFolder: "foobar",
+		},
 	}
 
 	geometry := &orb.Point{1.23, 2.34}
@@ -109,9 +121,9 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	}
 
 	f := bytes.NewBuffer([]byte{})
-	gridIndex.cacheFileMutexes[f] = &sync.Mutex{}
+	gridIndexWriter.cacheFileMutexes[f] = &sync.Mutex{}
 
-	err := gridIndex.writeNodeData(originalFeature, f)
+	err := gridIndexWriter.writeNodeData(originalFeature, f)
 	util.AssertNil(t, err)
 
 	outputChannel := make(chan []feature.EncodedFeature)
@@ -123,7 +135,7 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 			result = append(result, features...)
 		}
 	}()
-	gridIndex.readNodesFromCellData(outputChannel, f.Bytes())
+	gridIndexReader.readNodesFromCellData(outputChannel, f.Bytes())
 	close(outputChannel)
 
 	// Assert

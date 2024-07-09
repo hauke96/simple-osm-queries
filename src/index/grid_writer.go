@@ -57,8 +57,6 @@ func ImportDataFile(inputFile string, baseFolder string, cellWidth float64, cell
 		gridIndexReader: &GridIndexReader{
 			baseGridIndex:        baseGridIndex,
 			checkFeatureValidity: false,
-			featureCache:         nil,
-			featureCacheMutex:    nil,
 		},
 	}
 
