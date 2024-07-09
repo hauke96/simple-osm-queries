@@ -30,7 +30,6 @@ type GridIndex struct {
 	cacheFileMutexes     map[io.Writer]*sync.Mutex
 	cacheFileMutex       *sync.Mutex
 	checkFeatureValidity bool
-	nodeToWayMap         map[osm.NodeID]osm.Ways             // TODO remove if not needed
 	featureCache         map[string][]feature.EncodedFeature // Filename to feature within it
 	featureCacheMutex    *sync.Mutex
 }
@@ -57,7 +56,6 @@ func (g *GridIndex) Import(inputFile string, nodesOfRelations []osm.NodeID, ways
 	g.cacheFileHandles = map[string]*os.File{}
 	g.cacheFileWriters = map[string]*bufio.Writer{}
 	g.cacheFileMutexes = map[io.Writer]*sync.Mutex{}
-	g.nodeToWayMap = map[osm.NodeID]osm.Ways{}
 	g.featureCache = map[string][]feature.EncodedFeature{}
 	g.featureCacheMutex = &sync.Mutex{}
 	g.cacheFileMutex = &sync.Mutex{}

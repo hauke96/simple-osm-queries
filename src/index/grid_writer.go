@@ -605,24 +605,6 @@ func (g *GridIndex) writeRelationData(encodedFeature *feature.EncodedRelationFea
 	return g.writeData(encodedFeature, data, f)
 }
 
-// TODO remove if not needed
-func (g *GridIndex) toEncodedFeature(obj osm.Object) (feature.EncodedFeature, error) {
-	switch osmObj := obj.(type) {
-	case *osm.Node:
-		var wayIds []osm.WayID
-		for _, way := range g.nodeToWayMap[osmObj.ID] {
-			wayIds = append(wayIds, way.ID)
-		}
-
-		return g.toEncodedNodeFeature(osmObj, wayIds, nil, g.TagIndex.newTempEncodedValueArray())
-	case *osm.Way:
-		return g.toEncodedWayFeature(osmObj, nil, g.TagIndex.newTempEncodedValueArray())
-	}
-	//case *osm.Relation:
-
-	return nil, errors.Errorf("Converting OSM object of type '%s' not supported", obj.ObjectID().Type())
-}
-
 func (g *GridIndex) toEncodedNodeFeature(obj *osm.Node, wayIds []osm.WayID, relationIds []osm.RelationID, tempEncodedValues []int) (*feature.EncodedNodeFeature, error) {
 	var geometry orb.Geometry
 
