@@ -14,7 +14,30 @@ import (
 	"sync"
 )
 
-func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error) {
+type GridIndexReader struct {
+	GridIndex
+
+	checkFeatureValidity bool
+	featureCache         map[string][]feature.EncodedFeature // Filename to feature within it
+	featureCacheMutex    *sync.Mutex
+}
+
+func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, checkFeatureValidity bool, tagIndex *TagIndex) *GridIndexReader {
+	baseGridIndex := GridIndex{
+		TagIndex:   tagIndex,
+		CellWidth:  cellWidth,
+		CellHeight: cellHeight,
+		BaseFolder: path.Join(indexBaseFolder, GridIndexFolder),
+	}
+	return &GridIndexReader{
+		GridIndex:            baseGridIndex,
+		checkFeatureValidity: checkFeatureValidity,
+		featureCache:         map[string][]feature.EncodedFeature{},
+		featureCacheMutex:    &sync.Mutex{},
+	}
+}
+
+func (g *GridIndexReader) Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error) {
 	sigolo.Debugf("Get feature from bbox=%#v", bbox)
 	minCell := g.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
 	maxCell := g.GetCellIndexForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
@@ -53,7 +76,7 @@ func (g *GridIndex) Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesRe
 	return resultChannel, nil // Remove error from return, since it doesn't make any sense here
 }
 
-func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error) {
+func (g *GridIndexReader) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error) {
 	cells := map[CellIndex][]uint64{}            // just a lookup table to quickly see if a cell has already been collected
 	innerCellBounds := map[CellIndex]orb.Bound{} // just a lookup table to quickly see if a cell has already been collected
 	for _, node := range nodes {
@@ -117,12 +140,7 @@ func (g *GridIndex) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error
 	return resultChannel, nil
 }
 
-// GetCellIndexForCoordinate returns the cell index (i.e. position) for the given coordinate.
-func (g *GridIndex) GetCellIndexForCoordinate(x float64, y float64) CellIndex {
-	return CellIndex{int(x / g.CellWidth), int(y / g.CellHeight)}
-}
-
-func (g *GridIndex) GetFeaturesForCells(cells []CellIndex, objectType string) chan *GetFeaturesResult {
+func (g *GridIndexReader) GetFeaturesForCells(cells []CellIndex, objectType string) chan *GetFeaturesResult {
 	resultChannel := make(chan *GetFeaturesResult)
 
 	go func() {
@@ -144,7 +162,7 @@ func (g *GridIndex) GetFeaturesForCells(cells []CellIndex, objectType string) ch
 	return resultChannel
 }
 
-func (g *GridIndex) getFeaturesForCellsWithBbox(output chan *GetFeaturesResult, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
+func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesResult, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
 	sigolo.Tracef("Get feature for cell column from=%d, to=%d", minCellX, maxCellX)
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
@@ -169,7 +187,7 @@ func (g *GridIndex) getFeaturesForCellsWithBbox(output chan *GetFeaturesResult, 
 }
 
 // readFeaturesFromCellFile reads all features from the specified cell and writes them periodically to the output channel.
-func (g *GridIndex) readFeaturesFromCellFile(cellX int, cellY int, objectType string) ([]feature.EncodedFeature, error) {
+func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectType string) ([]feature.EncodedFeature, error) {
 	cellFolderName := path.Join(g.BaseFolder, objectType, strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
 
@@ -226,7 +244,7 @@ func (g *GridIndex) readFeaturesFromCellFile(cellX int, cellY int, objectType st
 	return g.featureCache[cellFileName], nil
 }
 
-func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, data []byte) {
+func (g *GridIndexReader) readNodesFromCellData(output chan []feature.EncodedFeature, data []byte) {
 	outputBuffer := make([]feature.EncodedFeature, 1000)
 	currentBufferPos := 0
 
@@ -315,7 +333,7 @@ func (g *GridIndex) readNodesFromCellData(output chan []feature.EncodedFeature, 
 	output <- outputBuffer
 }
 
-func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, data []byte) {
+func (g *GridIndexReader) readWaysFromCellData(output chan []feature.EncodedFeature, data []byte) {
 	outputBuffer := make([]feature.EncodedFeature, 1000)
 	currentBufferPos := 0
 	totalReadFeatures := 0
@@ -413,7 +431,7 @@ func (g *GridIndex) readWaysFromCellData(output chan []feature.EncodedFeature, d
 	output <- outputBuffer
 }
 
-func (g *GridIndex) readRelationsFromCellData(output chan []feature.EncodedFeature, data []byte) {
+func (g *GridIndexReader) readRelationsFromCellData(output chan []feature.EncodedFeature, data []byte) {
 	outputBuffer := make([]feature.EncodedFeature, 1000)
 	currentBufferPos := 0
 
@@ -535,7 +553,7 @@ func (g *GridIndex) readRelationsFromCellData(output chan []feature.EncodedFeatu
 // readNodeToWayMappingFromCellData is a simplified version of the general way-reading function. It returns a mapping of
 // node-ID to way-IDs for the given cell file. Therefore, it can be used to determine which ways a node belongs to,
 // without reading whole encoded features.
-func (g *GridIndex) readNodeToWayMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.WayID, error) {
+func (g *GridIndexReader) readNodeToWayMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.WayID, error) {
 	cellFolderName := path.Join(g.BaseFolder, feature.OsmObjWay.String(), strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
 
@@ -599,7 +617,7 @@ func (g *GridIndex) readNodeToWayMappingFromCellData(cellX int, cellY int) (map[
 // readNodeToRelationMappingFromCellData is a simplified version of the general relations-reading function. It returns
 // a mapping of node-ID to relation-IDs for the given cell file. Therefore, it can be used to determine which relations
 // a node belongs to, without reading whole encoded features.
-func (g *GridIndex) readNodeToRelationMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.RelationID, error) {
+func (g *GridIndexReader) readNodeToRelationMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.RelationID, error) {
 	cellFolderName := path.Join(g.BaseFolder, feature.OsmObjRelation.String(), strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
 
@@ -665,7 +683,7 @@ func (g *GridIndex) readNodeToRelationMappingFromCellData(cellX int, cellY int) 
 // readWayToRelationMappingFromCellData is a simplified version of the general relations-reading function. It returns
 // a mapping of way-ID to relation-IDs for the given cell file. Therefore, it can be used to determine which relations
 // a way belongs to, without reading whole encoded features.
-func (g *GridIndex) readWayToRelationMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.RelationID, error) {
+func (g *GridIndexReader) readWayToRelationMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.RelationID, error) {
 	cellFolderName := path.Join(g.BaseFolder, feature.OsmObjRelation.String(), strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
 
@@ -731,7 +749,7 @@ func (g *GridIndex) readWayToRelationMappingFromCellData(cellX int, cellY int) (
 // readRelationToParentRelationMappingFromCellData is a simplified version of the general relations-reading function. It returns
 // a mapping of relation-ID to parent-relation-IDs for the given cell file. Therefore, it can be used to determine which relations
 // another relation belongs to, without reading whole encoded features.
-func (g *GridIndex) readRelationToParentRelationMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.RelationID, error) {
+func (g *GridIndexReader) readRelationToParentRelationMappingFromCellData(cellX int, cellY int) (map[uint64][]osm.RelationID, error) {
 	cellFolderName := path.Join(g.BaseFolder, feature.OsmObjRelation.String(), strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
 
@@ -794,7 +812,7 @@ func (g *GridIndex) readRelationToParentRelationMappingFromCellData(cellX int, c
 	return relationToParentRelations, nil
 }
 
-func (g *GridIndex) checkValidity(encodedFeature feature.EncodedFeature) {
+func (g *GridIndexReader) checkValidity(encodedFeature feature.EncodedFeature) {
 	// Check keys
 	if len(encodedFeature.GetKeys()) > len(g.TagIndex.keyMap) {
 		sigolo.Fatalf("Invalid length of keys in feature %d: Expected less than %d but found %d", encodedFeature.GetID(), len(g.TagIndex.keyMap), len(encodedFeature.GetKeys()))

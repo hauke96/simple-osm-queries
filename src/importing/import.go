@@ -26,13 +26,8 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		return err
 	}
 
-	gridIndex := &index.GridIndex{
-		TagIndex:   tagIndex,
-		CellWidth:  cellWidth,
-		CellHeight: cellHeight,
-		BaseFolder: path.Join(indexBaseFolder, index.GridIndexFolder),
-	}
-	err = gridIndex.Import(inputFile, nodesOfRelations, waysOfRelations)
+	baseFolder := path.Join(indexBaseFolder, index.GridIndexFolder)
+	err = index.ImportDataFile(inputFile, baseFolder, cellWidth, cellHeight, nodesOfRelations, waysOfRelations, tagIndex)
 	if err != nil {
 		return err
 	}
