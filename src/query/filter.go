@@ -164,7 +164,7 @@ func (f KeyFilterExpression) GetParameter() (int, bool) {
 
 type SubStatementFilterExpression struct {
 	statement   *Statement
-	cachedCells []index.CellIndex
+	cachedCells []index.CellIndex // TODO Add LRU-Cache or similar?
 	idCache     map[uint64]uint64
 }
 

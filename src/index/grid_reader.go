@@ -39,23 +39,25 @@ func (g *GridIndexReader) Get(bbox *orb.Bound, objectType string) (chan *GetFeat
 	minCell := g.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
 	maxCell := g.GetCellIndexForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
 
-	resultChannel := make(chan *GetFeaturesResult, 10)
+	resultChannel := make(chan *GetFeaturesResult)
 
-	numThreads := 3
-	var wg sync.WaitGroup
-	wg.Add(numThreads)
 	go func() {
+		numThreads := 3
+
 		// Group the cells into columns of equal size so that each goroutine below can handle on column.
 		cellColumns := maxCell.X() - minCell.X() + 1 // min and max are inclusive, therefore +1
+		if cellColumns < numThreads {
+			// To prevent that two threads are fetching the same columns
+			numThreads = cellColumns
+		}
 		threadColumns := cellColumns / numThreads
+
+		var wg sync.WaitGroup
+		wg.Add(numThreads)
 
 		for i := 0; i < numThreads; i++ {
 			minColX := minCell.X() + i*threadColumns
-			maxColX := minCell.X() + (i+1)*threadColumns
-			if i != 0 {
-				// To prevent overlapping columns
-				minColX++
-			}
+			maxColX := minCell.X() + (i+1)*threadColumns - 1 // -1 to prevent overlapping columns
 			if i == numThreads-1 {
 				// Last column: Make sure it goes til the requested end
 				maxColX = maxCell.X()
@@ -63,11 +65,11 @@ func (g *GridIndexReader) Get(bbox *orb.Bound, objectType string) (chan *GetFeat
 
 			go g.getFeaturesForCellsWithBbox(resultChannel, &wg, bbox, minColX, maxColX, minCell.Y(), maxCell.Y(), objectType)
 		}
-	}()
 
-	go func() {
 		wg.Wait()
 		close(resultChannel)
+
+		sigolo.Debugf("Done reading %s features for area minCell=%v to maxCell=%v", objectType, minCell, maxCell)
 	}()
 
 	return resultChannel, nil // Remove error from return, since it doesn't make any sense here
@@ -160,9 +162,11 @@ func (g *GridIndexReader) GetFeaturesForCells(cells []CellIndex, objectType stri
 }
 
 func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesResult, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType string) {
-	sigolo.Tracef("Get feature for cell column from=%d, to=%d", minCellX, maxCellX)
+	sigolo.Debugf("Get %s features for cells minX=%d, maxX=%d / minY=%d, maxY=%d", objectType, minCellX, maxCellX, minCellY, maxCellY)
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
+			sigolo.Debugf("Get %s features for cell X=%d, Y=%d", objectType, minCellX, maxCellX)
+
 			featuresInBbox := &GetFeaturesResult{
 				Cell:     CellIndex{cellX, cellY},
 				Features: []feature.EncodedFeature{},
@@ -181,6 +185,7 @@ func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesRe
 		}
 	}
 	wg.Done()
+	sigolo.Debugf("Finished getting %s features for cells minX=%d, maxX=%d / minY=%d, maxY=%d", objectType, minCellX, maxCellX, minCellY, maxCellY)
 }
 
 // readFeaturesFromCellFile reads all features from the specified cell and writes them periodically to the output channel.
@@ -196,7 +201,9 @@ func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectT
 	}
 
 	cachedFeatures, entryIsNew, err := g.cellCache.getOrInsert(cellFileName)
-	if !entryIsNew {
+	// Ignore new and empty caches. Empty caches might not be actually empty but not yet filled. This might happen when
+	// the same cell file is read by multiple goroutines at the same time.
+	if !entryIsNew && len(cachedFeatures) > 0 {
 		sigolo.Tracef("Use features from cache for cell file %s", cellFileName)
 		return cachedFeatures, nil
 	}
