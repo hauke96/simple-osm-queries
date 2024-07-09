@@ -15,7 +15,7 @@ import (
 
 func TestGridIndex_writeNodeData(t *testing.T) {
 	// Arrange
-	gridIndex := &GridIndex{
+	gridIndex := &baseGridIndex{
 		TagIndex:         nil,
 		CellWidth:        10,
 		CellHeight:       10,
@@ -75,7 +75,7 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 
 func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	// Arrange
-	gridIndex := &GridIndex{
+	gridIndex := &baseGridIndex{
 		TagIndex: &TagIndex{
 			BaseFolder: "",
 			keyMap:     []string{"k1", "k2", "k3"},

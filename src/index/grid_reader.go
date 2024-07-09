@@ -15,7 +15,7 @@ import (
 )
 
 type GridIndexReader struct {
-	GridIndex
+	baseGridIndex
 
 	checkFeatureValidity bool
 	featureCache         map[string][]feature.EncodedFeature // Filename to feature within it
@@ -23,14 +23,14 @@ type GridIndexReader struct {
 }
 
 func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, checkFeatureValidity bool, tagIndex *TagIndex) *GridIndexReader {
-	baseGridIndex := GridIndex{
+	baseGridIndex := baseGridIndex{
 		TagIndex:   tagIndex,
 		CellWidth:  cellWidth,
 		CellHeight: cellHeight,
 		BaseFolder: path.Join(indexBaseFolder, GridIndexFolder),
 	}
 	return &GridIndexReader{
-		GridIndex:            baseGridIndex,
+		baseGridIndex:        baseGridIndex,
 		checkFeatureValidity: checkFeatureValidity,
 		featureCache:         map[string][]feature.EncodedFeature{},
 		featureCacheMutex:    &sync.Mutex{},

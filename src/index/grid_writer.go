@@ -24,7 +24,7 @@ import (
 )
 
 type GridIndexWriter struct {
-	GridIndex
+	baseGridIndex
 
 	cacheFileHandles map[string]*os.File
 	cacheFileWriters map[string]*bufio.Writer
@@ -42,20 +42,20 @@ func ImportDataFile(inputFile string, baseFolder string, cellWidth float64, cell
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
 	}
 
-	baseGridIndex := GridIndex{
+	baseGridIndex := baseGridIndex{
 		TagIndex:   tagIndex,
 		CellWidth:  cellWidth,
 		CellHeight: cellHeight,
 		BaseFolder: baseFolder,
 	}
 	gridIndexWriter := &GridIndexWriter{
-		GridIndex:        baseGridIndex,
+		baseGridIndex:    baseGridIndex,
 		cacheFileHandles: map[string]*os.File{},
 		cacheFileWriters: map[string]*bufio.Writer{},
 		cacheFileMutexes: map[io.Writer]*sync.Mutex{},
 		cacheFileMutex:   &sync.Mutex{},
 		gridIndexReader: &GridIndexReader{
-			GridIndex:            baseGridIndex,
+			baseGridIndex:        baseGridIndex,
 			checkFeatureValidity: false,
 			featureCache:         nil,
 			featureCacheMutex:    nil,
@@ -64,7 +64,7 @@ func ImportDataFile(inputFile string, baseFolder string, cellWidth float64, cell
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
-	err, nodeCells := gridIndexWriter.convertOsmToRawEncodedFeatures(inputFile, nodesOfRelations, waysOfRelations)
+	err, nodeCells := gridIndexWriter.writeOsmToRawEncodedFeatures(inputFile, nodesOfRelations, waysOfRelations)
 	if err != nil {
 		return err
 	}
@@ -76,9 +76,9 @@ func ImportDataFile(inputFile string, baseFolder string, cellWidth float64, cell
 	return nil
 }
 
-// convertOsmToRawEncodedFeatures Reads the input PBF file and converts all OSM objects into raw encoded features and
+// writeOsmToRawEncodedFeatures Reads the input PBF file and converts all OSM objects into raw encoded features and
 // writes them into their respective cells. The returned cell map contains all cells that contain nodes.
-func (g *GridIndexWriter) convertOsmToRawEncodedFeatures(inputFile string, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) (error, map[CellIndex]CellIndex) {
+func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(inputFile string, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) (error, map[CellIndex]CellIndex) {
 	sigolo.Info("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 

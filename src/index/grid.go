@@ -2,7 +2,7 @@ package index
 
 const GridIndexFolder = "grid-index"
 
-type GridIndex struct {
+type baseGridIndex struct {
 	TagIndex   *TagIndex
 	CellWidth  float64
 	CellHeight float64
@@ -10,6 +10,6 @@ type GridIndex struct {
 }
 
 // GetCellIndexForCoordinate returns the cell index (i.e. position) for the given coordinate.
-func (g *GridIndex) GetCellIndexForCoordinate(x float64, y float64) CellIndex {
+func (g *baseGridIndex) GetCellIndexForCoordinate(x float64, y float64) CellIndex {
 	return CellIndex{int(x / g.CellWidth), int(y / g.CellHeight)}
 }
