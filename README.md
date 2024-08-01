@@ -97,11 +97,12 @@ The `this.ways{...}` statement considers the ways *this* node is part of (theref
 Usage: `this.<function-name>`.
 No parentheses needed.
 
-| Function name | Applies to                | Description                                                                                                                       |
-|:--------------|:--------------------------|:----------------------------------------------------------------------------------------------------------------------------------|
-| `nodes`       | Ways and relations        | The list of all nodes being part of the way or relation.                                                                          |
-| `ways`        | Nodes and relations       | For nodes: The list of all ways the node is part of. For relations: All ways being part of this relation.                         |
-| `relations`   | Nodes, ways and relations | For nodes and ways: The list of all relations this node/way is part of. For relations: All relations being part of this relation. |
+| Function name     | Applies to                | Description                                                                                                     |
+|:------------------|:--------------------------|:----------------------------------------------------------------------------------------------------------------|
+| `nodes`           | Ways and relations        | The list of all nodes being part of the way or relation.                                                        |
+| `ways`            | Nodes and relations       | For nodes: The list of all ways the node is part of. For relations: All ways being part of this relation.       |
+| `relations`       | Nodes, ways and relations | The list of all relations this node/way/relation is part of. For relations this refers to all parent relations. |
+| `child_relations` | Relations                 | Only usable in a context-aware expression to search in child relations of a relation.                           |
 
 ![](this-node-way-relations.png)
 
