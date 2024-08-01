@@ -414,7 +414,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 					}
 				case feature.OsmObjRelation:
 					if relationIds, ok := relationToParentRelations[encFeature.GetID()]; ok {
-						encFeature.(*feature.EncodedRelationFeature).ParentRelationIDs = relationIds
+						encFeature.(*feature.EncodedRelationFeature).ParentRelationIds = relationIds
 					}
 				default:
 					sigolo.Fatalf("Unsupported object type %v to add IDs to", objectType)
@@ -765,10 +765,10 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 
 	encodedKeyBytes := numKeys                                         // Is already a byte-array -> no division by 8 needed
 	encodedValueBytes := len(encodedFeature.GetValues()) * 3           // Int array and int = 4 bytes
-	nodeIdBytes := len(encodedFeature.NodeIDs) * 8                     // IDs are all 64-bit integers
-	wayIdBytes := len(encodedFeature.WayIDs) * 8                       // IDs are all 64-bit integers
-	childRelationIdBytes := len(encodedFeature.ChildRelationIDs) * 8   // IDs are all 64-bit integers
-	parentRelationIdBytes := len(encodedFeature.ParentRelationIDs) * 8 // IDs are all 64-bit integers
+	nodeIdBytes := len(encodedFeature.NodeIds) * 8                     // IDs are all 64-bit integers
+	wayIdBytes := len(encodedFeature.WayIds) * 8                       // IDs are all 64-bit integers
+	childRelationIdBytes := len(encodedFeature.ChildRelationIds) * 8   // IDs are all 64-bit integers
+	parentRelationIdBytes := len(encodedFeature.ParentRelationIds) * 8 // IDs are all 64-bit integers
 
 	headerBytesCount := 8 + 16 + 4 + 4 + 2 + 2 + 2 + 2 // = 40
 	byteCount := headerBytesCount
@@ -790,10 +790,10 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	binary.LittleEndian.PutUint32(data[20:], math.Float32bits(float32(bbox.Max.Lat())))
 	binary.LittleEndian.PutUint32(data[24:], uint32(numKeys))
 	binary.LittleEndian.PutUint32(data[28:], uint32(len(encodedFeature.GetValues())))
-	binary.LittleEndian.PutUint16(data[32:], uint16(len(encodedFeature.NodeIDs)))
-	binary.LittleEndian.PutUint16(data[34:], uint16(len(encodedFeature.WayIDs)))
-	binary.LittleEndian.PutUint16(data[36:], uint16(len(encodedFeature.ChildRelationIDs)))
-	binary.LittleEndian.PutUint16(data[38:], uint16(len(encodedFeature.ParentRelationIDs)))
+	binary.LittleEndian.PutUint16(data[32:], uint16(len(encodedFeature.NodeIds)))
+	binary.LittleEndian.PutUint16(data[34:], uint16(len(encodedFeature.WayIds)))
+	binary.LittleEndian.PutUint16(data[36:], uint16(len(encodedFeature.ChildRelationIds)))
+	binary.LittleEndian.PutUint16(data[38:], uint16(len(encodedFeature.ParentRelationIds)))
 
 	pos := headerBytesCount
 
@@ -816,7 +816,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	/*
 		Write node-IDs
 	*/
-	for _, nodeId := range encodedFeature.NodeIDs {
+	for _, nodeId := range encodedFeature.NodeIds {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(nodeId))
 		pos += 8
 	}
@@ -824,7 +824,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	/*
 		Write way-IDs
 	*/
-	for _, wayId := range encodedFeature.WayIDs {
+	for _, wayId := range encodedFeature.WayIds {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(wayId))
 		pos += 8
 	}
@@ -832,7 +832,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	/*
 		Write child relation-IDs
 	*/
-	for _, relationId := range encodedFeature.ChildRelationIDs {
+	for _, relationId := range encodedFeature.ChildRelationIds {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
 		pos += 8
 	}
@@ -840,12 +840,12 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	/*
 		Write parent relation-IDs
 	*/
-	for _, relationId := range encodedFeature.ParentRelationIDs {
+	for _, relationId := range encodedFeature.ParentRelationIds {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
 		pos += 8
 	}
 
-	sigolo.Tracef("Write feature %d bbox=%#v, byteCount=%d, numKeys=%d, numValues=%d, numNodes=%d, numWays=%d, numChildRels=%d, numParentRels=%d", encodedFeature.ID, bbox, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.NodeIDs), len(encodedFeature.WayIDs), len(encodedFeature.ChildRelationIDs), len(encodedFeature.ParentRelationIDs))
+	sigolo.Tracef("Write feature %d bbox=%#v, byteCount=%d, numKeys=%d, numValues=%d, numNodes=%d, numWays=%d, numChildRels=%d, numParentRels=%d", encodedFeature.ID, bbox, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.NodeIds), len(encodedFeature.WayIds), len(encodedFeature.ChildRelationIds), len(encodedFeature.ParentRelationIds))
 
 	return g.writeData(encodedFeature, data, f)
 }
@@ -912,9 +912,9 @@ func (g *GridIndexWriter) toEncodedRelationFeature(obj *osm.Relation, bbox *orb.
 
 	return &feature.EncodedRelationFeature{
 		AbstractEncodedFeature: abstractEncodedFeature,
-		NodeIDs:                nodeIds,
-		WayIDs:                 wayIds,
-		ChildRelationIDs:       childRelationIds,
-		ParentRelationIDs:      []osm.RelationID{},
+		NodeIds:                nodeIds,
+		WayIds:                 wayIds,
+		ChildRelationIds:       childRelationIds,
+		ParentRelationIds:      []osm.RelationID{},
 	}, nil
 }

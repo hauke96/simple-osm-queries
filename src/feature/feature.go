@@ -162,16 +162,16 @@ func (f *EncodedWayFeature) HasNode(id uint64) bool {
 
 type EncodedRelationFeature struct {
 	AbstractEncodedFeature
-	NodeIDs           []osm.NodeID
-	WayIDs            []osm.WayID
-	ChildRelationIDs  []osm.RelationID
-	ParentRelationIDs []osm.RelationID
+	NodeIds           []osm.NodeID
+	WayIds            []osm.WayID
+	ChildRelationIds  []osm.RelationID
+	ParentRelationIds []osm.RelationID
 }
 
-func (f EncodedRelationFeature) GetNodeIDs() []osm.NodeID {
-	return f.NodeIDs
+func (f EncodedRelationFeature) GetNodeIds() []osm.NodeID {
+	return f.NodeIds
 }
 
-func (f EncodedRelationFeature) GetWayIDs() []osm.WayID {
-	return f.WayIDs
+func (f EncodedRelationFeature) GetWayIds() []osm.WayID {
+	return f.WayIds
 }

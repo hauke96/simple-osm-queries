@@ -304,25 +304,25 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	case *feature.EncodedRelationFeature:
 		switch f.statement.queryType {
 		case feature.OsmQueryNode:
-			for _, nodeId := range contextFeature.NodeIDs {
+			for _, nodeId := range contextFeature.NodeIds {
 				if _, ok := f.idCache[uint64(nodeId)]; ok {
 					return true, nil
 				}
 			}
 		case feature.OsmQueryWay:
-			for _, wayId := range contextFeature.WayIDs {
+			for _, wayId := range contextFeature.WayIds {
 				if _, ok := f.idCache[uint64(wayId)]; ok {
 					return true, nil
 				}
 			}
 		case feature.OsmQueryRelation:
-			for _, parentRelationId := range contextFeature.ParentRelationIDs {
+			for _, parentRelationId := range contextFeature.ParentRelationIds {
 				if _, ok := f.idCache[uint64(parentRelationId)]; ok {
 					return true, nil
 				}
 			}
 		case feature.OsmQueryChildRelation:
-			for _, childRelationId := range contextFeature.ChildRelationIDs {
+			for _, childRelationId := range contextFeature.ChildRelationIds {
 				if _, ok := f.idCache[uint64(childRelationId)]; ok {
 					return true, nil
 				}

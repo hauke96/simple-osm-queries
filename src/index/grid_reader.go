@@ -348,7 +348,7 @@ func (g *GridIndexReader) readWaysFromCellData(output chan []feature.EncodedFeat
 		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+8:]))
 		numValues := int(binary.LittleEndian.Uint32(data[pos+12:]))
 		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
-		numRelationIDs := int(binary.LittleEndian.Uint16(data[pos+18:]))
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+18:]))
 
 		headerBytesCount := 8 + 4 + 4 + 2 + 2
 
@@ -389,7 +389,7 @@ func (g *GridIndexReader) readWaysFromCellData(output chan []feature.EncodedFeat
 			Read relation-IDs
 		*/
 		var relationIds []osm.RelationID
-		for i := 0; i < numRelationIDs; i++ {
+		for i := 0; i < numRelationIds; i++ {
 			relationIds = append(relationIds, osm.RelationID(binary.LittleEndian.Uint64(data[pos:])))
 			pos += 8
 		}
@@ -527,10 +527,10 @@ func (g *GridIndexReader) readRelationsFromCellData(output chan []feature.Encode
 				Keys:     encodedKeys,
 				Values:   encodedValues,
 			},
-			NodeIDs:           nodeIds,
-			WayIDs:            wayIds,
-			ChildRelationIDs:  childRelationIds,
-			ParentRelationIDs: parentRelationIds,
+			NodeIds:           nodeIds,
+			WayIds:            wayIds,
+			ChildRelationIds:  childRelationIds,
+			ParentRelationIds: parentRelationIds,
 		}
 		if g.checkFeatureValidity {
 			sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
@@ -584,8 +584,8 @@ func (g *GridIndexReader) readNodeToWayMappingFromCellData(cellX int, cellY int)
 		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
 		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
 		nodeBytes := numNodes * 16
-		numRelationIDs := int(binary.LittleEndian.Uint16(data[pos+18:]))
-		relationIDBytes := numRelationIDs * 8
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+18:]))
+		relationIdBytes := numRelationIds * 8
 
 		headerBytesCount := 8 + 4 + 4 + 2 + 2
 
@@ -608,7 +608,7 @@ func (g *GridIndexReader) readNodeToWayMappingFromCellData(cellX int, cellY int)
 			}
 		}
 
-		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + nodeBytes + relationIDBytes
+		pos += headerBytesCount + numEncodedKeyBytes + encodedValuesBytes + nodeBytes + relationIdBytes
 	}
 
 	return nodeToWays, nil
