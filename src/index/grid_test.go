@@ -58,21 +58,21 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 	util.AssertEqual(t, uint32(3), binary.LittleEndian.Uint32(data[20:]))
 	util.AssertEqual(t, uint16(2), binary.LittleEndian.Uint16(data[24:]))
 
-	util.AssertEqual(t, encodedFeature.Keys[0], data[26])
+	util.AssertEqual(t, encodedFeature.Keys[0], data[28])
 
-	p := 26 + 1
+	p := 28 + 1
 	util.AssertEqual(t, encodedFeature.Values[0], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
 	p += 3
 	util.AssertEqual(t, encodedFeature.Values[1], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
 	p += 3
 	util.AssertEqual(t, encodedFeature.Values[2], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
 
-	p = 36
+	p = 38
 	util.AssertEqual(t, encodedFeature.WayIds[0], osm.WayID(binary.LittleEndian.Uint64(data[p:])))
 	p += 8
 	util.AssertEqual(t, encodedFeature.WayIds[1], osm.WayID(binary.LittleEndian.Uint64(data[p:])))
 
-	util.AssertEqual(t, 52, len(data))
+	util.AssertEqual(t, 54, len(data))
 }
 
 func TestGridIndex_readFeaturesFromCellData(t *testing.T) {

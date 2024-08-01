@@ -266,7 +266,7 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	case *feature.EncodedNodeFeature:
 		switch f.statement.objectType {
 		case feature.OsmObjNode:
-			// TODO error
+			return false, errors.Errorf("Invalid object type %s requested for node in sub-statement expression. This is a bug!", f.statement.objectType)
 		case feature.OsmObjWay:
 			for _, wayId := range contextFeature.WayIds {
 				if _, ok := f.idCache[uint64(wayId)]; ok {
@@ -279,10 +279,10 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 					return true, nil
 				}
 			}
+		case feature.OsmObjChildRelation:
+			return false, errors.Errorf("Invalid object type %s requested for node in sub-statement expression. This is a bug!", f.statement.objectType)
 		}
 	case *feature.EncodedWayFeature:
-		// TODO Statement "bbox(...).ways{this.relations{...}}" not working(?) Maybe a bug in the import?
-
 		switch f.statement.objectType {
 		case feature.OsmObjNode:
 			for _, node := range contextFeature.Nodes {
@@ -291,13 +291,15 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 				}
 			}
 		case feature.OsmObjWay:
-			// TODO error
+			return false, errors.Errorf("Invalid object type %s requested for way in sub-statement expression. This is a bug!", f.statement.objectType)
 		case feature.OsmObjRelation:
 			for _, relationId := range contextFeature.RelationIds {
 				if _, ok := f.idCache[uint64(relationId)]; ok {
 					return true, nil
 				}
 			}
+		case feature.OsmObjChildRelation:
+			return false, errors.Errorf("Invalid object type %s requested for way in sub-statement expression. This is a bug!", f.statement.objectType)
 		}
 	case *feature.EncodedRelationFeature:
 		switch f.statement.objectType {
@@ -314,19 +316,18 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 				}
 			}
 		case feature.OsmObjRelation:
+			for _, parentRelationId := range contextFeature.ParentRelationIDs {
+				if _, ok := f.idCache[uint64(parentRelationId)]; ok {
+					return true, nil
+				}
+			}
+		case feature.OsmObjChildRelation:
 			for _, childRelationId := range contextFeature.ChildRelationIDs {
 				if _, ok := f.idCache[uint64(childRelationId)]; ok {
 					return true, nil
 				}
 			}
 		}
-
-		// TODO Add when object type for parent relations exists #21
-		//for _, parentRelationId := range contextFeature.ParentRelationIDs {
-		//	if _, ok := f.idCache[uint64(parentRelationId)]; ok {
-		//		return true, nil
-		//	}
-		//}
 	default:
 		return false, errors.Errorf("Unsupported object type %s for sub-statement expression", reflect.TypeOf(context).String())
 	}

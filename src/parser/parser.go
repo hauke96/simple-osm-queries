@@ -17,9 +17,10 @@ var (
 	contextAwareLocationExpression = "this"
 	locationExpressions            = []string{bboxLocationExpression}
 
-	objectTypeNodeExpression      = "nodes"
-	objectTypeWaysExpression      = "ways"
-	objectTypeRelationsExpression = "relations"
+	objectTypeNodeExpression           = "nodes"
+	objectTypeWaysExpression           = "ways"
+	objectTypeRelationsExpression      = "relations"
+	objectTypeChildRelationsExpression = "child_relations"
 )
 
 type Parser struct {
@@ -235,6 +236,8 @@ func (p *Parser) parseOsmObjectType() (feature.OsmObjectType, error) {
 		return feature.OsmObjWay, nil
 	case objectTypeRelationsExpression:
 		return feature.OsmObjRelation, nil
+	case objectTypeChildRelationsExpression:
+		return feature.OsmObjChildRelation, nil
 	}
 
 	return -1, errors.Errorf("Expected object type at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)

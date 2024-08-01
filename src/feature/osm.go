@@ -8,6 +8,7 @@ const (
 	OsmObjNode OsmObjectType = iota
 	OsmObjWay
 	OsmObjRelation
+	OsmObjChildRelation
 )
 
 func (o OsmObjectType) String() string {
@@ -18,6 +19,8 @@ func (o OsmObjectType) String() string {
 		return "way"
 	case OsmObjRelation:
 		return "relation"
+	case OsmObjChildRelation:
+		return "child_relation"
 	}
 	return fmt.Sprintf("[!UNKNOWN OsmObjectType %d]", o)
 }

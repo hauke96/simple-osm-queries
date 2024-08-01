@@ -103,6 +103,11 @@ func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(inputFile string, nodesOf
 		wayToBound[wayId] = nil
 	}
 
+	// We assume relations, like all other object types, to be sorted in a way that when a relation with child relations
+	// appears, all child relation members have been visited before. Therefore, this map then contains all bounds of the
+	// child relation members. Cyclic relation structures (when A is child of B but B also of A) are not supported.
+	relationToBound := map[osm.RelationID]*orb.Bound{}
+
 	firstWayHasBeenProcessed := false
 	firstRelationHasBeenProcessed := false
 
@@ -153,12 +158,13 @@ func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(inputFile string, nodesOf
 			}
 
 			var bbox *orb.Bound
-			var memberBbox *orb.Bound
 			var nodeIds []osm.NodeID
 			var wayIds []osm.WayID
 			var childRelationIds []osm.RelationID
 
 			for _, member := range osmObj.Members {
+				var memberBbox *orb.Bound
+
 				switch member.Type {
 				case osm.TypeNode:
 					id := osm.NodeID(member.Ref)
@@ -171,6 +177,7 @@ func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(inputFile string, nodesOf
 				case osm.TypeRelation:
 					id := osm.RelationID(member.Ref)
 					childRelationIds = append(childRelationIds, id)
+					memberBbox = relationToBound[id]
 				}
 
 				if memberBbox == nil {
@@ -186,9 +193,10 @@ func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(inputFile string, nodesOf
 				}
 			}
 
-			// TODO handle relations that only contain relations and therefore to not (currently) have a bbox
+			relationToBound[osmObj.ID] = bbox
+
 			if bbox == nil {
-				continue
+				return errors.Errorf("No BBOX for relation %d could be determined. This might be a bug or strange constellation of data.", osmObj.ID), nil
 			}
 
 			minCell := g.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
@@ -384,6 +392,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 	var finishWaitGroup sync.WaitGroup
 	finishWaitGroup.Add(1)
 
+	// TODO We read the same cells we write to. The new written cells will be bigger, so this might cause problems on cells where a lot of IDs are added to. Or doesn't it?
 	go func() {
 		for encFeatures := range readFeatureChannel {
 			for _, encFeature := range encFeatures {
