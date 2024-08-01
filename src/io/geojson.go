@@ -31,9 +31,19 @@ func WriteFeaturesAsGeoJson(encodedFeatures []feature.EncodedFeature, tagIndex *
 
 	featureCollection := geojson.NewFeatureCollection()
 	for _, encodedFeature := range encodedFeatures {
-		feature := geojson.NewFeature(encodedFeature.GetGeometry())
+		geoJsonFeature := geojson.NewFeature(encodedFeature.GetGeometry())
 
-		feature.Properties["osm_id"] = encodedFeature.GetID()
+		geoJsonFeature.Properties["@osm_id"] = encodedFeature.GetID()
+
+		switch encodedFeature.(type) {
+		case *feature.EncodedNodeFeature:
+			geoJsonFeature.Properties["@osm_type"] = "node"
+		case *feature.EncodedWayFeature:
+			geoJsonFeature.Properties["@osm_type"] = "way"
+		case *feature.EncodedRelationFeature:
+			geoJsonFeature.Properties["@osm_type"] = "relation"
+		}
+
 		for keyIndex := 0; keyIndex < len(encodedFeature.GetKeys())*8; keyIndex++ {
 			if !encodedFeature.HasKey(keyIndex) {
 				continue
@@ -44,10 +54,10 @@ func WriteFeaturesAsGeoJson(encodedFeatures []feature.EncodedFeature, tagIndex *
 			keyString := tagIndex.GetKeyFromIndex(keyIndex)
 			valueString := tagIndex.GetValueForKey(keyIndex, valueIndex)
 
-			feature.Properties[keyString] = valueString
+			geoJsonFeature.Properties[keyString] = valueString
 		}
 
-		featureCollection.Features = append(featureCollection.Features, feature)
+		featureCollection.Features = append(featureCollection.Features, geoJsonFeature)
 	}
 
 	geojsonBytes, err := featureCollection.MarshalJSON()

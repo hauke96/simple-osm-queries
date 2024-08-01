@@ -284,11 +284,17 @@
                 return;
             }
 
+            const osmIdKey = "@osm_id";
+            const osmTypeKey = "@osm_type";
+
             const feature = selectInteraction.getFeatures().item(0);
             const coordinate = ol.extent.getCenter(feature.getGeometry().getExtent());
 
-            let innerHTML = "<p>Object with ID " + feature.getProperties()["osm_id"] + ":</p>\n<table>\n<tr><th>Key</th><th>Value</th></tr>\n";
-            for (let p of Object.entries(feature.getProperties()).filter(p => p[0] != "geometry" && p[0] != "osm_id")) {
+            const osmType = feature.getProperties()[osmTypeKey];
+            const osmId = feature.getProperties()[osmIdKey];
+            const objectLink = `<a href="https://osm.org/${osmType}/${osmId}" target="_blank">${osmId}</a>`
+            let innerHTML = "<p>" + osmType.charAt(0).toUpperCase() + osmType.slice(1) + " with ID " + objectLink + ":</p>\n<table>\n<tr><th>Key</th><th>Value</th></tr>\n";
+            for (let p of Object.entries(feature.getProperties()).filter(p => p[0] !== "geometry" && p[0] !== osmIdKey && p[0] !== osmTypeKey)) {
                 innerHTML += "<tr><td><a href='https://wiki.openstreetmap.org/wiki/Key:" + p[0] + "'>" + p[0] + "</a></td><td>" + p[1] + "</td></tr>\n";
             }
             innerHTML += "</table>";
