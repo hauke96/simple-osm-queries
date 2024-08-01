@@ -7,21 +7,21 @@ import (
 )
 
 type Statement struct {
-	location   LocationExpression
-	objectType feature.OsmObjectType
-	filter     FilterExpression
+	location  LocationExpression
+	queryType feature.OsmQueryType
+	filter    FilterExpression
 }
 
-func NewStatement(locationExpression LocationExpression, objectType feature.OsmObjectType, filterExpression FilterExpression) *Statement {
+func NewStatement(locationExpression LocationExpression, queryType feature.OsmQueryType, filterExpression FilterExpression) *Statement {
 	return &Statement{
-		location:   locationExpression,
-		objectType: objectType,
-		filter:     filterExpression,
+		location:  locationExpression,
+		queryType: queryType,
+		filter:    filterExpression,
 	}
 }
 
 func (s Statement) GetFeatures(context feature.EncodedFeature) (chan *index.GetFeaturesResult, error) {
-	return s.location.GetFeatures(geometryIndex, context, s.objectType)
+	return s.location.GetFeatures(geometryIndex, context, s.queryType.GetObjectType())
 }
 
 func (s Statement) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
@@ -71,7 +71,7 @@ func (s Statement) Execute(context feature.EncodedFeature) ([]feature.EncodedFea
 func (s Statement) Print(indent int) {
 	sigolo.Debugf("%s%s", spacing(indent), "Statement")
 	s.location.Print(indent + 2)
-	sigolo.Debugf("%stype: %s", spacing(indent+2), s.objectType.String())
+	sigolo.Debugf("%stype: %s", spacing(indent+2), s.queryType.String())
 	s.filter.Print(indent + 2)
 }
 

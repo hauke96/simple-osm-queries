@@ -122,7 +122,7 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 
 	// Then object type (e.g. "nodes")
 	p.moveToNextToken()
-	objectType, err := p.parseOsmObjectType()
+	queryType, err := p.parseOsmQueryType()
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 		return nil, errors.Errorf("Expected '}' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}
 
-	return query.NewStatement(locationExpression, objectType, filterExpression), nil
+	return query.NewStatement(locationExpression, queryType, filterExpression), nil
 }
 
 func (p *Parser) parseLocationExpression() (query.LocationExpression, error) {
@@ -223,7 +223,7 @@ func (p *Parser) parseBboxLocationExpression() (*query.BboxLocationExpression, e
 	}), nil
 }
 
-func (p *Parser) parseOsmObjectType() (feature.OsmObjectType, error) {
+func (p *Parser) parseOsmQueryType() (feature.OsmQueryType, error) {
 	token := p.currentToken()
 	if token.kind != TokenKindKeyword {
 		return -1, errors.Errorf("Expected object type at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
@@ -231,13 +231,13 @@ func (p *Parser) parseOsmObjectType() (feature.OsmObjectType, error) {
 
 	switch token.lexeme {
 	case objectTypeNodeExpression:
-		return feature.OsmObjNode, nil
+		return feature.OsmQueryNode, nil
 	case objectTypeWaysExpression:
-		return feature.OsmObjWay, nil
+		return feature.OsmQueryWay, nil
 	case objectTypeRelationsExpression:
-		return feature.OsmObjRelation, nil
+		return feature.OsmQueryRelation, nil
 	case objectTypeChildRelationsExpression:
-		return feature.OsmObjChildRelation, nil
+		return feature.OsmQueryChildRelation, nil
 	}
 
 	return -1, errors.Errorf("Expected object type at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)

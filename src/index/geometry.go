@@ -12,8 +12,8 @@ type GetFeaturesResult struct {
 }
 
 type GeometryIndex interface {
-	Get(bbox *orb.Bound, objectType string) (chan *GetFeaturesResult, error)
-	GetFeaturesForCells(cells []CellIndex, objectType string) chan *GetFeaturesResult
+	Get(bbox *orb.Bound, objectType feature.OsmObjectType) (chan *GetFeaturesResult, error)
+	GetFeaturesForCells(cells []CellIndex, objectType feature.OsmObjectType) chan *GetFeaturesResult
 	GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error)
 	GetCellIndexForCoordinate(x float64, y float64) CellIndex
 }

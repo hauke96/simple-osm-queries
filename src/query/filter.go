@@ -173,7 +173,7 @@ func NewSubStatementFilterExpression(statement *Statement) *SubStatementFilterEx
 		statement:   statement,
 		cachedCells: []index.CellIndex{},
 		// This cache is used as generic cache for all sorts of objects. However, we only request the features of the
-		// statements objectType, so this cache only contains features of one kind. This means the IDs are unique.
+		// statements queryType, so this cache only contains features of one kind. This means the IDs are unique.
 		idCache: make(map[uint64]uint64),
 	}
 }
@@ -233,7 +233,7 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 
 	// Fetch data only of those cells needed
 	if len(cellsToFetch) != 0 {
-		featuresChannel, err = f.statement.location.GetFeaturesForCells(geometryIndex, cellsToFetch, f.statement.objectType)
+		featuresChannel, err = f.statement.location.GetFeaturesForCells(geometryIndex, cellsToFetch, f.statement.queryType.GetObjectType())
 		if err != nil {
 			return false, err
 		}
@@ -264,64 +264,64 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	// Check whether at least one sub-feature of the context is within the list of IDs that fulfill the sub-statement.
 	switch contextFeature := context.(type) {
 	case *feature.EncodedNodeFeature:
-		switch f.statement.objectType {
-		case feature.OsmObjNode:
-			return false, errors.Errorf("Invalid object type %s requested for node in sub-statement expression. This is a bug!", f.statement.objectType)
-		case feature.OsmObjWay:
+		switch f.statement.queryType {
+		case feature.OsmQueryNode:
+			return false, errors.Errorf("Invalid query type %s requested for node in sub-statement expression. This is a bug!", f.statement.queryType)
+		case feature.OsmQueryWay:
 			for _, wayId := range contextFeature.WayIds {
 				if _, ok := f.idCache[uint64(wayId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmObjRelation:
+		case feature.OsmQueryRelation:
 			for _, relationId := range contextFeature.RelationIds {
 				if _, ok := f.idCache[uint64(relationId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmObjChildRelation:
-			return false, errors.Errorf("Invalid object type %s requested for node in sub-statement expression. This is a bug!", f.statement.objectType)
+		case feature.OsmQueryChildRelation:
+			return false, errors.Errorf("Invalid query type %s requested for node in sub-statement expression. This is a bug!", f.statement.queryType)
 		}
 	case *feature.EncodedWayFeature:
-		switch f.statement.objectType {
-		case feature.OsmObjNode:
+		switch f.statement.queryType {
+		case feature.OsmQueryNode:
 			for _, node := range contextFeature.Nodes {
 				if _, ok := f.idCache[uint64(node.ID)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmObjWay:
-			return false, errors.Errorf("Invalid object type %s requested for way in sub-statement expression. This is a bug!", f.statement.objectType)
-		case feature.OsmObjRelation:
+		case feature.OsmQueryWay:
+			return false, errors.Errorf("Invalid query type %s requested for way in sub-statement expression. This is a bug!", f.statement.queryType)
+		case feature.OsmQueryRelation:
 			for _, relationId := range contextFeature.RelationIds {
 				if _, ok := f.idCache[uint64(relationId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmObjChildRelation:
-			return false, errors.Errorf("Invalid object type %s requested for way in sub-statement expression. This is a bug!", f.statement.objectType)
+		case feature.OsmQueryChildRelation:
+			return false, errors.Errorf("Invalid query type %s requested for way in sub-statement expression. This is a bug!", f.statement.queryType)
 		}
 	case *feature.EncodedRelationFeature:
-		switch f.statement.objectType {
-		case feature.OsmObjNode:
+		switch f.statement.queryType {
+		case feature.OsmQueryNode:
 			for _, nodeId := range contextFeature.NodeIDs {
 				if _, ok := f.idCache[uint64(nodeId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmObjWay:
+		case feature.OsmQueryWay:
 			for _, wayId := range contextFeature.WayIDs {
 				if _, ok := f.idCache[uint64(wayId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmObjRelation:
+		case feature.OsmQueryRelation:
 			for _, parentRelationId := range contextFeature.ParentRelationIDs {
 				if _, ok := f.idCache[uint64(parentRelationId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmObjChildRelation:
+		case feature.OsmQueryChildRelation:
 			for _, childRelationId := range contextFeature.ChildRelationIDs {
 				if _, ok := f.idCache[uint64(childRelationId)]; ok {
 					return true, nil

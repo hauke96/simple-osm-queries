@@ -5,7 +5,6 @@ import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/pkg/errors"
-	"reflect"
 	"soq/feature"
 	"soq/index"
 )
@@ -26,12 +25,11 @@ func NewBboxLocationExpression(bbox *orb.Bound) *BboxLocationExpression {
 }
 
 func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
-	// TODO Find a better solution than ".String()" for object types
-	return geometryIndex.Get(b.bbox, objectType.String())
+	return geometryIndex.Get(b.bbox, objectType)
 }
 
 func (b *BboxLocationExpression) GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []index.CellIndex, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
-	return geometryIndex.GetFeaturesForCells(cells, objectType.String()), nil
+	return geometryIndex.GetFeaturesForCells(cells, objectType), nil
 }
 
 func (b *BboxLocationExpression) IsWithin(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
@@ -69,34 +67,12 @@ func NewContextAwareLocationExpression() *ContextAwareLocationExpression {
 }
 
 func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
-	// TODO Should never been called since the SubStatementFilterExpression itself queries the features and does some caching.
-	/*
-		Supported expressions for nodes    :    -   .ways .relations
-		Supported expressions for ways     : .nodes   -   .relations
-		Supported expressions for relations: .nodes .ways .relations
-	*/
-	if context == nil {
-		return nil, errors.Errorf("Context feature must not be 'nil'")
-	}
-
-	switch encodedFeature := context.(type) {
-	case *feature.EncodedWayFeature:
-		sigolo.Debug("Get Features context way")
-		switch objectType {
-		case feature.OsmObjNode:
-			return geometryIndex.GetNodes(encodedFeature.GetNodes())
-		}
-		return nil, errors.Errorf("Unsupported object type %s for context-aware expression of way", objectType.String())
-	default:
-		sigolo.Debugf("Unsupported context %s", reflect.TypeOf(context).String())
-		return nil, errors.Errorf("Unsupported feature type %s for context-aware expression", reflect.TypeOf(context).String())
-	}
-
-	return nil, errors.Errorf("Encoded feature type '%s' of context object not supported", reflect.TypeOf(context).String())
+	// Should never been called since the SubStatementFilterExpression itself queries the features and does some caching.
+	panic("THe GetFeatures function of a ContextAwareLocationExpression should never been called. This is a bug.")
 }
 
 func (e *ContextAwareLocationExpression) GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []index.CellIndex, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
-	return geometryIndex.GetFeaturesForCells(cells, objectType.String()), nil
+	return geometryIndex.GetFeaturesForCells(cells, objectType), nil
 }
 
 func (e *ContextAwareLocationExpression) IsWithin(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {

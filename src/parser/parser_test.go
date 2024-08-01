@@ -157,11 +157,11 @@ func TestParser_parseOsmObjectType(t *testing.T) {
 	}
 
 	// Act
-	objectType, err := parser.parseOsmObjectType()
+	queryType, err := parser.parseOsmQueryType()
 
 	// Assert
 	util.AssertNil(t, err)
-	util.AssertEqual(t, feature.OsmObjNode, objectType)
+	util.AssertEqual(t, feature.OsmObjNode, queryType)
 	util.AssertEqual(t, 0, parser.index)
 }
 
