@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/hauke96/sigolo/v2"
@@ -10,6 +11,10 @@ import (
 	ownIo "soq/io"
 	"soq/parser"
 )
+
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
 
 func StartServer(port string, indexBaseFolder string, defaultCellSize float64, checkFeatureValidity bool) {
 	r := initRouter(indexBaseFolder, defaultCellSize, checkFeatureValidity)
@@ -37,12 +42,19 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 	})
 	r.HandleFunc("/query", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Access-Control-Allow-Origin", "*")
+		writer.Header().Set("Content-Type", "application/json")
 
 		queryBytes, err := io.ReadAll(request.Body)
 		if err != nil {
 			sigolo.Errorf("Error reding HTTP body of request to '/query': %+v", err)
 			writer.WriteHeader(http.StatusInternalServerError)
-			_, err = writer.Write([]byte("Error reading HTTP body."))
+
+			errorResponseBytes, err := json.Marshal(ErrorResponse{Error: "Error reading HTTP body."})
+			if err != nil {
+				sigolo.Errorf("Error creating and marshalling error response object: %+v", err)
+			}
+
+			_, err = writer.Write(errorResponseBytes)
 			if err != nil {
 				sigolo.Errorf("Error writing error response: %+v", err)
 			}
@@ -63,7 +75,13 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 		if err != nil {
 			sigolo.Errorf("Error parsing query: %+v", err)
 			writer.WriteHeader(http.StatusBadRequest)
-			_, err = writer.Write([]byte(fmt.Sprintf("Error parsing query: %+v", err)))
+
+			errorResponseBytes, err := json.Marshal(ErrorResponse{Error: fmt.Sprintf("Error parsing query: %s", err.Error())})
+			if err != nil {
+				sigolo.Errorf("Error creating and marshalling error response object: %+v", err)
+			}
+
+			_, err = writer.Write(errorResponseBytes)
 			if err != nil {
 				sigolo.Errorf("Error writing error response: %+v", err)
 			}
@@ -74,7 +92,13 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 		if err != nil {
 			sigolo.Errorf("Error executing query: %+v", err)
 			writer.WriteHeader(http.StatusInternalServerError)
-			_, err = writer.Write([]byte(fmt.Sprintf("Error executing query: %+v", err)))
+
+			errorResponseBytes, err := json.Marshal(ErrorResponse{Error: fmt.Sprintf("Error executing query: %s", err.Error())})
+			if err != nil {
+				sigolo.Errorf("Error creating and marshalling error response object: %+v", err)
+			}
+
+			_, err = writer.Write(errorResponseBytes)
 			if err != nil {
 				sigolo.Errorf("Error writing error response: %+v", err)
 			}
@@ -87,7 +111,13 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 		if err != nil {
 			sigolo.Errorf("Error writing query result: %+v", err)
 			writer.WriteHeader(http.StatusInternalServerError)
-			_, err = writer.Write([]byte(fmt.Sprintf("Error writing query result: %+v", err)))
+
+			errorResponseBytes, err := json.Marshal(ErrorResponse{Error: fmt.Sprintf("Error writing query result: %s", err.Error())})
+			if err != nil {
+				sigolo.Errorf("Error creating and marshalling error response object: %+v", err)
+			}
+
+			_, err = writer.Write(errorResponseBytes)
 			if err != nil {
 				sigolo.Errorf("Error writing error response: %+v", err)
 			}

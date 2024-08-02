@@ -163,8 +163,9 @@
             </div>
             <p id="info-label" class="label">Write your query below and click "Send" to execute it.</p>
             <p id="loading-label" class="label">Loading ...</p>
-            <p id="error-internal-label" class="label error">Internal error during request</p>
+            <p id="error-unknown-label" class="label error">Unknown error during request</p>
             <p id="error-request-label" class="label error">Request failed, the query is probably wrong</p>
+            <p id="error-message-label" class="label error"></p>
 
             <textarea id="query-input"></textarea>
         </div>
@@ -182,8 +183,9 @@
         document.getElementById("export-button").disabled = true;
         document.getElementById("clear-button").disabled = true;
         document.getElementById("loading-label").style.visibility = "collapse";
-        document.getElementById("error-internal-label").style.visibility = "collapse";
+        document.getElementById("error-unknown-label").style.visibility = "collapse";
         document.getElementById("error-request-label").style.visibility = "collapse";
+        document.getElementById("error-message-label").style.visibility = "collapse";
         document.getElementById("query-input").value = "//bbox(9.9713,53.5354,10.01711,53.58268)\n" +
             "bbox({{bbox}}).nodes{\n" +
             "  amenity=bench AND seats=*\n" +
@@ -318,8 +320,9 @@
             document.getElementById("send-button").disabled = true;
             document.getElementById("loading-label").style.visibility = "visible";
             document.getElementById("info-label").style.visibility = "collapse";
-            document.getElementById("error-internal-label").style.visibility = "collapse";
+            document.getElementById("error-unknown-label").style.visibility = "collapse";
             document.getElementById("error-request-label").style.visibility = "collapse";
+            document.getElementById("error-message-label").style.visibility = "collapse";
 
             let query = document.getElementById("query-input").value;
             query = query.replaceAll("{{bbox}}", "" + getCurrentBbox());
@@ -334,18 +337,28 @@
             })
                 .then((response) => response.text())
                 .then(responseText => {
+                    document.getElementById("export-button").disabled = false;
+                    document.getElementById("clear-button").disabled = false;
+                    document.getElementById("send-button").disabled = false;
+                    document.getElementById("loading-label").style.visibility = "collapse";
+                    document.getElementById("error-unknown-label").style.visibility = "collapse";
+                    document.getElementById("error-request-label").style.visibility = "collapse";
+                    document.getElementById("error-message-label").style.visibility = "collapse";
+
+                    const responseObject = JSON.parse(responseText);
+                    console.log(responseObject);
+                    if (responseObject.error) {
+                        document.getElementById("error-request-label").style.visibility = "visible";
+                        document.getElementById("error-request-label").innerText = responseObject.error;
+                        return;
+                    }
+
                     const features = new ol.format.GeoJSON({featureProjection: "EPSG:3857"}).readFeatures(responseText);
 
                     dataLayer.getSource().clear();
                     dataLayer.getSource().addFeatures(features);
 
                     lastQueryResponseGeoJSON = responseText;
-                    document.getElementById("export-button").disabled = false;
-                    document.getElementById("clear-button").disabled = false;
-                    document.getElementById("send-button").disabled = false;
-                    document.getElementById("loading-label").style.visibility = "collapse";
-                    document.getElementById("error-internal-label").style.visibility = "collapse";
-                    document.getElementById("error-request-label").style.visibility = "collapse";
                     document.getElementById("info-label").style.visibility = "visible";
                     document.getElementById("info-label").textContent = "✓ Found " + features.length + " features."
                 })
@@ -355,10 +368,11 @@
                     document.getElementById("clear-button").disabled = false;
                     document.getElementById("send-button").disabled = false;
                     document.getElementById("loading-label").style.visibility = "collapse";
+                    document.getElementById("error-message-label").style.visibility = "collapse";
                     if (err.status >= 400 && err.status < 500) {
                         document.getElementById("error-request-label").style.visibility = "visible";
                     } else {
-                        document.getElementById("error-internal-label").style.visibility = "visible";
+                        document.getElementById("error-unknown-label").style.visibility = "visible";
                     }
                 });
         });
@@ -377,8 +391,9 @@
             dataLayer.getSource().clear();
 
             document.getElementById("loading-label").style.visibility = "collapse";
-            document.getElementById("error-internal-label").style.visibility = "collapse";
+            document.getElementById("error-unknown-label").style.visibility = "collapse";
             document.getElementById("error-request-label").style.visibility = "collapse";
+            document.getElementById("error-message-label").style.visibility = "collapse";
             document.getElementById("info-label").style.visibility = "visible";
             document.getElementById("info-label").textContent = "✓ Cleared."
         });
