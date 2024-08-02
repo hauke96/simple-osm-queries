@@ -109,6 +109,7 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 	if err != nil {
 		return nil, err
 	}
+	isContextAwareStatement := token.lexeme == contextAwareLocationExpression
 
 	// Then a '.'
 	previousToken := token
@@ -122,7 +123,7 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 
 	// Then object type (e.g. "nodes")
 	p.moveToNextToken()
-	queryType, err := p.parseOsmQueryType()
+	queryType, err := p.parseOsmQueryType(isContextAwareStatement)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +224,7 @@ func (p *Parser) parseBboxLocationExpression() (*query.BboxLocationExpression, e
 	}), nil
 }
 
-func (p *Parser) parseOsmQueryType() (feature.OsmQueryType, error) {
+func (p *Parser) parseOsmQueryType(isContextAwareStatement bool) (feature.OsmQueryType, error) {
 	token := p.currentToken()
 	if token.kind != TokenKindKeyword {
 		return -1, errors.Errorf("Expected object type at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
@@ -237,6 +238,9 @@ func (p *Parser) parseOsmQueryType() (feature.OsmQueryType, error) {
 	case objectTypeRelationsExpression:
 		return feature.OsmQueryRelation, nil
 	case objectTypeChildRelationsExpression:
+		if !isContextAwareStatement {
+			return -1, errors.Errorf("Expected OSM object type '%s', '%s' or '%s' at index %d but found kind=%d with lexeme=%s", objectTypeNodeExpression, objectTypeWaysExpression, objectTypeRelationsExpression, token.startPosition, token.kind, token.lexeme)
+		}
 		return feature.OsmQueryChildRelation, nil
 	}
 
@@ -325,7 +329,7 @@ func (p *Parser) parseNextExpression() (query.FilterExpression, error) {
 			return nil, err
 		}
 	case TokenKindKeyword:
-		if token.lexeme == "this" {
+		if token.lexeme == contextAwareLocationExpression {
 			// Some function call like "this.foo()" -> new statement starts
 			var statement *query.Statement
 			statement, err = p.parseStatement()
@@ -354,7 +358,7 @@ func (p *Parser) parseNegatedExpression(token *Token, expression query.FilterExp
 		return nil, errors.Errorf("Expected start of new expression after '!' (at position %d) but token stream ended", negationPosition)
 	}
 
-	if token.kind != TokenKindOpeningParenthesis && !(token.kind == TokenKindKeyword && token.lexeme == "this") {
+	if token.kind != TokenKindOpeningParenthesis && !(token.kind == TokenKindKeyword && token.lexeme == contextAwareLocationExpression) {
 		// TODO Add "this" keyword here, which is another possible token after "!"
 		return nil, errors.Errorf("Expected '(' after '!' at index %d but found kind=%d with lexeme=%s", token.startPosition, token.kind, token.lexeme)
 	}

@@ -157,11 +157,48 @@ func TestParser_parseOsmObjectType(t *testing.T) {
 	}
 
 	// Act
-	queryType, err := parser.parseOsmQueryType()
+	queryType, err := parser.parseOsmQueryType(false)
 
 	// Assert
 	util.AssertNil(t, err)
-	util.AssertEqual(t, feature.OsmObjNode, queryType)
+	util.AssertEqual(t, feature.OsmQueryNode, queryType)
+	util.AssertEqual(t, 0, parser.index)
+}
+
+func TestParser_parseOsmObjectType_butNotChildRelationsOnNormalExpression(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: TokenKindKeyword, lexeme: "child_relations", startPosition: 0},
+			{kind: TokenKindKeyword, lexeme: "foo", startPosition: 0},
+		},
+		index: 0,
+	}
+
+	// Act
+	queryType, err := parser.parseOsmQueryType(false)
+
+	// Assert
+	util.AssertNotNil(t, err)
+	util.AssertEqual(t, feature.OsmQueryType(-1), queryType)
+}
+
+func TestParser_parseOsmObjectType_childRelations(t *testing.T) {
+	// Arrange
+	parser := &Parser{
+		token: []*Token{
+			{kind: TokenKindKeyword, lexeme: "child_relations", startPosition: 0},
+			{kind: TokenKindKeyword, lexeme: "foo", startPosition: 0},
+		},
+		index: 0,
+	}
+
+	// Act
+	queryType, err := parser.parseOsmQueryType(true)
+
+	// Assert
+	util.AssertNil(t, err)
+	util.AssertEqual(t, feature.OsmQueryChildRelation, queryType)
 	util.AssertEqual(t, 0, parser.index)
 }
 
