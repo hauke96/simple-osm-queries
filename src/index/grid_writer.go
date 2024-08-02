@@ -196,7 +196,8 @@ func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(inputFile string, nodesOf
 			relationToBound[osmObj.ID] = bbox
 
 			if bbox == nil {
-				return errors.Errorf("No BBOX for relation %d could be determined. This might be a bug or strange constellation of data.", osmObj.ID), nil
+				sigolo.Warnf("No BBOX for relation %d could be determined. This relation will be skipped.", osmObj.ID)
+				continue
 			}
 
 			minCell := g.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
