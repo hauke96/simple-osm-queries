@@ -328,19 +328,25 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan CellI
 	for cell := range cellChannel {
 		sigolo.Tracef("[Cell %v] Collect relationships between nodes, ways and relations", cell)
 
-		err := g.addAdditionalIdsToObjectsOfType(feature.OsmObjNode, cell)
+		nodeToRelations, waysToRelations, relationsToParentRelations, err := g.gridIndexReader.readObjectsToRelationMappingFromCellData(cell.X(), cell.Y())
+		if err != nil {
+			sigolo.Errorf("Error reading objects to relations mapping: %+v", err)
+			// TODO return error
+		}
+
+		err = g.addAdditionalIdsToObjectsOfType(feature.OsmObjNode, nodeToRelations, cell)
 		if err != nil {
 			sigolo.Errorf("Error adding additional IDs to nodes: %+v", err)
 			// TODO return error
 		}
 
-		err = g.addAdditionalIdsToObjectsOfType(feature.OsmObjWay, cell)
+		err = g.addAdditionalIdsToObjectsOfType(feature.OsmObjWay, waysToRelations, cell)
 		if err != nil {
 			sigolo.Errorf("Error adding additional IDs to ways: %+v", err)
 			// TODO return error
 		}
 
-		err = g.addAdditionalIdsToObjectsOfType(feature.OsmObjRelation, cell)
+		err = g.addAdditionalIdsToObjectsOfType(feature.OsmObjRelation, relationsToParentRelations, cell)
 		if err != nil {
 			sigolo.Errorf("Error adding additional IDs to relations: %+v", err)
 			// TODO return error
@@ -348,26 +354,16 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan CellI
 	}
 }
 
-// addAdditionalIdsToObjectsOfType reads the features for the given cell and object type and also the IDs of the objects
-// that should be connected. Example: If the object type is "way" then the way-to-relation-mapping is determined from
-// the relation cell to add the relation IDs to all ways in this cell.
-func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.OsmObjectType, cell CellIndex) error {
+// addAdditionalIdsToObjectsOfType adds the reverse IDs to the given object type. For example nodes themselves do not
+// contain IDs to the ways they belong to. So this function adds this information to the given object type. In case of
+// relations, this is done using the given object to relation map. This map maps an ID of the given object type to the
+// relations this object is part of.
+func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.OsmObjectType, objectTypeToRelationMapping map[uint64][]osm.RelationID, cell CellIndex) error {
 	var err error
-	var nodeToWays map[uint64][]osm.WayID
-	var nodeToRelations map[uint64][]osm.RelationID
-	var wayToRelations map[uint64][]osm.RelationID
-	var relationToParentRelations map[uint64][]osm.RelationID
 
-	switch objectType {
-	case feature.OsmObjNode:
+	var nodeToWays map[uint64][]osm.WayID
+	if objectType == feature.OsmObjNode {
 		nodeToWays, err = g.gridIndexReader.readNodeToWayMappingFromCellData(cell.X(), cell.Y())
-		nodeToRelations, err = g.gridIndexReader.readNodeToRelationMappingFromCellData(cell.X(), cell.Y())
-	case feature.OsmObjWay:
-		wayToRelations, err = g.gridIndexReader.readWayToRelationMappingFromCellData(cell.X(), cell.Y())
-	case feature.OsmObjRelation:
-		relationToParentRelations, err = g.gridIndexReader.readRelationToParentRelationMappingFromCellData(cell.X(), cell.Y())
-	default:
-		return errors.Errorf("Unsupported object type %v to add IDs to", objectType)
 	}
 
 	cellFolderName := path.Join(g.BaseFolder, objectType.String(), strconv.Itoa(cell.X()))
@@ -406,15 +402,15 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 					if wayIds, ok := nodeToWays[encFeature.GetID()]; ok {
 						encFeature.(*feature.EncodedNodeFeature).WayIds = wayIds
 					}
-					if relationIds, ok := nodeToRelations[encFeature.GetID()]; ok {
+					if relationIds, ok := objectTypeToRelationMapping[encFeature.GetID()]; ok {
 						encFeature.(*feature.EncodedNodeFeature).RelationIds = relationIds
 					}
 				case feature.OsmObjWay:
-					if relationIds, ok := wayToRelations[encFeature.GetID()]; ok {
+					if relationIds, ok := objectTypeToRelationMapping[encFeature.GetID()]; ok {
 						encFeature.(*feature.EncodedWayFeature).RelationIds = relationIds
 					}
 				case feature.OsmObjRelation:
-					if relationIds, ok := relationToParentRelations[encFeature.GetID()]; ok {
+					if relationIds, ok := objectTypeToRelationMapping[encFeature.GetID()]; ok {
 						encFeature.(*feature.EncodedRelationFeature).ParentRelationIds = relationIds
 					}
 				default:
