@@ -389,7 +389,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 	var finishWaitGroup sync.WaitGroup
 	finishWaitGroup.Add(1)
 
-	// TODO We read the same cells we write to. The new written cells will be bigger, so this might cause problems on cells where a lot of IDs are added to. Or doesn't it?
+	// TODO Use the data-bytes directly without deserialization first. This probably saves a lot of time.
 	go func() {
 		for encFeatures := range readFeatureChannel {
 			for _, encFeature := range encFeatures {
