@@ -82,18 +82,18 @@ func (l *Lexer) nextToken() (*Token, error) {
 		}
 
 		// Single-char token
-		switch char {
-		case '(':
+		switch string(char) {
+		case TokenKindOpeningParenthesis.Lexeme():
 			return l.currentSingleCharToken(TokenKindOpeningParenthesis), nil
-		case ')':
+		case TokenKindClosingParenthesis.Lexeme():
 			return l.currentSingleCharToken(TokenKindClosingParenthesis), nil
-		case '{':
+		case TokenKindOpeningBraces.Lexeme():
 			return l.currentSingleCharToken(TokenKindOpeningBraces), nil
-		case '}':
+		case TokenKindClosingBraces.Lexeme():
 			return l.currentSingleCharToken(TokenKindClosingBraces), nil
-		case '.':
+		case TokenKindExpressionSeparator.Lexeme():
 			return l.currentSingleCharToken(TokenKindExpressionSeparator), nil
-		case '*':
+		case TokenKindWildcard.Lexeme():
 			return l.currentSingleCharToken(TokenKindWildcard), nil
 		}
 
