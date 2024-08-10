@@ -32,6 +32,11 @@
             textarea {
                 height: 100%;
                 resize: none;
+                color: transparent;
+                caret-color: black;
+                flex-grow: 1;
+                white-space: break-spaces;
+                word-break: break-word;
             }
 
             table {
@@ -52,6 +57,33 @@
             button {
                 border: 1px solid var(--col-gray);
                 background: var(--col-primary-light);
+            }
+
+            .input-wrapper {
+                position: relative;
+                display: flex;
+                width: 100%;
+                height: 100%;
+            }
+
+            .colored-input {
+                position: absolute;
+                top: 0;
+                left: 0;
+                flex-grow: 1;
+                /*font-size: 1.1rem;*/
+                /*font-family: monospace;*/
+                margin: 0;
+                padding: 0.2rem;
+                pointer-events: none;
+            }
+
+            #colored-code-input {
+                pointer-events: none;
+                margin: 0;
+                padding: 0;
+                white-space: break-spaces;
+                word-break: break-word;
             }
 
             .button-container button {
@@ -167,7 +199,10 @@
             <p id="error-request-label" class="label error">Request failed, the query is probably wrong</p>
             <p id="error-message-label" class="label error"></p>
 
-            <textarea id="query-input"></textarea>
+            <div class="input-wrapper">
+                <textarea id="query-input"></textarea>
+                <pre class="colored-input"><code id="colored-code-input"></code></pre>
+            </div>
         </div>
         <div id="map" class="map"></div>
     </body>
@@ -176,6 +211,7 @@
         const container = document.getElementById("popup");
         const content = document.getElementById("popup-content");
         const closer = document.getElementById("popup-closer");
+        const codeInputControl = document.getElementById("colored-code-input");
 
         /*
         Set default values
@@ -325,7 +361,11 @@
             document.getElementById("error-message-label").style.visibility = "collapse";
 
             let query = document.getElementById("query-input").value;
-            query = query.replaceAll("{{bbox}}", "" + getCurrentBbox());
+            const bboxPlaceholder = "{{bbox}}";
+            const bboxValue = "" + getCurrentBbox();
+            const bboxPlaceholderIndex = query.indexOf(bboxPlaceholder);
+            console.log("Replace bbox placeholder at index "+bboxPlaceholderIndex)
+            query = query.replace(bboxPlaceholder, bboxValue);
             console.log("Send query:", query);
 
             fetch("./query", {
@@ -350,6 +390,17 @@
                     if (responseObject.error) {
                         document.getElementById("error-request-label").style.visibility = "visible";
                         document.getElementById("error-request-label").innerText = responseObject.error;
+
+                        // Revert the changes made to the query due to expansion of the {{bbox}} placeholder.
+                        let errPos = responseObject.details.position;
+                        if(bboxPlaceholderIndex >= 0 && errPos > bboxPlaceholderIndex) {
+                            errPos = errPos - bboxValue.length + bboxPlaceholder.length;
+                        }
+
+                        codeInputControl.innerHTML = codeInputControl.innerHTML.substring(0, errPos) +
+                            '<span style="background: red; color: white">'+codeInputControl.innerHTML.at(errPos)+"</span>" +
+                            codeInputControl.innerHTML.substring(errPos+1, codeInputControl.innerHTML.length);
+
                         return;
                     }
 
@@ -406,12 +457,15 @@
         const storedValue = localStorage.getItem("query-input");
         if(!!storedValue) {
             queryInputControl.value = storedValue;
+            codeInputControl.innerHTML = storedValue;
         }
         queryInputControl.addEventListener("input", evt => { // For manual input
             localStorage.setItem("query-input", evt.target.value);
+            codeInputControl.innerHTML = evt.target.value;
         });
         queryInputControl.addEventListener("change", evt => { // For automatic input, i.e. Tab behavior from below
             localStorage.setItem("query-input", evt.target.value);
+            codeInputControl.innerHTML = evt.target.value;
         });
         queryInputControl.addEventListener("keydown", evt => {
             if(evt.code === "Tab") {
