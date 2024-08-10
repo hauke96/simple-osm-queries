@@ -34,9 +34,9 @@ func getPrintableStackTrace(stack stack) string {
 type ParsingExpectedButFoundError struct {
 	Message         string    `json:"message"`
 	Position        int       `json:"position"`
-	CurrentLexeme   string    `json:"current-lexeme"`
-	CurrentKind     TokenKind `json:"current-kind"`
-	ExpectedMessage string    `json:"expected-message"`
+	CurrentLexeme   string    `json:"currentLexeme"`
+	CurrentKind     TokenKind `json:"currentKind"`
+	ExpectedMessage string    `json:"expectedMessage"`
 	stack           stack
 }
 
@@ -68,9 +68,9 @@ func (e *ParsingExpectedButFoundError) Error() string {
 type ParsingExpectedTokenKindError struct {
 	Message       string    `json:"message"`
 	Position      int       `json:"position"`
-	CurrentLexeme string    `json:"current-lexeme"`
-	CurrentKind   TokenKind `json:"current-kind"`
-	ExpectedKind  TokenKind `json:"expected-kind"`
+	CurrentLexeme string    `json:"currentLexeme"`
+	CurrentKind   TokenKind `json:"currentKind"`
+	ExpectedKind  TokenKind `json:"expectedKind"`
 	stack         stack
 }
 
@@ -102,7 +102,7 @@ func (e *ParsingExpectedTokenKindError) Error() string {
 type ParsingTokenStreamEndedError struct {
 	Message         string `json:"message"`
 	Position        int    `json:"position"`
-	ExpectedMessage string `json:"expected-message"`
+	ExpectedMessage string `json:"expectedMessage"`
 	stack           stack
 }
 
@@ -117,7 +117,7 @@ func (e *ParsingTokenStreamEndedError) Format(s fmt.State, verb rune) {
 
 func ParsingTokenStreamEndAtPosition(position int, expectedMessage string) *ParsingTokenStreamEndedError {
 	return &ParsingTokenStreamEndedError{
-		Message:         fmt.Sprintf("Parsing error: Token stream ended at position %d, epxected %s.", position, expectedMessage),
+		Message:         fmt.Sprintf("Parsing error: Token stream ended at position %d, expected %s.", position, expectedMessage),
 		Position:        position,
 		ExpectedMessage: expectedMessage,
 		stack:           getCurrentStack(),

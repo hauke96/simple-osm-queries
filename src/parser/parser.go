@@ -70,6 +70,20 @@ func (p *Parser) peekNextToken() *Token {
 	return p.token[p.index+1]
 }
 
+func (p *Parser) hasNextToken() bool {
+	return p.peekNextToken() != nil
+}
+
+func (p *Parser) getNextTokenStartPosition() int {
+	if p.hasNextToken() {
+		return p.peekNextToken().startPosition
+	} else if p.currentToken() != nil {
+		// No next token, so the start position of this hypothetical next token is right behind the current one.
+		return p.currentToken().startPosition + len(p.currentToken().lexeme)
+	}
+	return -1
+}
+
 func (p *Parser) currentToken() *Token {
 	if p.index >= len(p.token) {
 		return nil
@@ -97,10 +111,10 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 
 	// Parse location expression, such as "bbox(...)" but also context aware expressions like "this.ways"
 	var locationExpression query.LocationExpression
-	token := p.currentToken()
-	if token == nil {
-		return nil, ParsingTokenStreamEndAtPosition(p.index, "Expected location expression")
+	if !p.hasNextToken() {
+		return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected location expression")
 	}
+	token := p.currentToken()
 	if token.kind != TokenKindKeyword {
 		return nil, ParsingErrorExpectedButFound("location expression keyword", token.startPosition, token.lexeme, token.kind)
 	}
@@ -113,10 +127,10 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 	isContextAwareStatement := token.lexeme == contextAwareLocationExpression
 
 	// Then a '.'
-	token = p.moveToNextToken()
-	if token == nil {
-		return nil, ParsingTokenStreamEndAtPosition(p.index, "Expected '.'")
+	if !p.hasNextToken() {
+		return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected '.'")
 	}
+	token = p.moveToNextToken()
 	if token.kind != TokenKindExpressionSeparator {
 		return nil, ParsingErrorExpectedTokenKind(token.startPosition, token.lexeme, token.kind, TokenKindExpressionSeparator)
 	}
@@ -129,10 +143,10 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 	}
 
 	// Then "{"
-	token = p.moveToNextToken()
-	if token == nil {
-		return nil, ParsingTokenStreamEndAtPosition(p.index, "Expected '{'")
+	if !p.hasNextToken() {
+		return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected '{'")
 	}
+	token = p.moveToNextToken()
 	if token.kind != TokenKindOpeningBraces {
 		return nil, ParsingErrorExpectedTokenKind(token.startPosition, token.lexeme, token.kind, TokenKindOpeningBraces)
 	}
@@ -144,10 +158,10 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 	}
 
 	// Then finally "}"
-	token = p.moveToNextToken()
-	if token == nil {
-		return nil, ParsingTokenStreamEndAtPosition(p.index, "Expected '}'")
+	if !p.hasNextToken() {
+		return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected '}'")
 	}
+	token = p.moveToNextToken()
 	if token.kind != TokenKindClosingBraces {
 		return nil, ParsingErrorExpectedTokenKind(token.startPosition, token.lexeme, token.kind, TokenKindClosingBraces)
 	}
@@ -156,10 +170,10 @@ func (p *Parser) parseStatement() (*query.Statement, error) {
 }
 
 func (p *Parser) parseLocationExpression() (query.LocationExpression, error) {
-	token := p.currentToken()
-	if token == nil {
-		return nil, ParsingTokenStreamEndAtPosition(p.index, "Expected keyword for location expression")
+	if !p.hasNextToken() {
+		return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected keyword for location expression")
 	}
+	token := p.currentToken()
 	if token.kind != TokenKindKeyword || !util.Contains(locationExpressions, token.lexeme) && token.lexeme != contextAwareLocationExpression {
 		return nil, ParsingErrorExpectedButFound("location expression", token.startPosition, token.lexeme, token.kind)
 	}
@@ -190,10 +204,10 @@ func (p *Parser) parseBboxLocationExpression() (*query.BboxLocationExpression, e
 	}
 
 	// Then a "(" is expected
-	parenthesisToken := p.moveToNextToken()
-	if parenthesisToken == nil {
-		return nil, ParsingTokenStreamEndAtPosition(p.index, "Expected '('")
+	if !p.hasNextToken() {
+		return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected '('")
 	}
+	parenthesisToken := p.moveToNextToken()
 	if parenthesisToken.kind != TokenKindOpeningParenthesis {
 		return nil, ParsingErrorExpectedTokenKind(token.startPosition, token.lexeme, token.kind, TokenKindOpeningParenthesis)
 	}
@@ -251,12 +265,12 @@ func (p *Parser) parseNextFilterExpressions() (query.FilterExpression, error) {
 	}
 
 	for {
-		token := p.peekNextToken()
-		if token == nil {
-			return nil, ParsingTokenStreamEndAtPosition(p.index, "Expected filter expression or '}'")
+		if !p.hasNextToken() {
+			return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected filter expression or '}'")
 		}
 
 		// Closing parentheses and braces are handles by calling functions
+		token := p.peekNextToken()
 		if token.kind == TokenKindClosingBraces {
 			break
 		} else if token.kind == TokenKindClosingParenthesis {
@@ -347,11 +361,11 @@ func (p *Parser) parseNextExpression() (query.FilterExpression, error) {
 }
 
 func (p *Parser) parseNegatedExpression(token *Token, expression query.FilterExpression, err error) (query.FilterExpression, error) {
-	token = p.peekNextToken()
-	if token == nil {
-		return nil, ParsingTokenStreamEndAtPosition(p.index, "Expected start of new expression after '!'")
+	if !p.hasNextToken() {
+		return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected start of new expression after '!'")
 	}
 
+	token = p.peekNextToken()
 	if token.kind != TokenKindOpeningParenthesis && !(token.kind == TokenKindKeyword && token.lexeme == contextAwareLocationExpression) {
 		// TODO Add "this" keyword here, which is another possible token after "!"
 		return nil, ParsingErrorExpectedButFound("'(' after '!'", token.startPosition, token.lexeme, token.kind)
@@ -380,12 +394,12 @@ func (p *Parser) parseNormalExpression(token *Token) (query.FilterExpression, er
 	binaryOperatorToken := p.currentToken()
 
 	// Parse value (e.g. "primary" in "highway=primary")
-	valueToken := p.moveToNextToken()
-	if valueToken == nil {
-		return nil, ParsingTokenStreamEndAtPosition(p.index, "Expected value after key "+key+binaryOperatorToken.lexeme)
+	if !p.hasNextToken() {
+		return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected value after key "+key+binaryOperatorToken.lexeme)
 	}
+	valueToken := p.moveToNextToken()
 	if valueToken.kind != TokenKindKeyword && valueToken.kind != TokenKindNumber && valueToken.kind != TokenKindString && valueToken.kind != TokenKindWildcard {
-		return nil, ParsingErrorExpectedButFound("value after key "+key+binaryOperatorToken.lexeme, token.startPosition, token.lexeme, token.kind)
+		return nil, ParsingErrorExpectedButFound("value after key "+key+binaryOperatorToken.lexeme, valueToken.startPosition, valueToken.lexeme, valueToken.kind)
 	}
 
 	if valueToken.kind == TokenKindWildcard {
@@ -434,9 +448,12 @@ func (p *Parser) parseNormalExpression(token *Token) (query.FilterExpression, er
 }
 
 func (p *Parser) parseBinaryOperator(previousLexeme string, previousLexemePos int) (query.BinaryOperator, error) {
+	if !p.hasNextToken() {
+		return query.BinOpInvalid, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected binary operator")
+	}
 	token := p.currentToken()
-	if token == nil || token.kind != TokenKindOperator {
-		return query.BinOpInvalid, ParsingTokenStreamEndAtPosition(p.index, "Expected binary operator")
+	if token.kind != TokenKindOperator {
+		return query.BinOpInvalid, ParsingErrorExpectedButFound("Expected binary operator", token.startPosition, token.lexeme, token.kind)
 	}
 
 	switch token.lexeme {
