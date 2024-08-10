@@ -32,6 +32,7 @@ func getPrintableStackTrace(stack stack) string {
 
 // ParsingExpectedButFoundError models a typical "Expected foo but found bar" kind of error.
 type ParsingExpectedButFoundError struct {
+	Message         string    `json:"message"`
 	Position        int       `json:"position"`
 	CurrentLexeme   string    `json:"current-lexeme"`
 	CurrentKind     TokenKind `json:"current-kind"`
@@ -41,6 +42,7 @@ type ParsingExpectedButFoundError struct {
 
 func ParsingErrorExpectedButFound(expectedMessage string, position int, currentLexeme string, currentKind TokenKind) *ParsingExpectedButFoundError {
 	return &ParsingExpectedButFoundError{
+		Message:         fmt.Sprintf("Parsing error: Expected %s at position %d but found '%s' of kind %s.", expectedMessage, position, currentLexeme, currentKind.String()),
 		Position:        position,
 		CurrentLexeme:   currentLexeme,
 		CurrentKind:     currentKind,
@@ -59,11 +61,12 @@ func (e *ParsingExpectedButFoundError) Format(s fmt.State, verb rune) {
 }
 
 func (e *ParsingExpectedButFoundError) Error() string {
-	return fmt.Sprintf("Parsing error: Expected %s at position %d but found '%s' of kind %s.", e.ExpectedMessage, e.Position, e.CurrentLexeme, e.CurrentKind.String())
+	return e.Message
 }
 
 // ParsingExpectedTokenKindError models a typical "Expected '(' but found ..." kind of error for a specific wanted token kind.
 type ParsingExpectedTokenKindError struct {
+	Message       string    `json:"message"`
 	Position      int       `json:"position"`
 	CurrentLexeme string    `json:"current-lexeme"`
 	CurrentKind   TokenKind `json:"current-kind"`
@@ -73,6 +76,7 @@ type ParsingExpectedTokenKindError struct {
 
 func ParsingErrorExpectedTokenKind(position int, currentLexeme string, currentKind TokenKind, expectedKind TokenKind) *ParsingExpectedTokenKindError {
 	return &ParsingExpectedTokenKindError{
+		Message:       fmt.Sprintf("Parsing error: Expected '%s' (%s) at position %d but found '%s' of kind %s.", expectedKind.Lexeme(), expectedKind.String(), position, currentLexeme, currentKind.String()),
 		Position:      position,
 		CurrentLexeme: currentLexeme,
 		CurrentKind:   currentKind,
@@ -91,11 +95,12 @@ func (e *ParsingExpectedTokenKindError) Format(s fmt.State, verb rune) {
 }
 
 func (e *ParsingExpectedTokenKindError) Error() string {
-	return fmt.Sprintf("Parsing error: Expected '%s' (%s) at position %d but found '%s' of kind %s.", e.ExpectedKind.Lexeme(), e.ExpectedKind.String(), e.Position, e.CurrentLexeme, e.CurrentKind.String())
+	return e.Message
 }
 
 // ParsingTokenStreamEndedError models a typical "Expected foo but found bar" kind of error.
 type ParsingTokenStreamEndedError struct {
+	Message         string `json:"message"`
 	Position        int    `json:"position"`
 	ExpectedMessage string `json:"expected-message"`
 	stack           stack
@@ -110,14 +115,15 @@ func (e *ParsingTokenStreamEndedError) Format(s fmt.State, verb rune) {
 	}
 }
 
-func ParsingTokenStreamEndAtPosition(currentPosition int, expectedMessage string) *ParsingTokenStreamEndedError {
+func ParsingTokenStreamEndAtPosition(position int, expectedMessage string) *ParsingTokenStreamEndedError {
 	return &ParsingTokenStreamEndedError{
-		Position:        currentPosition,
+		Message:         fmt.Sprintf("Parsing error: Token stream ended at position %d, epxected %s.", position, expectedMessage),
+		Position:        position,
 		ExpectedMessage: expectedMessage,
 		stack:           getCurrentStack(),
 	}
 }
 
 func (e *ParsingTokenStreamEndedError) Error() string {
-	return fmt.Sprintf("Parsing error: Token stream ended at position %d, epxected %s.", e.Position, e.ExpectedMessage)
+	return e.Message
 }
