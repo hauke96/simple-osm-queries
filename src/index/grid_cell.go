@@ -32,3 +32,13 @@ func (c CellExtent) containsAny(cells []CellIndex) bool {
 	}
 	return false
 }
+
+func (c CellExtent) Subdivide(cellsX int, cellsY int) []CellExtent {
+	var newExtents []CellExtent
+	for x := c.LowerLeftCell().X(); x < c.UpperRightCell().X(); x += cellsX {
+		for y := c.LowerLeftCell().Y(); y < c.UpperRightCell().Y(); y += cellsY {
+			newExtents = append(newExtents, CellExtent{CellIndex{x, y}, CellIndex{x + cellsX - 1, y + cellsY - 1}})
+		}
+	}
+	return newExtents
+}

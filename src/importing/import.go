@@ -59,9 +59,19 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	scannerFactory := func() (osm.Scanner, error) {
 		return getOsmScannerFromData(inputFile, inputFileData)
 	}
-	err = index.ImportDataFile(tagIndex, scannerFactory, baseFolder, cellWidth, cellHeight, cellExtent, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap)
+
+	sigolo.Debugf("Remove the grid-index base folder %s", baseFolder)
+	err = os.RemoveAll(baseFolder)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
+	}
+
+	for _, subExtent := range cellExtent.Subdivide(4, 4) {
+		sigolo.Debugf("Process sub-extent %v", subExtent)
+		err = index.ImportDataFile(tagIndex, scannerFactory, baseFolder, cellWidth, cellHeight, subExtent, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap)
+		if err != nil {
+			return err
+		}
 	}
 
 	duration = time.Since(currentStepStartTime)
@@ -78,7 +88,8 @@ func getOsmScannerFromData(inputFile string, inputFileData []byte) (osm.Scanner,
 	if strings.HasSuffix(inputFile, ".osm") {
 		return osmxml.New(context.Background(), bytes.NewReader(inputFileData)), nil
 	} else if strings.HasSuffix(inputFile, ".pbf") {
-		return osmpbf.New(context.Background(), bytes.NewReader(inputFileData), 1), nil
+		scanner := osmpbf.New(context.Background(), bytes.NewReader(inputFileData), 1)
+		return scanner, nil
 	}
 	return nil, errors.Errorf("Unsupported OSM file type '%s'", filepath.Ext(inputFile))
 }
