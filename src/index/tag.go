@@ -7,7 +7,6 @@ import (
 	"github.com/paulmach/osm"
 	"github.com/pkg/errors"
 	"io"
-	"math"
 	"os"
 	"path"
 	"soq/util"
@@ -116,7 +115,7 @@ func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 
 // ImportAndSave imports and saves all tags to the tag index on disk. For performance reasons, it also collects all
 // node and way IDs of relations within the input file. This can be used for later indices to correctly store relations.
-func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHeight float64) (error, []osm.NodeID, []osm.WayID, map[osm.WayID][]CellIndex, map[osm.RelationID][]CellIndex, CellExtent) {
+func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHeight float64) (error, []osm.NodeID, []osm.WayID, map[osm.WayID][]CellIndex, map[osm.RelationID][]CellIndex, CellExtent, map[CellIndex]CellIndex) {
 	sigolo.Info("Start processing tags from input data")
 
 	var keyMap []string                  // [key-index] -> key-string
@@ -127,10 +126,8 @@ func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHei
 	var nodesOfRelations []osm.NodeID
 	var waysOfRelations []osm.WayID
 
-	maxIntValue := math.MaxInt
-	minIntValue := math.MinInt
-	lowerLeftCell := CellIndex{maxIntValue, maxIntValue}
-	upperRightCell := CellIndex{minIntValue, minIntValue}
+	var extent CellExtent
+	cellsWithData := map[CellIndex]CellIndex{}
 	nodeToCellMap := map[osm.NodeID]CellIndex{}
 	wayToCellMap := map[osm.WayID][]CellIndex{}
 	relationToCellMap := map[osm.RelationID][]CellIndex{}
@@ -147,11 +144,8 @@ func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHei
 
 			cell := CellIndex{int(osmObj.Lon / cellWidth), int(osmObj.Lat / cellHeight)}
 			nodeToCellMap[osmObj.ID] = cell
-			if cell.isAboveRightOf(upperRightCell) {
-				upperRightCell = cell
-			} else if cell.isBelowLeftOf(lowerLeftCell) {
-				lowerLeftCell = cell
-			}
+			extent = extent.Expand(cell)
+			cellsWithData[cell] = cell
 		case *osm.Way:
 			if !firstWayHasBeenProcessed {
 				sigolo.Debug("Start processing way tags (2/3)")
@@ -255,7 +249,7 @@ func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHei
 	}
 	i.tempEncodedValuesLength = len(i.tempEncodedValues)
 
-	return i.SaveToFile(TagIndexFilename), nodesOfRelations, waysOfRelations, wayToCellMap, relationToCellMap, CellExtent{lowerLeftCell, upperRightCell}
+	return i.SaveToFile(TagIndexFilename), nodesOfRelations, waysOfRelations, wayToCellMap, relationToCellMap, extent, cellsWithData
 }
 
 // GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.

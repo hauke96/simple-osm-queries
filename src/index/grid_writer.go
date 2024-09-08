@@ -304,7 +304,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells map[CellIndex]C
 	}
 
 	for cell, _ := range cells {
-		sigolo.Debugf("Add cell %v to queue (%d/%d)", cell, currentCell, numberOfCells)
+		sigolo.Tracef("Add cell %v to queue (%d/%d)", cell, currentCell, numberOfCells)
 		currentCell++
 
 		cellQueue <- cell

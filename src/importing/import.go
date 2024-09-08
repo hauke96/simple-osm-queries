@@ -42,7 +42,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	tagIndex := &index.TagIndex{
 		BaseFolder: indexBaseFolder,
 	}
-	err, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap, cellExtent := tagIndex.ImportAndSave(scanner, cellWidth, cellHeight)
+	err, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap, cellExtent, cellsWithData := tagIndex.ImportAndSave(scanner, cellWidth, cellHeight)
 	if err != nil {
 		return err
 	}
@@ -66,12 +66,26 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
 	}
 
-	for _, subExtent := range cellExtent.Subdivide(4, 4) {
-		sigolo.Debugf("Process sub-extent %v", subExtent)
+	var subExtents []index.CellExtent
+	for _, subExtent := range cellExtent.Subdivide(25, 25) {
+		if subExtent.ContainsAnyInMap(cellsWithData) {
+			subExtents = append(subExtents, subExtent)
+		}
+	}
+
+	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
+	for i, subExtent := range subExtents {
+		currentSubExtentStartTime := time.Now()
+
+		sigolo.Debugf("Process sub-extent %v (%d / %d)", subExtent, i, len(subExtents))
+
 		err = index.ImportDataFile(tagIndex, scannerFactory, baseFolder, cellWidth, cellHeight, subExtent, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap)
 		if err != nil {
 			return err
 		}
+
+		duration = time.Since(currentSubExtentStartTime)
+		sigolo.Infof("Processed sub-extent in %s", duration)
 	}
 
 	duration = time.Since(currentStepStartTime)
