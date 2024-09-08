@@ -21,7 +21,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	tagIndex := &index.TagIndex{
 		BaseFolder: indexBaseFolder,
 	}
-	err, nodesOfRelations, waysOfRelations := tagIndex.ImportAndSave(inputFile)
+	err, nodesOfRelations, waysOfRelations, wayToCellMap, relationToCellMap := tagIndex.ImportAndSave(inputFile, cellWidth, cellHeight)
 	if err != nil {
 		return err
 	}

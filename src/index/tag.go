@@ -119,7 +119,7 @@ func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 
 // ImportAndSave imports and saves all tags to the tag index on disk. For performance reasons, it also collects all
 // node and way IDs of relations within the input file. This can be used for later indices to correctly store relations.
-func (i *TagIndex) ImportAndSave(inputFile string) (error, []osm.NodeID, []osm.WayID) {
+func (i *TagIndex) ImportAndSave(inputFile string, cellWidth float64, cellHeight float64) (error, []osm.NodeID, []osm.WayID, map[osm.WayID][]CellIndex, map[osm.RelationID][]CellIndex) {
 	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
 		sigolo.Error("Input file must be an .osm or .pbf file")
 		os.Exit(1)
@@ -127,7 +127,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) (error, []osm.NodeID, []osm.W
 
 	f, err := os.Open(inputFile)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to open input file %s", inputFile), nil, nil
+		return errors.Wrapf(err, "Unable to open input file %s", inputFile), nil, nil, nil, nil
 	}
 	defer f.Close()
 
@@ -150,6 +150,10 @@ func (i *TagIndex) ImportAndSave(inputFile string) (error, []osm.NodeID, []osm.W
 	var nodesOfRelations []osm.NodeID
 	var waysOfRelations []osm.WayID
 
+	nodeToCellMap := map[osm.NodeID]CellIndex{}
+	wayToCellMap := map[osm.WayID][]CellIndex{}
+	relationToCellMap := map[osm.RelationID][]CellIndex{}
+
 	firstWayHasBeenProcessed := false
 	firstRelationHasBeenProcessed := false
 
@@ -159,12 +163,26 @@ func (i *TagIndex) ImportAndSave(inputFile string) (error, []osm.NodeID, []osm.W
 		switch osmObj := scanner.Object().(type) {
 		case *osm.Node:
 			tags = osmObj.Tags
+			nodeToCellMap[osmObj.ID] = CellIndex{int(osmObj.Lon / cellWidth), int(osmObj.Lat / cellHeight)}
 		case *osm.Way:
 			if !firstWayHasBeenProcessed {
 				sigolo.Debug("Start processing way tags (2/3)")
 				firstWayHasBeenProcessed = true
 			}
 			tags = osmObj.Tags
+
+			wayCells := map[CellIndex]CellIndex{}
+			for _, nodeId := range osmObj.Nodes.NodeIDs() {
+				cell := nodeToCellMap[nodeId]
+				wayCells[cell] = cell
+			}
+
+			wayToCellMap[osmObj.ID] = make([]CellIndex, len(wayCells))
+			j := 0
+			for _, cell := range wayCells {
+				wayToCellMap[osmObj.ID][j] = cell
+				j++
+			}
 		case *osm.Relation:
 			if !firstRelationHasBeenProcessed {
 				sigolo.Debug("Start processing relation tags (2/3)")
@@ -172,13 +190,35 @@ func (i *TagIndex) ImportAndSave(inputFile string) (error, []osm.NodeID, []osm.W
 			}
 			tags = osmObj.Tags
 
+			relCells := map[CellIndex]CellIndex{}
 			for _, member := range osmObj.Members {
 				switch member.Type {
 				case osm.TypeNode:
-					nodesOfRelations = append(nodesOfRelations, osm.NodeID(member.Ref))
+					nodeId := osm.NodeID(member.Ref)
+					nodesOfRelations = append(nodesOfRelations, nodeId)
+					cell := nodeToCellMap[nodeId]
+					relCells[cell] = cell
 				case osm.TypeWay:
-					waysOfRelations = append(waysOfRelations, osm.WayID(member.Ref))
+					wayId := osm.WayID(member.Ref)
+					waysOfRelations = append(waysOfRelations, wayId)
+					cells := wayToCellMap[wayId]
+					for _, cell := range cells {
+						relCells[cell] = cell
+					}
+				case osm.TypeRelation:
+					relId := osm.RelationID(member.Ref)
+					cells := relationToCellMap[relId]
+					for _, cell := range cells {
+						relCells[cell] = cell
+					}
 				}
+			}
+
+			relationToCellMap[osmObj.ID] = make([]CellIndex, len(relCells))
+			j := 0
+			for _, cell := range relCells {
+				relationToCellMap[osmObj.ID][j] = cell
+				j++
 			}
 		}
 
@@ -230,7 +270,7 @@ func (i *TagIndex) ImportAndSave(inputFile string) (error, []osm.NodeID, []osm.W
 	importDuration := time.Since(importStartTime)
 	sigolo.Infof("Created tag-index from OSM data in %s", importDuration)
 
-	return i.SaveToFile(TagIndexFilename), nodesOfRelations, waysOfRelations
+	return i.SaveToFile(TagIndexFilename), nodesOfRelations, waysOfRelations, wayToCellMap, relationToCellMap
 }
 
 // GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.
