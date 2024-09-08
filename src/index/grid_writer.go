@@ -34,7 +34,7 @@ type GridIndexWriter struct {
 
 type scannerFactoryFunc func() (osm.Scanner, error)
 
-func ImportDataFile(scannerFactory scannerFactoryFunc, baseFolder string, cellWidth float64, cellHeight float64, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID, tagIndex *TagIndex) error {
+func ImportDataFile(tagIndex *TagIndex, scannerFactory scannerFactoryFunc, baseFolder string, cellWidth float64, cellHeight float64, lowerLeftCell CellIndex, upperRightCell CellIndex, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID, wayToCellsMap map[osm.WayID][]CellIndex, relationToCellsMap map[osm.RelationID][]CellIndex) error {
 	err := os.RemoveAll(baseFolder)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
@@ -60,7 +60,7 @@ func ImportDataFile(scannerFactory scannerFactoryFunc, baseFolder string, cellWi
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
-	err, nodeCells := gridIndexWriter.writeOsmToRawEncodedFeatures(scannerFactory, nodesOfRelations, waysOfRelations)
+	err, nodeCells := gridIndexWriter.writeOsmToRawEncodedFeatures(scannerFactory, nodesOfRelations, waysOfRelations, lowerLeftCell, upperRightCell, wayToCellsMap, relationToCellsMap)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func ImportDataFile(scannerFactory scannerFactoryFunc, baseFolder string, cellWi
 
 // writeOsmToRawEncodedFeatures Reads the input PBF file and converts all OSM objects into raw encoded features and
 // writes them into their respective cells. The returned cell map contains all cells that contain nodes.
-func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(scannerFactory scannerFactoryFunc, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) (error, map[CellIndex]CellIndex) {
+func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(scannerFactory scannerFactoryFunc, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID, lowerLeftCell CellIndex, upperRightCell CellIndex, wayToCellsMap map[osm.WayID][]CellIndex, relationToCellsMap map[osm.RelationID][]CellIndex) (error, map[CellIndex]CellIndex) {
 	sigolo.Info("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 
@@ -122,12 +122,15 @@ func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(scannerFactory scannerFac
 
 		switch osmObj := obj.(type) {
 		case *osm.Node:
+			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
+			if !cell.isWithin(lowerLeftCell, upperRightCell) {
+				continue
+			}
+
 			if _, ok := nodeToBound[osmObj.ID]; ok {
 				bbox := osmObj.Point().Bound()
 				nodeToBound[osmObj.ID] = &bbox
 			}
-
-			cell := g.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
 
 			nodeFeature, err := g.toEncodedNodeFeature(osmObj, emptyWayIds, emptyRelationIds, tempEncodedValues)
 			sigolo.FatalCheck(err)
@@ -136,6 +139,10 @@ func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(scannerFactory scannerFac
 
 			nodeCells[cell] = cell
 		case *osm.Way:
+			if !isAnyWithin(wayToCellsMap[osmObj.ID], lowerLeftCell, upperRightCell) {
+				continue
+			}
+
 			if !firstWayHasBeenProcessed {
 				sigolo.Debug("Start processing ways (2/3)")
 				firstWayHasBeenProcessed = true
@@ -148,6 +155,10 @@ func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(scannerFactory scannerFac
 
 			osmWayQueue <- osmObj
 		case *osm.Relation:
+			if !isAnyWithin(relationToCellsMap[osmObj.ID], lowerLeftCell, upperRightCell) {
+				continue
+			}
+
 			if !firstRelationHasBeenProcessed {
 				sigolo.Debug("Start processing relations (3/3)")
 				firstRelationHasBeenProcessed = true
