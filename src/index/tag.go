@@ -3,18 +3,14 @@ package index
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/osm"
-	"github.com/paulmach/osm/osmpbf"
-	"github.com/paulmach/osm/osmxml"
 	"github.com/pkg/errors"
 	"io"
 	"os"
 	"path"
 	"soq/util"
 	"strings"
-	"time"
 	"unicode"
 )
 
@@ -119,28 +115,8 @@ func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 
 // ImportAndSave imports and saves all tags to the tag index on disk. For performance reasons, it also collects all
 // node and way IDs of relations within the input file. This can be used for later indices to correctly store relations.
-func (i *TagIndex) ImportAndSave(inputFile string, cellWidth float64, cellHeight float64) (error, []osm.NodeID, []osm.WayID, map[osm.WayID][]CellIndex, map[osm.RelationID][]CellIndex) {
-	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
-		sigolo.Error("Input file must be an .osm or .pbf file")
-		os.Exit(1)
-	}
-
-	f, err := os.Open(inputFile)
-	if err != nil {
-		return errors.Wrapf(err, "Unable to open input file %s", inputFile), nil, nil, nil, nil
-	}
-	defer f.Close()
-
-	var scanner osm.Scanner
-	if strings.HasSuffix(inputFile, ".osm") {
-		scanner = osmxml.New(context.Background(), f)
-	} else if strings.HasSuffix(inputFile, ".pbf") {
-		scanner = osmpbf.New(context.Background(), f, 1)
-	}
-	defer scanner.Close()
-
+func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHeight float64) (error, []osm.NodeID, []osm.WayID, map[osm.WayID][]CellIndex, map[osm.RelationID][]CellIndex) {
 	sigolo.Info("Start processing tags from input data")
-	importStartTime := time.Now()
 
 	var keyMap []string                  // [key-index] -> key-string
 	keyReverseMap := map[string]int{}    // Helper map: key-string -> key-index
@@ -266,9 +242,6 @@ func (i *TagIndex) ImportAndSave(inputFile string, cellWidth float64, cellHeight
 		i.tempEncodedValues[j] = -1
 	}
 	i.tempEncodedValuesLength = len(i.tempEncodedValues)
-
-	importDuration := time.Since(importStartTime)
-	sigolo.Infof("Created tag-index from OSM data in %s", importDuration)
 
 	return i.SaveToFile(TagIndexFilename), nodesOfRelations, waysOfRelations, wayToCellMap, relationToCellMap
 }
