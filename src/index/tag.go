@@ -116,7 +116,7 @@ func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 
 // ImportAndSave imports and saves all tags to the tag index on disk. For performance reasons, it also collects all
 // node and way IDs of relations within the input file. This can be used for later indices to correctly store relations.
-func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHeight float64) (error, []osm.NodeID, []osm.WayID, map[osm.WayID][]CellIndex, map[osm.RelationID][]CellIndex, CellIndex, CellIndex) {
+func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHeight float64) (error, []osm.NodeID, []osm.WayID, map[osm.WayID][]CellIndex, map[osm.RelationID][]CellIndex, CellExtent) {
 	sigolo.Info("Start processing tags from input data")
 
 	var keyMap []string                  // [key-index] -> key-string
@@ -255,7 +255,7 @@ func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHei
 	}
 	i.tempEncodedValuesLength = len(i.tempEncodedValues)
 
-	return i.SaveToFile(TagIndexFilename), nodesOfRelations, waysOfRelations, wayToCellMap, relationToCellMap, lowerLeftCell, upperRightCell
+	return i.SaveToFile(TagIndexFilename), nodesOfRelations, waysOfRelations, wayToCellMap, relationToCellMap, CellExtent{lowerLeftCell, upperRightCell}
 }
 
 // GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.

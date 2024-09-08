@@ -42,7 +42,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	tagIndex := &index.TagIndex{
 		BaseFolder: indexBaseFolder,
 	}
-	err, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap, lowerLeftCell, upperRightCell := tagIndex.ImportAndSave(scanner, cellWidth, cellHeight)
+	err, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap, cellExtent := tagIndex.ImportAndSave(scanner, cellWidth, cellHeight)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	scannerFactory := func() (osm.Scanner, error) {
 		return getOsmScannerFromData(inputFile, inputFileData)
 	}
-	err = index.ImportDataFile(tagIndex, scannerFactory, baseFolder, cellWidth, cellHeight, lowerLeftCell, upperRightCell, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap)
+	err = index.ImportDataFile(tagIndex, scannerFactory, baseFolder, cellWidth, cellHeight, cellExtent, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap)
 	if err != nil {
 		return err
 	}

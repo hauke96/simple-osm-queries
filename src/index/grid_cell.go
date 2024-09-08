@@ -14,13 +14,19 @@ func (c CellIndex) isAboveRightOf(other CellIndex) bool {
 	return c.X() >= other.X() && c.Y() >= other.Y()
 }
 
-func (c CellIndex) isWithin(lowerLeft CellIndex, upperRight CellIndex) bool {
-	return c.isAboveRightOf(lowerLeft) && c.isBelowLeftOf(upperRight)
+type CellExtent [2]CellIndex
+
+func (c CellExtent) LowerLeftCell() CellIndex { return c[0] }
+
+func (c CellExtent) UpperRightCell() CellIndex { return c[1] }
+
+func (c CellExtent) contains(cell CellIndex) bool {
+	return cell.isAboveRightOf(c.LowerLeftCell()) && cell.isBelowLeftOf(c.UpperRightCell())
 }
 
-func isAnyWithin(cells []CellIndex, lowerLeft CellIndex, upperRight CellIndex) bool {
+func (c CellExtent) containsAny(cells []CellIndex) bool {
 	for _, cell := range cells {
-		if cell.isWithin(lowerLeft, upperRight) {
+		if c.contains(cell) {
 			return true
 		}
 	}
