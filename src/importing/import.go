@@ -56,7 +56,10 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	currentStepStartTime = time.Now()
 
 	baseFolder := path.Join(indexBaseFolder, index.GridIndexFolder)
-	err = index.ImportDataFile(inputFile, baseFolder, cellWidth, cellHeight, nodesOfRelations, waysOfRelations, tagIndex)
+	scannerFactory := func() (osm.Scanner, error) {
+		return getOsmScannerFromData(inputFile, inputFileData)
+	}
+	err = index.ImportDataFile(scannerFactory, baseFolder, cellWidth, cellHeight, nodesOfRelations, waysOfRelations, tagIndex)
 	if err != nil {
 		return err
 	}

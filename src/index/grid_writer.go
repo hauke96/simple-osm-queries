@@ -2,13 +2,10 @@ package index
 
 import (
 	"bufio"
-	"context"
 	"encoding/binary"
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
-	"github.com/paulmach/osm/osmpbf"
-	"github.com/paulmach/osm/osmxml"
 	"github.com/pkg/errors"
 	"io"
 	"math"
@@ -18,7 +15,6 @@ import (
 	"soq/feature"
 	"soq/util"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -36,7 +32,9 @@ type GridIndexWriter struct {
 	gridIndexReader *GridIndexReader
 }
 
-func ImportDataFile(inputFile string, baseFolder string, cellWidth float64, cellHeight float64, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID, tagIndex *TagIndex) error {
+type scannerFactoryFunc func() (osm.Scanner, error)
+
+func ImportDataFile(scannerFactory scannerFactoryFunc, baseFolder string, cellWidth float64, cellHeight float64, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID, tagIndex *TagIndex) error {
 	err := os.RemoveAll(baseFolder)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
@@ -62,7 +60,7 @@ func ImportDataFile(inputFile string, baseFolder string, cellWidth float64, cell
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
-	err, nodeCells := gridIndexWriter.writeOsmToRawEncodedFeatures(inputFile, nodesOfRelations, waysOfRelations)
+	err, nodeCells := gridIndexWriter.writeOsmToRawEncodedFeatures(scannerFactory, nodesOfRelations, waysOfRelations)
 	if err != nil {
 		return err
 	}
@@ -76,16 +74,14 @@ func ImportDataFile(inputFile string, baseFolder string, cellWidth float64, cell
 
 // writeOsmToRawEncodedFeatures Reads the input PBF file and converts all OSM objects into raw encoded features and
 // writes them into their respective cells. The returned cell map contains all cells that contain nodes.
-func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(inputFile string, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) (error, map[CellIndex]CellIndex) {
+func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(scannerFactory scannerFactoryFunc, nodesOfRelations []osm.NodeID, waysOfRelations []osm.WayID) (error, map[CellIndex]CellIndex) {
 	sigolo.Info("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 
-	file, scanner, err := g.getScanner(inputFile)
+	scanner, err := scannerFactory()
 	if err != nil {
 		return err, nil
 	}
-
-	defer file.Close()
 	defer scanner.Close()
 
 	var emptyWayIds []osm.WayID
@@ -221,23 +217,6 @@ func (g *GridIndexWriter) writeOsmToRawEncodedFeatures(inputFile string, nodesOf
 	sigolo.Infof("Created raw encoded features from OSM data in %s", importDuration)
 
 	return nil, nodeCells
-}
-
-func (g *GridIndexWriter) getScanner(inputFile string) (*os.File, osm.Scanner, error) {
-	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
-		return nil, nil, errors.Errorf("Input file %s must be an .osm or .pbf file", inputFile)
-	}
-
-	f, err := os.Open(inputFile)
-	sigolo.FatalCheck(err)
-
-	var scanner osm.Scanner
-	if strings.HasSuffix(inputFile, ".osm") {
-		scanner = osmxml.New(context.Background(), f)
-	} else if strings.HasSuffix(inputFile, ".pbf") {
-		scanner = osmpbf.New(context.Background(), f, 1)
-	}
-	return f, scanner, err
 }
 
 func (g *GridIndexWriter) closeOpenFileHandles() {
