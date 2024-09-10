@@ -115,22 +115,13 @@ func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 
 // ImportAndSave imports and saves all tags to the tag index on disk. For performance reasons, it also collects all
 // node and way IDs of relations within the input file. This can be used for later indices to correctly store relations.
-func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHeight float64) (error, []osm.NodeID, []osm.WayID, map[osm.WayID][]CellIndex, map[osm.RelationID][]CellIndex, CellExtent, map[CellIndex]CellIndex) {
+func (i *TagIndex) ImportAndSave(scanner osm.Scanner) error {
 	sigolo.Info("Start processing tags from input data")
 
 	var keyMap []string                  // [key-index] -> key-string
 	keyReverseMap := map[string]int{}    // Helper map: key-string -> key-index
 	var valueMap [][]string              // [key-index][value-index] -> value-string
 	var valueReverseMap []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
-
-	var nodesOfRelations []osm.NodeID
-	var waysOfRelations []osm.WayID
-
-	var extent CellExtent
-	cellsWithData := map[CellIndex]CellIndex{}
-	nodeToCellMap := map[osm.NodeID]CellIndex{}
-	wayToCellMap := map[osm.WayID][]CellIndex{}
-	relationToCellMap := map[osm.RelationID][]CellIndex{}
 
 	firstWayHasBeenProcessed := false
 	firstRelationHasBeenProcessed := false
@@ -141,67 +132,18 @@ func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHei
 		switch osmObj := scanner.Object().(type) {
 		case *osm.Node:
 			tags = osmObj.Tags
-
-			cell := CellIndex{int(osmObj.Lon / cellWidth), int(osmObj.Lat / cellHeight)}
-			nodeToCellMap[osmObj.ID] = cell
-			extent = extent.Expand(cell)
-			cellsWithData[cell] = cell
 		case *osm.Way:
 			if !firstWayHasBeenProcessed {
 				sigolo.Debug("Start processing way tags (2/3)")
 				firstWayHasBeenProcessed = true
 			}
 			tags = osmObj.Tags
-
-			wayCells := map[CellIndex]CellIndex{}
-			for _, nodeId := range osmObj.Nodes.NodeIDs() {
-				cell := nodeToCellMap[nodeId]
-				wayCells[cell] = cell
-			}
-
-			wayToCellMap[osmObj.ID] = make([]CellIndex, len(wayCells))
-			j := 0
-			for _, cell := range wayCells {
-				wayToCellMap[osmObj.ID][j] = cell
-				j++
-			}
 		case *osm.Relation:
 			if !firstRelationHasBeenProcessed {
 				sigolo.Debug("Start processing relation tags (2/3)")
 				firstRelationHasBeenProcessed = true
 			}
 			tags = osmObj.Tags
-
-			relCells := map[CellIndex]CellIndex{}
-			for _, member := range osmObj.Members {
-				switch member.Type {
-				case osm.TypeNode:
-					nodeId := osm.NodeID(member.Ref)
-					nodesOfRelations = append(nodesOfRelations, nodeId)
-					cell := nodeToCellMap[nodeId]
-					relCells[cell] = cell
-				case osm.TypeWay:
-					wayId := osm.WayID(member.Ref)
-					waysOfRelations = append(waysOfRelations, wayId)
-					cells := wayToCellMap[wayId]
-					for _, cell := range cells {
-						relCells[cell] = cell
-					}
-				case osm.TypeRelation:
-					relId := osm.RelationID(member.Ref)
-					cells := relationToCellMap[relId]
-					for _, cell := range cells {
-						relCells[cell] = cell
-					}
-				}
-			}
-
-			relationToCellMap[osmObj.ID] = make([]CellIndex, len(relCells))
-			j := 0
-			for _, cell := range relCells {
-				relationToCellMap[osmObj.ID][j] = cell
-				j++
-			}
 		}
 
 		// Add the keys and values to the maps for the index.
@@ -249,7 +191,7 @@ func (i *TagIndex) ImportAndSave(scanner osm.Scanner, cellWidth float64, cellHei
 	}
 	i.tempEncodedValuesLength = len(i.tempEncodedValues)
 
-	return i.SaveToFile(TagIndexFilename), nodesOfRelations, waysOfRelations, wayToCellMap, relationToCellMap, extent, cellsWithData
+	return i.SaveToFile(TagIndexFilename)
 }
 
 // GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.

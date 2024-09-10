@@ -33,28 +33,15 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 
 	duration := time.Since(currentStepStartTime)
 	sigolo.Infof("Read input file in %s", duration)
+
+	tagIndex, err := createTagIndex(inputFile, inputFileData, indexBaseFolder)
+	sigolo.FatalCheck(err)
+
+	// TODO Determine number of nodes per cell and then create extents of a maximum size below to have an upper limit on RAM usage and create larger extents for sparse areas
+	cellsWithData, inputDataCellExtent, err := getCellsWithData(inputFile, inputFileData, cellWidth, cellHeight)
+	sigolo.FatalCheck(err)
+
 	currentStepStartTime = time.Now()
-
-	scanner, err := getOsmScannerFromData(inputFile, inputFileData)
-	if err != nil {
-		return err
-	}
-	tagIndex := &index.TagIndex{
-		BaseFolder: indexBaseFolder,
-	}
-	err, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap, cellExtent, cellsWithData := tagIndex.ImportAndSave(scanner, cellWidth, cellHeight)
-	if err != nil {
-		return err
-	}
-	err = scanner.Close()
-	if err != nil {
-		return errors.Wrapf(err, "Unable to close OSM scanner")
-	}
-
-	duration = time.Since(currentStepStartTime)
-	sigolo.Infof("Created tag index and additional data structures in %s", duration)
-	currentStepStartTime = time.Now()
-
 	baseFolder := path.Join(indexBaseFolder, index.GridIndexFolder)
 	scannerFactory := func() (osm.Scanner, error) {
 		return getOsmScannerFromData(inputFile, inputFileData)
@@ -66,8 +53,10 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
 	}
 
+	cellWidthHeightPerSubExtent := 12 // TODO make this configurable
+	sigolo.Debugf("Get sub-extents of size %dx%d for input extent %v", cellWidthHeightPerSubExtent, cellWidthHeightPerSubExtent, inputDataCellExtent)
 	var subExtents []index.CellExtent
-	for _, subExtent := range cellExtent.Subdivide(25, 25) {
+	for _, subExtent := range inputDataCellExtent.Subdivide(cellWidthHeightPerSubExtent, cellWidthHeightPerSubExtent) {
 		if subExtent.ContainsAnyInMap(cellsWithData) {
 			subExtents = append(subExtents, subExtent)
 		}
@@ -76,16 +65,15 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
 	for i, subExtent := range subExtents {
 		currentSubExtentStartTime := time.Now()
+		sigolo.Debugf("Process sub-extent %v (%d / %d)", subExtent, i+1, len(subExtents))
 
-		sigolo.Debugf("Process sub-extent %v (%d / %d)", subExtent, i, len(subExtents))
-
-		err = index.ImportDataFile(tagIndex, scannerFactory, baseFolder, cellWidth, cellHeight, subExtent, nodesOfRelations, waysOfRelations, wayToCellsMap, relationToCellsMap)
+		err = index.ImportDataFile(tagIndex, scannerFactory, baseFolder, cellWidth, cellHeight, subExtent)
 		if err != nil {
 			return err
 		}
 
 		duration = time.Since(currentSubExtentStartTime)
-		sigolo.Infof("Processed sub-extent in %s", duration)
+		sigolo.Debugf("Processed sub-extent %v in %s", subExtent, duration)
 	}
 
 	duration = time.Since(currentStepStartTime)
@@ -96,6 +84,69 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	sigolo.Infof("Finished import in %s", duration)
 
 	return nil
+}
+
+func createTagIndex(inputFile string, inputFileData []byte, indexBaseFolder string) (*index.TagIndex, error) {
+	startTime := time.Now()
+	sigolo.Debugf("Create tag index")
+
+	scanner, err := getOsmScannerFromData(inputFile, inputFileData)
+	if err != nil {
+		return nil, err
+	}
+
+	tagIndex := &index.TagIndex{
+		BaseFolder: indexBaseFolder,
+	}
+	err = tagIndex.ImportAndSave(scanner)
+	if err != nil {
+		return nil, err
+	}
+
+	err = scanner.Close()
+	if err != nil {
+		return nil, errors.Wrapf(err, "Unable to close OSM scanner")
+	}
+
+	duration := time.Since(startTime)
+	sigolo.Infof("Created tag index and additional data structures in %s", duration)
+
+	return tagIndex, nil
+}
+
+func getCellsWithData(inputFile string, inputFileData []byte, cellWidth float64, cellHeight float64) (map[index.CellIndex]index.CellIndex, index.CellExtent, error) {
+	startTime := time.Now()
+	sigolo.Debugf("Get cells that contain data")
+
+	cellsWithData := map[index.CellIndex]index.CellIndex{}
+	var inputDataCellExtent index.CellExtent
+	doneCollectingCellsWithData := false
+
+	scanner, err := getOsmScannerFromData(inputFile, inputFileData)
+	if err != nil {
+		return nil, index.CellExtent{}, err
+	}
+
+	for scanner.Scan() && !doneCollectingCellsWithData {
+		switch osmObj := scanner.Object().(type) {
+		case *osm.Node:
+			cell := index.CellIndex{int(osmObj.Lon / cellWidth), int(osmObj.Lat / cellHeight)}
+			cellsWithData[cell] = cell
+			inputDataCellExtent = inputDataCellExtent.Expand(cell)
+		case *osm.Way:
+			doneCollectingCellsWithData = true
+		}
+	}
+
+	err = scanner.Close()
+	if err != nil {
+		return nil, index.CellExtent{}, errors.Wrapf(err, "Unable to close OSM scanner")
+	}
+
+	duration := time.Since(startTime)
+	sigolo.Infof("Done determining %d cells with data in %s", len(cellsWithData), duration)
+
+	return cellsWithData, inputDataCellExtent, nil
 }
 
 func getOsmScannerFromData(inputFile string, inputFileData []byte) (osm.Scanner, error) {

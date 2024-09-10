@@ -65,7 +65,7 @@ func (c CellExtent) containsAny(cells []CellIndex) bool {
 }
 
 func (c CellExtent) ContainsAnyInMap(cells map[CellIndex]CellIndex) bool {
-	for cell, _ := range cells {
+	for _, cell := range cells {
 		if c.contains(cell) {
 			return true
 		}

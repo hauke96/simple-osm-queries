@@ -26,6 +26,15 @@ profile*
 
 # Index files
 soq-index
+src/soq-index*
 
 # Go workspace file
 go.work
+
+# Misc
+*.ods
+*.csv
+*.ods#
+*.csv#
+*.xml
+*.prof
