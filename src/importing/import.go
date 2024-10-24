@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"soq/feature"
 	"soq/index"
 	"strings"
 	"time"
@@ -37,10 +38,6 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	tagIndex, err := createTagIndex(inputFile, inputFileData, indexBaseFolder)
 	sigolo.FatalCheck(err)
 
-	// TODO Determine number of nodes per cell and then create extents of a maximum size below to have an upper limit on RAM usage and create larger extents for sparse areas
-	cellsWithData, inputDataCellExtent, err := getCellsWithData(inputFile, inputFileData, cellWidth, cellHeight)
-	sigolo.FatalCheck(err)
-
 	currentStepStartTime = time.Now()
 	baseFolder := path.Join(indexBaseFolder, index.GridIndexFolder)
 	scannerFactory := func() (osm.Scanner, error) {
@@ -53,13 +50,29 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
 	}
 
-	cellWidthHeightPerSubExtent := 12 // TODO make this configurable
-	sigolo.Debugf("Get sub-extents of size %dx%d for input extent %v", cellWidthHeightPerSubExtent, cellWidthHeightPerSubExtent, inputDataCellExtent)
+	tempRawFeatureRepo := index.NewRawFeaturesRepository(tagIndex, cellWidth, cellHeight, "import-temp-cell")
+	cellToNodeCount, inputDataCellExtent, err := tempRawFeatureRepo.WriteOsmToRawEncodedFeatures(scannerFactory)
+	if err != nil {
+		return errors.Wrap(err, "Error writing temporary cell for raw features during import")
+	}
+
 	var subExtents []index.CellExtent
-	for _, subExtent := range inputDataCellExtent.Subdivide(cellWidthHeightPerSubExtent, cellWidthHeightPerSubExtent) {
-		if subExtent.ContainsAnyInMap(cellsWithData) {
-			subExtents = append(subExtents, subExtent)
+
+	cellsToProcessedState := map[index.CellIndex]bool{}
+	for _, cell := range inputDataCellExtent.GetCellIndices() {
+		cellsToProcessedState[cell] = false
+	}
+
+	for {
+		// Experience for a ~500 MB PBF file:
+		//  2_000_000 ~  6 GB RAM
+		// 10_000_000 ~ 10 GB RAM
+		// 20_000_000 ~ 18 GB RAM
+		extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 5_000_000)
+		if extent == nil {
+			break
 		}
+		subExtents = append(subExtents, *extent)
 	}
 
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
@@ -67,7 +80,9 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		currentSubExtentStartTime := time.Now()
 		sigolo.Debugf("Process sub-extent %v (%d / %d)", subExtent, i+1, len(subExtents))
 
-		err = index.ImportDataFile(tagIndex, scannerFactory, baseFolder, cellWidth, cellHeight, subExtent)
+		tempRawFeatureChannel := make(chan feature.EncodedFeature, 1000)
+		go tempRawFeatureRepo.ReadFeatures(tempRawFeatureChannel) // TODO error handling
+		err = index.ImportDataFile(tagIndex, tempRawFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
 		if err != nil {
 			return err
 		}
@@ -84,6 +99,71 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	sigolo.Infof("Finished import in %s", duration)
 
 	return nil
+}
+
+// getNextExtent determines the next largest extent from the bottom left of the given cell indices. The extent is as
+// large as possible without containing more than the given threshold.
+func getNextExtent(cellsToProcessedState map[index.CellIndex]bool, cellToNodeCount map[index.CellIndex]int, nodePerExtentThreshold int) *index.CellExtent {
+	var startCell *index.CellIndex
+	var baseExtent *index.CellExtent
+
+	for cell, _ := range cellsToProcessedState {
+		if baseExtent == nil {
+			baseExtent = &index.CellExtent{cell, cell}
+		} else {
+			newExtent := baseExtent.Expand(cell)
+			baseExtent = &newExtent
+		}
+	}
+
+	if baseExtent == nil {
+		return nil
+	}
+
+	for y := baseExtent.LowerLeftCell().Y(); y <= baseExtent.UpperRightCell().Y() && startCell == nil; y++ {
+		for x := baseExtent.LowerLeftCell().X(); x <= baseExtent.UpperRightCell().X() && startCell == nil; x++ {
+			cell := index.CellIndex{x, y}
+			if !cellsToProcessedState[cell] {
+				startCell = &cell
+			}
+		}
+	}
+
+	if startCell == nil {
+		return nil
+	}
+	if cellToNodeCount[*startCell] > nodePerExtentThreshold {
+		cellsToProcessedState[*startCell] = true
+		return &index.CellExtent{*startCell, *startCell}
+	}
+
+	resultExtent := index.CellExtent{*startCell, *startCell}
+	for y := startCell.Y(); y <= baseExtent.UpperRightCell().Y(); y++ {
+		resultExtent = index.CellExtent{*startCell, *startCell}
+
+		for x := startCell.X(); x <= baseExtent.UpperRightCell().X(); x++ {
+			newResultExtent := resultExtent.Expand(index.CellIndex{x, y})
+
+			nodeCount := 0
+			for _, c := range newResultExtent.GetCellIndices() {
+				nodeCount += cellToNodeCount[c]
+			}
+
+			if nodeCount > nodePerExtentThreshold {
+				for _, c := range resultExtent.GetCellIndices() {
+					cellsToProcessedState[c] = true
+				}
+				return &resultExtent
+			}
+
+			resultExtent = newResultExtent
+		}
+	}
+
+	for _, c := range resultExtent.GetCellIndices() {
+		cellsToProcessedState[c] = true
+	}
+	return &resultExtent
 }
 
 func createTagIndex(inputFile string, inputFileData []byte, indexBaseFolder string) (*index.TagIndex, error) {

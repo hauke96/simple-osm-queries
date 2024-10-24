@@ -82,3 +82,15 @@ func (c CellExtent) Subdivide(cellsX int, cellsY int) []CellExtent {
 	}
 	return newExtents
 }
+
+func (c CellExtent) GetCellIndices() []CellIndex {
+	var indices []CellIndex
+
+	for x := c.LowerLeftCell().X(); x <= c.UpperRightCell().X(); x++ {
+		for y := c.LowerLeftCell().Y(); y <= c.UpperRightCell().Y(); y++ {
+			indices = append(indices, CellIndex{x, y})
+		}
+	}
+
+	return indices
+}
