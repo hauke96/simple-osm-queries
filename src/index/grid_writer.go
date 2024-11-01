@@ -102,22 +102,20 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 
 	sigolo.Debug("Process nodes (1/3)")
 	for obj := range tempRawFeatureChannel {
-		switch osmObj := obj.(type) {
+		switch rawFeature := obj.(type) {
 		case *feature.EncodedNodeFeature:
-			cell := g.GetCellIndexForCoordinate(osmObj.GetLon(), osmObj.GetLat())
+			cell := g.GetCellIndexForCoordinate(rawFeature.GetLon(), rawFeature.GetLat())
 			if !cellExtent.contains(cell) {
 				continue
 			}
 
-			id := osm.NodeID(osmObj.GetID())
+			id := osm.NodeID(rawFeature.GetID())
 			nodeToCellMap[id] = cell
 
-			if _, ok := nodeToBound[id]; ok {
-				bbox := osmObj.GetGeometry().Bound()
-				nodeToBound[id] = &bbox
-			}
+			bbox := rawFeature.GetGeometry().Bound()
+			nodeToBound[id] = &bbox
 
-			err := g.writeOsmObjectToCellCache(cell.X(), cell.Y(), osmObj)
+			err := g.writeOsmObjectToCellCache(cell.X(), cell.Y(), rawFeature)
 			sigolo.FatalCheck(err)
 
 			nodeCells[cell] = cell
@@ -128,7 +126,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			}
 
 			extentContainsWay := false
-			for _, node := range osmObj.Nodes {
+			for _, node := range rawFeature.Nodes {
 				extentContainsWay = extentContainsWay || cellExtent.contains(nodeToCellMap[node.ID])
 				if extentContainsWay {
 					break
@@ -139,12 +137,12 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			}
 
 			wayCells := map[CellIndex]CellIndex{}
-			for _, nodeId := range osmObj.Nodes.NodeIDs() {
+			for _, nodeId := range rawFeature.Nodes.NodeIDs() {
 				cell := nodeToCellMap[nodeId]
 				wayCells[cell] = cell
 			}
 
-			id := osm.WayID(osmObj.GetID())
+			id := osm.WayID(rawFeature.GetID())
 			wayToCellsMap[id] = make([]CellIndex, len(wayCells))
 			j := 0
 			for _, cell := range wayCells {
@@ -152,17 +150,15 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				j++
 			}
 
-			if _, ok := wayToBound[id]; ok {
-				bbox := osmObj.GetGeometry().Bound()
-				wayToBound[id] = &bbox
-			}
+			bbox := rawFeature.GetGeometry().Bound()
+			wayToBound[id] = &bbox
 
 			savedCells := map[CellIndex]bool{}
-			for _, node := range osmObj.Nodes {
+			for _, node := range rawFeature.Nodes {
 				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 
 				if _, cellAlreadySaved := savedCells[cell]; !cellAlreadySaved && cellExtent.contains(cell) {
-					err := g.writeOsmObjectToCellCache(cell.X(), cell.Y(), osmObj)
+					err := g.writeOsmObjectToCellCache(cell.X(), cell.Y(), rawFeature)
 					sigolo.FatalCheck(err)
 					savedCells[cell] = true
 				}
@@ -174,14 +170,14 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			}
 
 			extentContainsRelation := false
-			for _, nodeId := range osmObj.NodeIds {
+			for _, nodeId := range rawFeature.NodeIds {
 				extentContainsRelation = extentContainsRelation || cellExtent.contains(nodeToCellMap[nodeId])
 				if extentContainsRelation {
 					break
 				}
 			}
 			if !extentContainsRelation {
-				for _, wayId := range osmObj.WayIds {
+				for _, wayId := range rawFeature.WayIds {
 					extentContainsRelation = extentContainsRelation || cellExtent.containsAny(wayToCellsMap[wayId])
 					if extentContainsRelation {
 						break
@@ -189,7 +185,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				}
 			}
 			if !extentContainsRelation {
-				for _, relationId := range osmObj.ChildRelationIds {
+				for _, relationId := range rawFeature.ChildRelationIds {
 					extentContainsRelation = extentContainsRelation || cellExtent.containsAny(relationToCellsMap[relationId])
 					if extentContainsRelation {
 						break
@@ -204,7 +200,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 
 			var bbox *orb.Bound
 
-			for _, nodeId := range osmObj.NodeIds {
+			for _, nodeId := range rawFeature.NodeIds {
 				cell := nodeToCellMap[nodeId]
 				relCells[cell] = cell
 				if bound, ok := nodeToBound[nodeId]; ok {
@@ -216,7 +212,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 					}
 				}
 			}
-			for _, wayId := range osmObj.WayIds {
+			for _, wayId := range rawFeature.WayIds {
 				cells := wayToCellsMap[wayId]
 				for _, cell := range cells {
 					relCells[cell] = cell
@@ -230,7 +226,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 					}
 				}
 			}
-			for _, relationId := range osmObj.ChildRelationIds {
+			for _, relationId := range rawFeature.ChildRelationIds {
 				cells := relationToCellsMap[relationId]
 				for _, cell := range cells {
 					relCells[cell] = cell
@@ -245,17 +241,18 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				}
 			}
 
-			id := osm.RelationID(osmObj.GetID())
+			id := osm.RelationID(rawFeature.GetID())
 			relationToBound[id] = bbox
 
 			if bbox == nil {
-				// TODO Many relations do not have a bbox like 17917831. Bug?
-				//sigolo.Warnf("No BBOX for relation %d could be determined. This relation will be skipped.", id)
+				sigolo.Warnf("No BBOX for relation %d could be determined. This relation will be skipped.", id)
 				continue
 			}
 
+			rawFeature.Geometry = bbox.ToPolygon()
+
 			for _, cell := range relCells {
-				err := g.writeOsmObjectToCellCache(cell.X(), cell.Y(), osmObj)
+				err := g.writeOsmObjectToCellCache(cell.X(), cell.Y(), rawFeature)
 				sigolo.FatalCheck(err)
 			}
 		}

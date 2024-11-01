@@ -487,9 +487,6 @@ func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.Encode
 			Read values
 		*/
 		for i := 0; i < numValues; i++ {
-			if pos == 1343242018 || pos == 1343242018-1 || pos == 1343242018-2 {
-				sigolo.Info("OK")
-			}
 			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
 			pos += 3
 		}
