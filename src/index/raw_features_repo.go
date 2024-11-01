@@ -52,6 +52,7 @@ func (r *RawFeaturesRepository) WriteOsmToRawEncodedFeatures(scannerFactory scan
 
 	tempEncodedValues := r.TagIndex.newTempEncodedValueArray()
 
+	// TODO For germany (~4.1GB PBF file), the node-rawcell file is about 11GB large. Large enough to fit in RAM ... maybe writing it directly to disk is not the fastest option? Maybe increasing the buffer significantly (to 100MB? 1GB?) might be faster?
 	nodeWriter, err := r.getFileWriter(feature.OsmObjNode.String())
 	if err != nil {
 		return nil, nil, err
@@ -95,18 +96,18 @@ func (r *RawFeaturesRepository) WriteOsmToRawEncodedFeatures(scannerFactory scan
 			err = r.writeNodeData(osmObj.ID, encodedKeys, encodedValues, &point, nodeWriter)
 			sigolo.FatalCheck(err)
 		case *osm.Way:
-			if !firstRelationHasBeenProcessed {
-				sigolo.Debug("Start processing relations (3/3)")
-				firstRelationHasBeenProcessed = true
+			if !firstWayHasBeenProcessed {
+				sigolo.Debug("Start processing ways (2/3)")
+				firstWayHasBeenProcessed = true
 			}
 
 			encodedKeys, encodedValues := r.TagIndex.encodeTags(osmObj.Tags, tempEncodedValues)
 			err = r.writeWayData(osmObj.ID, encodedKeys, encodedValues, osmObj.Nodes, wayWriter)
 			sigolo.FatalCheck(err)
 		case *osm.Relation:
-			if !firstWayHasBeenProcessed {
-				sigolo.Debug("Start processing ways (2/3)")
-				firstWayHasBeenProcessed = true
+			if !firstRelationHasBeenProcessed {
+				sigolo.Debug("Start processing relations (3/3)")
+				firstRelationHasBeenProcessed = true
 			}
 
 			var nodeIds []osm.NodeID
@@ -433,6 +434,8 @@ func (r *RawFeaturesRepository) writeRelationData(id osm.RelationID, keys []byte
 
 func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.EncodedFeature) error {
 	cellFileName := r.BaseFolder + "/" + feature.OsmObjNode.String() + ".rawcell"
+	// TODO Pass the extent to here, so that objects outside of it can be skipped during reading. Maybe create/use wrapper around file to access files by index?
+	// TODO Do not read before processing, read on the fly
 	data, err := os.ReadFile(cellFileName)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to read temp raw node-feature cell %s", cellFileName)

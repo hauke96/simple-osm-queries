@@ -26,14 +26,17 @@ However, tiny edge-cases (i.e. feature not relevant for a large portion of users
 
 ### Import
 
-Usage: `go run . import your-file.osm.pbf`
+Preparations: Add locations to ways and keep untagged nodes with `osmium add-locations-to-ways input-data.osm.pbf -n --overwrite -o data-with-locations.osm.pbf`
 
-Performance comparison (as of 2024-04-13; SSD + 10 year old Intel Xeon E3-1231 v3):
-* The index structure is 2.5 to 3 times as large as the raw `.osm.pbf` file.
-* The import takes longer the more data there is (s. numbers below) but on my machine runs with 2.5 to 4.5 MB/s.
+Usage: `go run . import data-with-locations.osm.pbf`
+
+Performance comparison (as of 2024-11-01; SSD, 10 year old Intel Xeon E3-1231 v3 and DDR3 RAM):
+* The index structure is 5 to 6 times as large as the raw `.osm.pbf` file.
+* The import takes longer the more data there is (s. numbers below) but on my machine runs with 1.5 to 2 MB/s.
 * Examples
-  * The `hamburg-latest.osm.pbf` (~46 MB) takes ~10 s, the cache will be ~125 MB large.
-  * The `germany-latest.osm.pbf` (~4.1 GB) takes ~25 min., the cache will be 11.1 GB large.
+  * The `hamburg-latest.osm.pbf` (~46 MB) takes ~15 s, the cache will be ~390 MB large.
+  * The `niedersachsen-latest.osm.pbf` (~675 MB) takes ~6.5 min., the cache will be ~3.8 GB large.
+  * The `germany-latest.osm.pbf` (~4.1 GB) takes ~ min., the cache will be  GB large.
 
 ### Query
 
