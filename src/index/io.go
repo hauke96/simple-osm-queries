@@ -1,4 +1,4 @@
-package io
+package index
 
 import (
 	"github.com/hauke96/sigolo/v2"
@@ -7,11 +7,10 @@ import (
 	"io"
 	"os"
 	"soq/feature"
-	"soq/index"
 	"time"
 )
 
-func WriteFeaturesAsGeoJsonFile(encodedFeatures []feature.EncodedFeature, tagIndex *index.TagIndex) error {
+func WriteFeaturesAsGeoJsonFile(encodedFeatures []feature.EncodedFeature, tagIndex *TagIndex) error {
 	file, err := os.Create("output.geojson")
 	if err != nil {
 		return err
@@ -25,7 +24,7 @@ func WriteFeaturesAsGeoJsonFile(encodedFeatures []feature.EncodedFeature, tagInd
 	return WriteFeaturesAsGeoJson(encodedFeatures, tagIndex, file)
 }
 
-func WriteFeaturesAsGeoJson(encodedFeatures []feature.EncodedFeature, tagIndex *index.TagIndex, writer io.Writer) error {
+func WriteFeaturesAsGeoJson(encodedFeatures []feature.EncodedFeature, tagIndex *TagIndex, writer io.Writer) error {
 	sigolo.Info("Write features to GeoJSON")
 	writeStartTime := time.Now()
 

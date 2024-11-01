@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"soq/feature"
+	ownIo "soq/io"
 	"time"
 )
 
@@ -433,64 +434,80 @@ func (r *RawFeaturesRepository) writeRelationData(id osm.RelationID, keys []byte
 }
 
 func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.EncodedFeature) error {
-	cellFileName := r.BaseFolder + "/" + feature.OsmObjNode.String() + ".rawcell"
 	// TODO Pass the extent to here, so that objects outside of it can be skipped during reading. Maybe create/use wrapper around file to access files by index?
 	// TODO Do not read before processing, read on the fly
-	data, err := os.ReadFile(cellFileName)
+
+	cellFileName := r.BaseFolder + "/" + feature.OsmObjNode.String() + ".rawcell"
+	cellFile, err := os.OpenFile(cellFileName, os.O_RDONLY, 0666)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to read temp raw node-feature cell %s", cellFileName)
+		return errors.Wrapf(err, "Unable to open temp raw node-feature cell %s", cellFileName)
 	}
-	r.readNodesFromCellData(readFeatureChannel, data)
+	cellReader := ownIo.NewIndexReader(cellFile)
+	r.readNodesFromCellData(readFeatureChannel, cellReader)
+	err = cellFile.Close()
+	if err != nil {
+		return errors.Wrapf(err, "Unable to close temp raw node-feature cell %s", cellFileName)
+	}
 
 	cellFileName = r.BaseFolder + "/" + feature.OsmObjWay.String() + ".rawcell"
-	data, err = os.ReadFile(cellFileName)
+	cellFile, err = os.OpenFile(cellFileName, os.O_RDONLY, 0666)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to read temp raw way-feature cell %s", cellFileName)
+		return errors.Wrapf(err, "Unable to open temp raw node-feature cell %s", cellFileName)
 	}
-	r.readWaysFromCellData(readFeatureChannel, data)
+	cellReader = ownIo.NewIndexReader(cellFile)
+	r.readWaysFromCellData(readFeatureChannel, cellReader)
+	err = cellFile.Close()
+	if err != nil {
+		return errors.Wrapf(err, "Unable to close temp raw node-feature cell %s", cellFileName)
+	}
 
 	cellFileName = r.BaseFolder + "/" + feature.OsmObjRelation.String() + ".rawcell"
-	data, err = os.ReadFile(cellFileName)
+	cellFile, err = os.OpenFile(cellFileName, os.O_RDONLY, 0666)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to read temp raw relation-feature cell %s", cellFileName)
+		return errors.Wrapf(err, "Unable to open temp raw node-feature cell %s", cellFileName)
 	}
-	r.readRelationsFromCellData(readFeatureChannel, data)
+	cellReader = ownIo.NewIndexReader(cellFile)
+	r.readRelationsFromCellData(readFeatureChannel, cellReader)
+	err = cellFile.Close()
+	if err != nil {
+		return errors.Wrapf(err, "Unable to close temp raw node-feature cell %s", cellFileName)
+	}
 
 	close(readFeatureChannel)
 
 	return nil
 }
 
-func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.EncodedFeature, data []byte) {
-	for pos := 0; pos < len(data); {
+func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader) {
+	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
 
 		/*
 			Read header fields
 		*/
-		osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		lon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+8:]))
-		lat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+16:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+20:]))
+		osmId := reader.Uint64(pos + 0)
+		lon := reader.Float32(pos + 8)
+		lat := reader.Float32(pos + 12)
+		numEncodedKeyBytes := reader.IntFromUint32(pos + 16)
+		numValues := reader.IntFromUint32(pos + 20)
 
 		headerBytesCount := 8 + 4 + 4 + 4 + 4 // = 24
 
-		pos += headerBytesCount
+		pos += int64(headerBytesCount)
 
 		/*
 			Read keys
 		*/
 		encodedKeys := make([]byte, numEncodedKeyBytes)
 		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos:])
-		pos += numEncodedKeyBytes
+		copy(encodedKeys[:], reader.Read(pos, len(encodedKeys)))
+		pos += int64(numEncodedKeyBytes)
 
 		/*
 			Read values
 		*/
 		for i := 0; i < numValues; i++ {
-			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
+			encodedValues[i] = reader.IntFromUint32(pos) | reader.IntFromUint32(pos+1)<<8 | reader.IntFromUint32(pos+2)<<16
 			pos += 3
 		}
 
@@ -510,35 +527,35 @@ func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.Encode
 	}
 }
 
-func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.EncodedFeature, data []byte) {
-	for pos := 0; pos < len(data); {
+func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader) {
+	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeWayData".
 
 		/*
 			Read header fields
 		*/
-		osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+8:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+12:]))
-		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
+		osmId := reader.Uint64(pos + 0)
+		numEncodedKeyBytes := reader.IntFromUint32(pos + 8)
+		numValues := reader.IntFromUint32(pos + 12)
+		numNodes := reader.IntFromUint16(pos + 16)
 
 		headerBytesCount := 8 + 4 + 4 + 2
 
-		pos += headerBytesCount
+		pos += int64(headerBytesCount)
 
 		/*
 			Read keys
 		*/
 		encodedKeys := make([]byte, numEncodedKeyBytes)
 		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos:])
-		pos += numEncodedKeyBytes
+		copy(encodedKeys[:], reader.Read(pos, len(encodedKeys)))
+		pos += int64(numEncodedKeyBytes)
 
 		/*
 			Read values
 		*/
 		for i := 0; i < numValues; i++ {
-			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
+			encodedValues[i] = reader.IntFromUint32(pos) | reader.IntFromUint32(pos+1)<<8 | reader.IntFromUint32(pos+2)<<16
 			pos += 3
 		}
 
@@ -548,9 +565,9 @@ func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.Encoded
 		var nodes osm.WayNodes
 		for i := 0; i < numNodes; i++ {
 			nodes = append(nodes, osm.WayNode{
-				ID:  osm.NodeID(binary.LittleEndian.Uint64(data[pos:])),
-				Lon: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[(pos + 8):]))),
-				Lat: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[(pos + 12):]))),
+				ID:  osm.NodeID(reader.Int64(pos)),
+				Lon: float64(reader.Float32(pos + 8)),
+				Lat: float64(reader.Float32(pos + 12)),
 			})
 			pos += 16
 		}
@@ -577,37 +594,37 @@ func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.Encoded
 	}
 }
 
-func (r *RawFeaturesRepository) readRelationsFromCellData(output chan feature.EncodedFeature, data []byte) {
-	for pos := 0; pos < len(data); {
+func (r *RawFeaturesRepository) readRelationsFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader) {
+	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeRelationData".
 
 		/*
 			Read header fields
 		*/
-		osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+8:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+12:]))
-		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+16:]))
-		numWayIds := int(binary.LittleEndian.Uint16(data[pos+18:]))
-		numChildRelationIds := int(binary.LittleEndian.Uint16(data[pos+20:]))
+		osmId := reader.Uint64(pos + 0)
+		numEncodedKeyBytes := reader.IntFromUint32(pos + 8)
+		numValues := reader.IntFromUint32(pos + 12)
+		numNodeIds := reader.IntFromUint16(pos + 16)
+		numWayIds := reader.IntFromUint16(pos + 18)
+		numChildRelationIds := reader.IntFromUint16(pos + 20)
 
 		headerBytesCount := 8 + 4 + 4 + 2 + 2 + 2 // = 22
 
-		pos += headerBytesCount
+		pos += int64(headerBytesCount)
 
 		/*
 			Read keys
 		*/
 		encodedKeys := make([]byte, numEncodedKeyBytes)
 		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos:])
-		pos += numEncodedKeyBytes
+		copy(encodedKeys[:], reader.Read(pos, len(encodedKeys)))
+		pos += int64(numEncodedKeyBytes)
 
 		/*
 			Read values
 		*/
 		for i := 0; i < numValues; i++ {
-			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
+			encodedValues[i] = reader.IntFromUint32(pos) | reader.IntFromUint32(pos+1)<<8 | reader.IntFromUint32(pos+2)<<16
 			pos += 3
 		}
 
@@ -616,7 +633,7 @@ func (r *RawFeaturesRepository) readRelationsFromCellData(output chan feature.En
 		*/
 		nodeIds := make([]osm.NodeID, numNodeIds)
 		for i := 0; i < numNodeIds; i++ {
-			nodeIds[i] = osm.NodeID(binary.LittleEndian.Uint64(data[pos:]))
+			nodeIds[i] = osm.NodeID(reader.Int64(pos))
 			pos += 8
 		}
 
@@ -625,7 +642,7 @@ func (r *RawFeaturesRepository) readRelationsFromCellData(output chan feature.En
 		*/
 		wayIds := make([]osm.WayID, numWayIds)
 		for i := 0; i < numWayIds; i++ {
-			wayIds[i] = osm.WayID(binary.LittleEndian.Uint64(data[pos:]))
+			wayIds[i] = osm.WayID(reader.Int64(pos))
 			pos += 8
 		}
 
@@ -634,7 +651,7 @@ func (r *RawFeaturesRepository) readRelationsFromCellData(output chan feature.En
 		*/
 		childRelationIds := make([]osm.RelationID, numChildRelationIds)
 		for i := 0; i < numChildRelationIds; i++ {
-			childRelationIds[i] = osm.RelationID(binary.LittleEndian.Uint64(data[pos:]))
+			childRelationIds[i] = osm.RelationID(reader.Int64(pos))
 			pos += 8
 		}
 
