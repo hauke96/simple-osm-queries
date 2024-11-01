@@ -1,5 +1,7 @@
 package index
 
+import "github.com/paulmach/orb"
+
 type CellIndex [2]int
 
 func (c CellIndex) X() int { return c[0] }
@@ -12,6 +14,10 @@ func (c CellIndex) isBelowOrLeftOf(other CellIndex) bool {
 
 func (c CellIndex) isAboveOrRightOf(other CellIndex) bool {
 	return c.X() > other.X() || c.Y() > other.Y()
+}
+
+func (c CellIndex) ToPoint(cellWidth float64, cellHeight float64) orb.Point {
+	return orb.Point{float64(c[0]) * cellWidth, float64(c[1]) * cellHeight}
 }
 
 type CellExtent [2]CellIndex
@@ -93,4 +99,19 @@ func (c CellExtent) GetCellIndices() []CellIndex {
 	}
 
 	return indices
+}
+
+func (c CellExtent) ToPolygon(cellWidth float64, cellHeight float64) orb.Polygon {
+	lowerLeft := c[0].ToPoint(cellWidth, cellHeight)
+	maxCell := CellIndex{c[1].X() + 1, c[1].Y() + 1}
+	upperRight := maxCell.ToPoint(cellWidth, cellHeight)
+	return orb.Polygon{
+		orb.Ring{
+			lowerLeft,
+			orb.Point{upperRight.X(), lowerLeft.Y()},
+			upperRight,
+			orb.Point{lowerLeft.X(), upperRight.Y()},
+			lowerLeft,
+		},
+	}
 }

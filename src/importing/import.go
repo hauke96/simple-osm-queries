@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb/geojson"
 	"github.com/paulmach/osm"
 	"github.com/paulmach/osm/osmpbf"
 	"github.com/paulmach/osm/osmxml"
@@ -65,14 +66,35 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 
 	for {
 		// Experience for a ~500 MB PBF file:
-		//  2_000_000 ~  6 GB RAM
-		// 10_000_000 ~ 10 GB RAM
-		// 20_000_000 ~ 18 GB RAM
+		//  1_000_000 ~  6 GB RAM / 16 min. / 53 sub-extents
+		//  2_000_000 ~  6 GB RAM / 11 min. / 30 sub-extents
+		//  5_000_000 ~ 10 GB RAM / 6 min. / 15 sub-extents
+		//  6_000_000 ~ 11 GB RAM / 6 min. / 10 sub-extents
+		//  7_500_000 ~ 14 GB RAM / 9 min. / 9 sub-extents
+		// 10_000_000 ~ 13 GB RAM / 6 min. / 7 sub-extents
+		// 20_000_000 ~ 17 GB RAM / 9 min. / 3 sub-extents
+		// TODO Make this parameter configurable
 		extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 5_000_000)
 		if extent == nil {
 			break
 		}
 		subExtents = append(subExtents, *extent)
+	}
+
+	// TODO Make this configurable
+	featureCollection := geojson.NewFeatureCollection()
+	for _, subExtent := range subExtents {
+		geoJsonFeature := geojson.NewFeature(subExtent.ToPolygon(cellWidth, cellHeight))
+		featureCollection.Features = append(featureCollection.Features, geoJsonFeature)
+	}
+	geojsonBytes, err := featureCollection.MarshalJSON()
+	if err != nil {
+		sigolo.Warnf("Error marshalling sub-extents to GeoJSON: %+v", err)
+	} else {
+		err = os.WriteFile("./sub-extents.geojson", geojsonBytes, 0644)
+		if err != nil {
+			sigolo.Warnf("Error writing sub-extent GeoJSON file: %+v", err)
+		}
 	}
 
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
@@ -137,33 +159,38 @@ func getNextExtent(cellsToProcessedState map[index.CellIndex]bool, cellToNodeCou
 		return &index.CellExtent{*startCell, *startCell}
 	}
 
-	resultExtent := index.CellExtent{*startCell, *startCell}
+	biggestExtent := index.CellExtent{*startCell, *startCell}
+	biggestExtentCoveredNodes := cellToNodeCount[*startCell]
+
 	for y := startCell.Y(); y <= baseExtent.UpperRightCell().Y(); y++ {
-		resultExtent = index.CellExtent{*startCell, *startCell}
-
 		for x := startCell.X(); x <= baseExtent.UpperRightCell().X(); x++ {
-			newResultExtent := resultExtent.Expand(index.CellIndex{x, y})
+			extent := index.CellExtent{*startCell, *startCell}
+			extent = extent.Expand(index.CellIndex{x, y})
 
-			nodeCount := 0
-			for _, c := range newResultExtent.GetCellIndices() {
-				nodeCount += cellToNodeCount[c]
-			}
+			coveredNodes := 0
+			containsAlreadyProcessedCell := false
 
-			if nodeCount > nodePerExtentThreshold {
-				for _, c := range resultExtent.GetCellIndices() {
-					cellsToProcessedState[c] = true
+			for _, c := range extent.GetCellIndices() {
+				if cellsToProcessedState[c] {
+					containsAlreadyProcessedCell = true
+					break
 				}
-				return &resultExtent
+
+				coveredNodes += cellToNodeCount[c]
 			}
 
-			resultExtent = newResultExtent
+			if !containsAlreadyProcessedCell && coveredNodes >= biggestExtentCoveredNodes && coveredNodes <= nodePerExtentThreshold {
+				biggestExtent = extent
+				biggestExtentCoveredNodes = coveredNodes
+			}
 		}
 	}
 
-	for _, c := range resultExtent.GetCellIndices() {
+	for _, c := range biggestExtent.GetCellIndices() {
 		cellsToProcessedState[c] = true
 	}
-	return &resultExtent
+
+	return &biggestExtent
 }
 
 func createTagIndex(inputFile string, inputFileData []byte, indexBaseFolder string) (*index.TagIndex, error) {
