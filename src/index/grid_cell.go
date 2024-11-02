@@ -61,6 +61,13 @@ func (c CellExtent) contains(cell CellIndex) bool {
 	return !cell.isAboveOrRightOf(c.UpperRightCell()) && !cell.isBelowOrLeftOf(c.LowerLeftCell())
 }
 
+func (c CellExtent) containsLonLat(lon float64, lat float64, cellWidth float64, cellHeight float64) bool {
+	x := int(lon / cellWidth)
+	y := int(lat / cellHeight)
+
+	return x >= c.LowerLeftCell().X() && y >= c.LowerLeftCell().Y() && x <= c.UpperRightCell().X() && y <= c.UpperRightCell().Y()
+}
+
 func (c CellExtent) containsAny(cells []CellIndex) bool {
 	for _, cell := range cells {
 		if c.contains(cell) {

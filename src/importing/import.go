@@ -28,6 +28,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	importStartTime := time.Now()
 	currentStepStartTime := time.Now()
 
+	// TODO Reading the whole file into RAM is problematic for larger datasets. Maybe reading the PBF file twice still works well?
 	inputFileData, err := os.ReadFile(inputFile)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to read input file %s", inputFile)
@@ -65,6 +66,11 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	}
 
 	for {
+		// Import (2024-11-02) for different file sizes:
+		// Hamburg (47 MB): TODO
+		// Niedersachsen (675 MB): TODO
+		// Germany (4.2 GB): 5h15m, 16GB RAM, 32 GB temp cell files, 40 GB Index
+
 		// Experience for a ~500 MB PBF file:
 		//  1_000_000 ~  6 GB RAM / 16 min. / 53 sub-extents
 		//  2_000_000 ~  6 GB RAM / 11 min. / 30 sub-extents
@@ -103,7 +109,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		sigolo.Debugf("Process sub-extent %v (%d / %d)", subExtent, i+1, len(subExtents))
 
 		tempRawFeatureChannel := make(chan feature.EncodedFeature, 1000)
-		go tempRawFeatureRepo.ReadFeatures(tempRawFeatureChannel) // TODO error handling
+		go tempRawFeatureRepo.ReadFeatures(tempRawFeatureChannel, subExtent) // TODO error handling
 		err = index.ImportDataFile(tagIndex, tempRawFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
 		if err != nil {
 			return err

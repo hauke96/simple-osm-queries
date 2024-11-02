@@ -120,3 +120,54 @@ func TestGridCellExtent_contains(t *testing.T) {
 	util.AssertFalse(t, extent.contains(CellIndex{21, 20}))
 	util.AssertFalse(t, extent.contains(CellIndex{21, 19}))
 }
+
+func TestGridCellExtent_containsLonLat(t *testing.T) {
+	extent := CellExtent{
+		CellIndex{10, 10},
+		CellIndex{20, 20},
+	}
+
+	// Lower-left corner
+	util.AssertFalse(t, extent.containsLonLat(90, 110, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(90, 100, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(90, 90, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(100, 110, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(100, 100, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(100, 90, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(110, 110, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(110, 100, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(110, 90, 10, 10))
+
+	// Lower-right corner
+	util.AssertTrue(t, extent.containsLonLat(190, 110, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(190, 100, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(190, 90, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(200, 110, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(200, 100, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(200, 90, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(210, 110, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(210, 100, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(210, 90, 10, 10))
+
+	// Upper-left corner
+	util.AssertFalse(t, extent.containsLonLat(90, 210, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(90, 200, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(90, 190, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(100, 210, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(100, 200, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(100, 190, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(110, 210, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(110, 200, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(110, 190, 10, 10))
+
+	// Upper-right corner
+	util.AssertFalse(t, extent.containsLonLat(190, 210, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(190, 200, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(190, 190, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(200, 210, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(200, 200, 10, 10))
+	util.AssertTrue(t, extent.containsLonLat(200, 190, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(210, 210, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(210, 200, 10, 10))
+	util.AssertFalse(t, extent.containsLonLat(210, 190, 10, 10))
+}

@@ -105,6 +105,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 		switch rawFeature := obj.(type) {
 		case *feature.EncodedNodeFeature:
 			cell := g.GetCellIndexForCoordinate(rawFeature.GetLon(), rawFeature.GetLat())
+			// TODO Not needed anymore for nodes and ways? Because reading the data already filters it.
 			if !cellExtent.contains(cell) {
 				continue
 			}

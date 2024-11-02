@@ -433,7 +433,7 @@ func (r *RawFeaturesRepository) writeRelationData(id osm.RelationID, keys []byte
 	return err
 }
 
-func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.EncodedFeature) error {
+func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.EncodedFeature, extent CellExtent) error {
 	// TODO Pass the extent to here, so that objects outside of it can be skipped during reading. Maybe create/use wrapper around file to access files by index?
 	// TODO Do not read before processing, read on the fly
 
@@ -443,7 +443,7 @@ func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.Enc
 		return errors.Wrapf(err, "Unable to open temp raw node-feature cell %s", cellFileName)
 	}
 	cellReader := ownIo.NewIndexReader(cellFile)
-	r.readNodesFromCellData(readFeatureChannel, cellReader)
+	r.readNodesFromCellData(readFeatureChannel, cellReader, extent)
 	err = cellFile.Close()
 	if err != nil {
 		return errors.Wrapf(err, "Unable to close temp raw node-feature cell %s", cellFileName)
@@ -455,7 +455,7 @@ func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.Enc
 		return errors.Wrapf(err, "Unable to open temp raw node-feature cell %s", cellFileName)
 	}
 	cellReader = ownIo.NewIndexReader(cellFile)
-	r.readWaysFromCellData(readFeatureChannel, cellReader)
+	r.readWaysFromCellData(readFeatureChannel, cellReader, extent)
 	err = cellFile.Close()
 	if err != nil {
 		return errors.Wrapf(err, "Unable to close temp raw node-feature cell %s", cellFileName)
@@ -478,7 +478,7 @@ func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.Enc
 	return nil
 }
 
-func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader) {
+func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent CellExtent) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
 
@@ -494,6 +494,12 @@ func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.Encode
 		headerBytesCount := 8 + 4 + 4 + 4 + 4 // = 24
 
 		pos += int64(headerBytesCount)
+
+		if !extent.containsLonLat(float64(lon), float64(lat), r.CellWidth, r.CellHeight) {
+			pos += int64(numEncodedKeyBytes)
+			pos += int64(numValues * 3)
+			continue
+		}
 
 		/*
 			Read keys
@@ -527,7 +533,7 @@ func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.Encode
 	}
 }
 
-func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader) {
+func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent CellExtent) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeWayData".
 
@@ -563,13 +569,24 @@ func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.Encoded
 			Read node-IDs
 		*/
 		var nodes osm.WayNodes
+		extentContainsWay := false
 		for i := 0; i < numNodes; i++ {
+			id := osm.NodeID(reader.Int64(pos))
+			lon := float64(reader.Float32(pos + 8))
+			lat := float64(reader.Float32(pos + 12))
+
 			nodes = append(nodes, osm.WayNode{
-				ID:  osm.NodeID(reader.Int64(pos)),
-				Lon: float64(reader.Float32(pos + 8)),
-				Lat: float64(reader.Float32(pos + 12)),
+				ID:  id,
+				Lon: lon,
+				Lat: lat,
 			})
 			pos += 16
+
+			extentContainsWay = extentContainsWay || extent.containsLonLat(lon, lat, r.CellWidth, r.CellHeight)
+		}
+
+		if !extentContainsWay {
+			continue
 		}
 
 		/*
