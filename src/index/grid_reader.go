@@ -162,10 +162,10 @@ func (g *GridIndexReader) GetFeaturesForCells(cells []CellIndex, objectType feat
 }
 
 func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesResult, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType feature.OsmObjectType) {
-	sigolo.Debugf("Get %s features for cells minX=%d, maxX=%d / minY=%d, maxY=%d", objectType.String(), minCellX, maxCellX, minCellY, maxCellY)
+	sigolo.Debugf("Get %s features for cells minX=%d, minY=%d / maxX=%d, maxY=%d", objectType.String(), minCellX, minCellY, maxCellX, maxCellY)
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
-			sigolo.Debugf("Get %s features for cell X=%d, Y=%d", objectType.String(), minCellX, maxCellX)
+			sigolo.Debugf("Get %s features for cell X=%d, Y=%d", objectType.String(), cellX, cellY)
 
 			featuresInBbox := &GetFeaturesResult{
 				Cell:     CellIndex{cellX, cellY},
