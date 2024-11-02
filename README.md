@@ -43,7 +43,7 @@ Performance comparison (as of 2024-11-01; SSD, 10 year old Intel Xeon E3-1231 v3
 TODO
 
 Performance comparison:
-* The query `bbox(1.640,45.489,19.198,57.807).nodes{ amenity=bench AND seats=* }` (whole Germany using `germany-latext.osm.pbf`) takes ~1:35 min. (SSD + 10 year old Intel Xeon E3-1231 v3), which is about the same using Overpass.
+* The query `bbox(1.640,45.489,19.198,57.807).nodes{ amenity=bench AND seats=* }` (whole Germany using `germany-latext.osm.pbf`) takes ~2:10 min. (SSD, 10 year old Intel Xeon E3-1231 v3 and DDR3 RAM), vs. Overpass-Turbo with ~3:50 min. (probably depending on the load on their system):
 
 ### Server
 
@@ -127,6 +127,27 @@ bbox(1, 2, 3, 4).ways{
     this.nodes{
         addr:housenumber=*
     }
+}
+```
+
+Find all railway tracks that connect normal railway with light-rails:
+
+```
+bbox({{bbox}})
+.ways{
+  (railway=rail OR railway=light_rail)
+  AND
+  this.nodes{
+    this.ways{
+      railway=rail
+    }
+  }
+  AND
+  this.nodes{
+    this.ways{
+      railway=light_rail
+    }
+  }
 }
 ```
 
