@@ -82,6 +82,8 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 	sigolo.Info("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 
+	// TODO Fill these maps during the first call of this method and store these maps in the GridIndexWriter. All subsequent runs don't need to create, fill and destroy these maps again. This may increase memory usage (has to be determined) but might decrease stress on GC.
+
 	nodeCells := map[CellIndex]CellIndex{}
 
 	// We assume relations, like all other object types, to be sorted in a way that when a relation with child relations

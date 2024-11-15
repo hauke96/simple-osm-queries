@@ -66,12 +66,12 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	}
 
 	for {
-		// Import (2024-11-02) for different file sizes:
+		// Import (2024-11-15) for different file sizes:
 		// Hamburg (47 MB): TODO
-		// Niedersachsen (675 MB): TODO
-		// Germany (4.2 GB): 5h15m, 16GB RAM, 32 GB temp cell files, 40 GB Index
+		// Niedersachsen (675 MB): 4-5m, 4 GB RAM, 2.9 GB temp cell files, 3.8 GB Index
+		// Germany (4.2 GB): 4h30m, 16 GB RAM, 32 GB temp cell files, 40 GB Index
 
-		// Experience for a ~500 MB PBF file:
+		// Experience for a ~500 MB PBF file (2024-11-01):
 		//  1_000_000 ~  6 GB RAM / 16 min. / 53 sub-extents
 		//  2_000_000 ~  6 GB RAM / 11 min. / 30 sub-extents
 		//  5_000_000 ~ 10 GB RAM / 6 min. / 15 sub-extents
@@ -87,7 +87,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		subExtents = append(subExtents, *extent)
 	}
 
-	// TODO Make this configurable
+	// TODO Make the GeoJSON creation configurable
 	featureCollection := geojson.NewFeatureCollection()
 	for _, subExtent := range subExtents {
 		geoJsonFeature := geojson.NewFeature(subExtent.ToPolygon(cellWidth, cellHeight))

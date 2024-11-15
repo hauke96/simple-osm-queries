@@ -53,7 +53,6 @@ func (r *RawFeaturesRepository) WriteOsmToRawEncodedFeatures(scannerFactory scan
 
 	tempEncodedValues := r.TagIndex.newTempEncodedValueArray()
 
-	// TODO For germany (~4.1GB PBF file), the node-rawcell file is about 11GB large. Large enough to fit in RAM ... maybe writing it directly to disk is not the fastest option? Maybe increasing the buffer significantly (to 100MB? 1GB?) might be faster?
 	nodeWriter, err := r.getFileWriter(feature.OsmObjNode.String())
 	if err != nil {
 		return nil, nil, err
