@@ -459,8 +459,6 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 }
 
 func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeature feature.EncodedFeature) error {
-	sigolo.Tracef("Write OSM object to cell x=%d, y=%d, obj=%#v", cellX, cellY, encodedFeature.GetID())
-
 	switch featureObj := encodedFeature.(type) {
 	case *feature.EncodedNodeFeature:
 		f, err := g.getCellFile(cellX, cellY, feature.OsmObjNode)
@@ -498,8 +496,6 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 }
 
 func (g *GridIndexWriter) writeOsmObjectToCellCache(cell CellIndex, encodedFeature feature.EncodedFeature) error {
-	sigolo.Tracef("Write OSM object to cell cache x=%d, y=%d, obj=%#v", cell.X(), cell.Y(), encodedFeature.GetID())
-
 	g.cacheRawEncodedFeatureMutex.Lock()
 	switch featureObj := encodedFeature.(type) {
 	case *feature.EncodedNodeFeature:
@@ -538,7 +534,7 @@ func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType feature.O
 
 	if _, err := os.Stat(cellFileName); err == nil {
 		// Cell file does exist -> open it
-		sigolo.Tracef("Cell file %s already exist but is not hasWriterForCell, I'll open it", cellFileName)
+		sigolo.Tracef("Cell file %s already exist but is not cached, I'll open it", cellFileName)
 		file, err = os.OpenFile(cellFileName, os.O_RDWR, 0666)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
@@ -682,16 +678,11 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature *feature.EncodedNodeFeatu
 		pos += 8
 	}
 
-	sigolo.Tracef("Write feature %d pos=%#v, byteCount=%d, numKeys=%d, numValues=%d, numWays=%d, numRels=%d", encodedFeature.ID, point, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.WayIds), len(encodedFeature.RelationIds))
-
 	return g.writeData(encodedFeature, data, f)
 }
 
 func (g *GridIndexWriter) writeWayData(encodedFeature *feature.EncodedWayFeature, f io.Writer) error {
 	data := g.getWayData(encodedFeature)
-
-	sigolo.Tracef("Write feature %d byteCount=%d, numValues=%d, numNodeIds=%d", encodedFeature.ID, len(data), len(encodedFeature.GetValues()), len(encodedFeature.Nodes))
-
 	return g.writeData(encodedFeature, data, f)
 }
 
@@ -900,8 +891,6 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
 		pos += 8
 	}
-
-	sigolo.Tracef("Write feature %d bbox=%#v, byteCount=%d, numKeys=%d, numValues=%d, numNodes=%d, numWays=%d, numChildRels=%d, numParentRels=%d", encodedFeature.ID, bbox, byteCount, numKeys, len(encodedFeature.GetValues()), len(encodedFeature.NodeIds), len(encodedFeature.WayIds), len(encodedFeature.ChildRelationIds), len(encodedFeature.ParentRelationIds))
 
 	return g.writeData(encodedFeature, data, f)
 }
