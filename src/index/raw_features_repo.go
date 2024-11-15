@@ -568,18 +568,18 @@ func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.Encoded
 		/*
 			Read node-IDs
 		*/
-		var nodes osm.WayNodes
+		nodes := make([]osm.WayNode, numNodes)
 		extentContainsWay := false
 		for i := 0; i < numNodes; i++ {
 			id := osm.NodeID(reader.Int64(pos))
 			lon := float64(reader.Float32(pos + 8))
 			lat := float64(reader.Float32(pos + 12))
 
-			nodes = append(nodes, osm.WayNode{
+			nodes[i] = osm.WayNode{
 				ID:  id,
 				Lon: lon,
 				Lat: lat,
-			})
+			}
 			pos += 16
 
 			extentContainsWay = extentContainsWay || extent.containsLonLat(lon, lat, r.CellWidth, r.CellHeight)
