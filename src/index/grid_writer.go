@@ -92,12 +92,10 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 	firstWayHasBeenProcessed := false
 	firstRelationHasBeenProcessed := false
 
-	nodeToCellMap := map[osm.NodeID]CellIndex{}
 	wayToCellsMap := map[osm.WayID][]CellIndex{}
 	relationToCellsMap := map[osm.RelationID][]CellIndex{}
 
-	nodeToBound := map[osm.NodeID]*orb.Bound{}
-
+	nodeToPoint := map[osm.NodeID]*orb.Point{}
 	wayToBound := map[osm.WayID]*orb.Bound{}
 
 	sigolo.Debug("Process nodes (1/3)")
@@ -111,10 +109,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			}
 
 			id := osm.NodeID(rawFeature.GetID())
-			nodeToCellMap[id] = cell
-
-			bbox := rawFeature.GetGeometry().Bound()
-			nodeToBound[id] = &bbox
+			nodeToPoint[id] = &orb.Point{rawFeature.GetLon(), rawFeature.GetLat()}
 
 			err := g.writeOsmObjectToCellCache(cell, rawFeature)
 			sigolo.FatalCheck(err)
@@ -128,7 +123,8 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 
 			extentContainsWay := false
 			for _, node := range rawFeature.Nodes {
-				extentContainsWay = extentContainsWay || cellExtent.contains(nodeToCellMap[node.ID])
+				nodeCell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
+				extentContainsWay = extentContainsWay || cellExtent.contains(nodeCell)
 				if extentContainsWay {
 					break
 				}
@@ -138,8 +134,8 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			}
 
 			wayCells := map[CellIndex]CellIndex{}
-			for _, nodeId := range rawFeature.Nodes.NodeIDs() {
-				cell := nodeToCellMap[nodeId]
+			for _, node := range rawFeature.Nodes {
+				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 				wayCells[cell] = cell
 			}
 
@@ -172,9 +168,13 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 
 			extentContainsRelation := false
 			for _, nodeId := range rawFeature.NodeIds {
-				extentContainsRelation = extentContainsRelation || cellExtent.contains(nodeToCellMap[nodeId])
-				if extentContainsRelation {
-					break
+				nodePoint := nodeToPoint[nodeId]
+				if nodePoint != nil {
+					cell := g.GetCellIndexForCoordinate(nodePoint.X(), nodePoint.Y())
+					extentContainsRelation = extentContainsRelation || cellExtent.contains(cell)
+					if extentContainsRelation {
+						break
+					}
 				}
 			}
 			if !extentContainsRelation {
@@ -202,13 +202,15 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			var bbox *orb.Bound
 
 			for _, nodeId := range rawFeature.NodeIds {
-				cell := nodeToCellMap[nodeId]
-				relCells[cell] = cell
-				if bound, ok := nodeToBound[nodeId]; ok {
+				point, ok := nodeToPoint[nodeId]
+				if ok {
+					cell := g.GetCellIndexForCoordinate(point.X(), point.Y())
+					relCells[cell] = cell
 					if bbox == nil {
-						bbox = bound
+						nodeBound := point.Bound()
+						bbox = &nodeBound
 					} else {
-						b := bbox.Union(*bound)
+						b := bbox.Union(point.Bound())
 						bbox = &b
 					}
 				}
