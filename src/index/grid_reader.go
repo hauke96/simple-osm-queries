@@ -375,13 +375,13 @@ func (g *GridIndexReader) readWaysFromCellData(output chan []feature.EncodedFeat
 		/*
 			Read node-IDs
 		*/
-		var nodes osm.WayNodes
+		nodes := make([]osm.WayNode, numNodes)
 		for i := 0; i < numNodes; i++ {
-			nodes = append(nodes, osm.WayNode{
+			nodes[i] = osm.WayNode{
 				ID:  osm.NodeID(binary.LittleEndian.Uint64(data[pos:])),
 				Lon: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[(pos + 8):]))),
 				Lat: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[(pos + 12):]))),
-			})
+			}
 			pos += 16
 		}
 
