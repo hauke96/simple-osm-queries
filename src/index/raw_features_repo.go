@@ -513,7 +513,7 @@ func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.Encode
 			Read values
 		*/
 		for i := 0; i < numValues; i++ {
-			encodedValues[i] = reader.IntFromUint32(pos) | reader.IntFromUint32(pos+1)<<8 | reader.IntFromUint32(pos+2)<<16
+			encodedValues[i] = reader.IntFromUint24(pos)
 			pos += 3
 		}
 
@@ -561,7 +561,7 @@ func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.Encoded
 			Read values
 		*/
 		for i := 0; i < numValues; i++ {
-			encodedValues[i] = reader.IntFromUint32(pos) | reader.IntFromUint32(pos+1)<<8 | reader.IntFromUint32(pos+2)<<16
+			encodedValues[i] = reader.IntFromUint24(pos)
 			pos += 3
 		}
 
@@ -641,7 +641,7 @@ func (r *RawFeaturesRepository) readRelationsFromCellData(output chan feature.En
 			Read values
 		*/
 		for i := 0; i < numValues; i++ {
-			encodedValues[i] = reader.IntFromUint32(pos) | reader.IntFromUint32(pos+1)<<8 | reader.IntFromUint32(pos+2)<<16
+			encodedValues[i] = reader.IntFromUint24(pos)
 			pos += 3
 		}
 

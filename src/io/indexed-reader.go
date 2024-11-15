@@ -91,6 +91,12 @@ func (r *IndexedReader) IntFromUint32(at int64) int {
 	return int(r.Uint32(at))
 }
 
+// IntFromUint24 returns a 32-bit long integer from a 24-bit long part of the reader.
+func (r *IndexedReader) IntFromUint24(at int64) int {
+	// Remove first byte since in little endian reading, this byte belongs to the next value of the reader and should therefore be skipped.
+	return int(r.Uint32(at)) & 0x00FFFFFF
+}
+
 // IntFromUint16 returns a 32-bit long integer from a uint16 value. It means, this methods reads 2 bytes and then casts it to a normal int value.
 func (r *IndexedReader) IntFromUint16(at int64) int {
 	return int(r.Uint16(at))
