@@ -20,8 +20,8 @@ import (
 type GridIndexWriter struct {
 	baseGridIndex
 
-	cacheFileHandles            map[string]*os.File
-	cacheFileWriters            map[string]*bufio.Writer
+	cacheFileHandles            map[int64]*[3]*os.File      // Key is a aggregation of the cells x and y coordinate. The array index is based on the object type.
+	cacheFileWriters            map[int64]*[3]*bufio.Writer // Key is a aggregation of the cells x and y coordinate The array index is based on the object type.
 	cacheFileMutexes            map[io.Writer]*sync.Mutex
 	cacheFileMutex              *sync.Mutex
 	cacheRawEncodedNodes        map[CellIndex][]*feature.EncodedNodeFeature
@@ -60,8 +60,8 @@ func NewGridIndexWriter(tagIndex *TagIndex, cellWidth float64, cellHeight float6
 	}
 	gridIndexWriter := &GridIndexWriter{
 		baseGridIndex:               baseGridIndex,
-		cacheFileHandles:            map[string]*os.File{},
-		cacheFileWriters:            map[string]*bufio.Writer{},
+		cacheFileHandles:            map[int64]*[3]*os.File{},
+		cacheFileWriters:            map[int64]*[3]*bufio.Writer{},
 		cacheFileMutexes:            map[io.Writer]*sync.Mutex{},
 		cacheFileMutex:              &sync.Mutex{},
 		cacheRawEncodedNodes:        map[CellIndex][]*feature.EncodedNodeFeature{},
@@ -271,22 +271,23 @@ func (g *GridIndexWriter) closeOpenFileHandles() {
 	var err error
 	g.cacheFileMutex.Lock()
 	sigolo.Debugf("Close remaining open file handles")
-	for filename, file := range g.cacheFileHandles {
-		if file != nil {
-			sigolo.Tracef("Close cell file %s", file.Name())
+	for mapKey, fileHandles := range g.cacheFileHandles {
+		for writerIndex, writer := range g.cacheFileWriters[mapKey] {
+			if writer != nil {
+				err = writer.Flush()
+				sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", fileHandles[writerIndex].Name()))
+			}
+		}
 
-			writer := g.cacheFileWriters[filename]
-			err = writer.Flush()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", file.Name()))
-
-			err = file.Close()
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", file.Name()))
-		} else {
-			sigolo.Warnf("No cell file %s to close, there's probably an error previously when opening/creating it", filename)
+		for _, fileHandle := range fileHandles {
+			if fileHandle != nil {
+				err = fileHandle.Close()
+				sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", fileHandle.Name()))
+			}
 		}
 	}
-	g.cacheFileHandles = map[string]*os.File{}
-	g.cacheFileWriters = map[string]*bufio.Writer{}
+	g.cacheFileHandles = map[int64]*[3]*os.File{}
+	g.cacheFileWriters = map[int64]*[3]*bufio.Writer{}
 	g.cacheFileMutexes = map[io.Writer]*sync.Mutex{}
 	g.cacheFileMutex.Unlock()
 }
@@ -388,10 +389,6 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 	//cellFolderName := path.Join(g.BaseFolder, objectType.String(), strconv.Itoa(cell.X()))
 	//cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
 
-	_, err = g.getCellFile(cell.X(), cell.Y(), objectType.String())
-	if err != nil {
-		return err
-	}
 	//if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
 	//	if objectType == feature.OsmObjNode {
 	//		// We got all the cells in which nodes are. When this cell doesn't exist, then something went really wrong.
@@ -466,7 +463,7 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 
 	switch featureObj := encodedFeature.(type) {
 	case *feature.EncodedNodeFeature:
-		f, err := g.getCellFile(cellX, cellY, feature.OsmObjNode.String())
+		f, err := g.getCellFile(cellX, cellY, feature.OsmObjNode)
 		if err != nil {
 			return err
 		}
@@ -476,7 +473,7 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 		}
 		return nil
 	case *feature.EncodedWayFeature:
-		f, err := g.getCellFile(cellX, cellY, feature.OsmObjWay.String())
+		f, err := g.getCellFile(cellX, cellY, feature.OsmObjWay)
 		if err != nil {
 			return err
 		}
@@ -486,7 +483,7 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 		}
 		return nil
 	case *feature.EncodedRelationFeature:
-		f, err := g.getCellFile(cellX, cellY, feature.OsmObjRelation.String())
+		f, err := g.getCellFile(cellX, cellY, feature.OsmObjRelation)
 		if err != nil {
 			return err
 		}
@@ -520,30 +517,35 @@ func (g *GridIndexWriter) writeOsmObjectToCellCache(cellX int, cellY int, encode
 	return nil
 }
 
-func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType string) (io.Writer, error) {
-	// Not filepath.Join because in this case it's slower than simple concatenation
-	cellFolderName := g.BaseFolder + "/" + objectType + "/" + strconv.Itoa(cellX)
-	cellFileName := cellFolderName + "/" + strconv.Itoa(cellY) + ".cell"
+// TODO Pass actual OsmObjectType?
+func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType feature.OsmObjectType) (io.Writer, error) {
 
-	var writer *bufio.Writer
-	var cached bool
 	var err error
 
 	g.cacheFileMutex.Lock()
 
-	writer, cached = g.cacheFileWriters[cellFileName]
-	if cached {
-		g.cacheFileMutex.Unlock()
-		sigolo.Tracef("Cell file %s already exist and cached", cellFileName)
-		return writer, nil
+	cellPositionKey := g.getMapKeyForCell(cellX, cellY)
+	writers, hasWriterForCell := g.cacheFileWriters[cellPositionKey]
+	writersIndex := g.getWriterIndex(objectType)
+	if hasWriterForCell {
+		writer := writers[writersIndex]
+		if writer != nil {
+			// We have a writer for this cell and this type of object -> return it
+			g.cacheFileMutex.Unlock()
+			return writer, nil
+		}
 	}
 
-	// Cell file not cached
+	// Not filepath.Join because in this case it's slower than simple concatenation
+	cellFolderName := g.BaseFolder + "/" + objectType.String() + "/" + strconv.Itoa(cellX)
+	cellFileName := cellFolderName + "/" + strconv.Itoa(cellY) + ".cell"
+
+	// Cell file not hasWriterForCell
 	var file *os.File
 
 	if _, err = os.Stat(cellFileName); err == nil {
 		// Cell file does exist -> open it
-		sigolo.Tracef("Cell file %s already exist but is not cached, I'll open it", cellFileName)
+		sigolo.Tracef("Cell file %s already exist but is not hasWriterForCell, I'll open it", cellFileName)
 		file, err = os.OpenFile(cellFileName, os.O_RDWR, 0666)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
@@ -570,14 +572,39 @@ func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType string) (
 		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
 	}
 
-	writer = bufio.NewWriter(file) // 4MiB
-	g.cacheFileWriters[cellFileName] = writer
-	g.cacheFileHandles[cellFileName] = file
+	if !hasWriterForCell {
+		g.cacheFileWriters[cellPositionKey] = &[3]*bufio.Writer{}
+		g.cacheFileHandles[cellPositionKey] = &[3]*os.File{}
+		writers = g.cacheFileWriters[cellPositionKey]
+	}
+
+	writer := bufio.NewWriter(file)
+	writers[writersIndex] = writer
+
+	openFileHandleForThisCell := g.cacheFileHandles[cellPositionKey]
+	openFileHandleForThisCell[writersIndex] = file
+
 	g.cacheFileMutexes[writer] = &sync.Mutex{}
 
 	g.cacheFileMutex.Unlock()
 
 	return writer, nil
+}
+
+func (g *GridIndexWriter) getMapKeyForCell(cellX int, cellY int) int64 {
+	return int64(cellX)<<32 | int64(cellY)
+}
+
+func (g *GridIndexWriter) getWriterIndex(objectType feature.OsmObjectType) int {
+	writersIndex := -1
+	if objectType == feature.OsmObjNode {
+		writersIndex = 0
+	} else if objectType == feature.OsmObjWay {
+		writersIndex = 1
+	} else {
+		writersIndex = 2
+	}
+	return writersIndex
 }
 
 func (g *GridIndexWriter) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f io.Writer) error {
