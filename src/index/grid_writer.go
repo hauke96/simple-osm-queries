@@ -116,7 +116,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			bbox := rawFeature.GetGeometry().Bound()
 			nodeToBound[id] = &bbox
 
-			err := g.writeOsmObjectToCellCache(cell.X(), cell.Y(), rawFeature)
+			err := g.writeOsmObjectToCellCache(cell, rawFeature)
 			sigolo.FatalCheck(err)
 
 			nodeCells[cell] = cell
@@ -159,7 +159,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 
 				if _, cellAlreadySaved := savedCells[cell]; !cellAlreadySaved && cellExtent.contains(cell) {
-					err := g.writeOsmObjectToCellCache(cell.X(), cell.Y(), rawFeature)
+					err := g.writeOsmObjectToCellCache(cell, rawFeature)
 					sigolo.FatalCheck(err)
 					savedCells[cell] = true
 				}
@@ -253,7 +253,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			rawFeature.Geometry = bbox.ToPolygon()
 
 			for _, cell := range relCells {
-				err := g.writeOsmObjectToCellCache(cell.X(), cell.Y(), rawFeature)
+				err := g.writeOsmObjectToCellCache(cell, rawFeature)
 				sigolo.FatalCheck(err)
 			}
 		}
@@ -497,11 +497,8 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 	return nil
 }
 
-func (g *GridIndexWriter) writeOsmObjectToCellCache(cellX int, cellY int, encodedFeature feature.EncodedFeature) error {
-	sigolo.Tracef("Write OSM object to cell cache x=%d, y=%d, obj=%#v", cellX, cellY, encodedFeature.GetID())
-
-	// TODO Make this a parameter
-	cell := CellIndex{cellX, cellY}
+func (g *GridIndexWriter) writeOsmObjectToCellCache(cell CellIndex, encodedFeature feature.EncodedFeature) error {
+	sigolo.Tracef("Write OSM object to cell cache x=%d, y=%d, obj=%#v", cell.X(), cell.Y(), encodedFeature.GetID())
 
 	g.cacheRawEncodedFeatureMutex.Lock()
 	switch featureObj := encodedFeature.(type) {
@@ -517,11 +514,7 @@ func (g *GridIndexWriter) writeOsmObjectToCellCache(cellX int, cellY int, encode
 	return nil
 }
 
-// TODO Pass actual OsmObjectType?
 func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType feature.OsmObjectType) (io.Writer, error) {
-
-	var err error
-
 	g.cacheFileMutex.Lock()
 
 	cellPositionKey := g.getMapKeyForCell(cellX, cellY)
@@ -543,7 +536,7 @@ func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType feature.O
 	// Cell file not hasWriterForCell
 	var file *os.File
 
-	if _, err = os.Stat(cellFileName); err == nil {
+	if _, err := os.Stat(cellFileName); err == nil {
 		// Cell file does exist -> open it
 		sigolo.Tracef("Cell file %s already exist but is not hasWriterForCell, I'll open it", cellFileName)
 		file, err = os.OpenFile(cellFileName, os.O_RDWR, 0666)
