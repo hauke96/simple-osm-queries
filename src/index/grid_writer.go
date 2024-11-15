@@ -682,24 +682,6 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature *feature.EncodedNodeFeatu
 }
 
 func (g *GridIndexWriter) writeWayData(encodedFeature *feature.EncodedWayFeature, f io.Writer) error {
-	data := g.getWayData(encodedFeature)
-	return g.writeData(encodedFeature, data, f)
-}
-
-func (g *GridIndexWriter) writeData(encodedFeature feature.EncodedFeature, data []byte, f io.Writer) error {
-	g.cacheFileMutex.Lock()
-	m := g.cacheFileMutexes[f]
-	g.cacheFileMutex.Unlock()
-	m.Lock()
-	_, err := f.Write(data)
-	m.Unlock()
-	if err != nil {
-		return errors.Wrapf(err, "Unable to write %s %d to cell file", reflect.TypeOf(encodedFeature).Name(), encodedFeature.GetID())
-	}
-	return nil
-}
-
-func (g *GridIndexWriter) getWayData(encodedFeature *feature.EncodedWayFeature) []byte {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -784,7 +766,7 @@ func (g *GridIndexWriter) getWayData(encodedFeature *feature.EncodedWayFeature) 
 		pos += 8
 	}
 
-	return data
+	return g.writeData(encodedFeature, data, f)
 }
 
 func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelationFeature, f io.Writer) error {
@@ -893,4 +875,17 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	}
 
 	return g.writeData(encodedFeature, data, f)
+}
+
+func (g *GridIndexWriter) writeData(encodedFeature feature.EncodedFeature, data []byte, f io.Writer) error {
+	g.cacheFileMutex.Lock()
+	m := g.cacheFileMutexes[f]
+	g.cacheFileMutex.Unlock()
+	m.Lock()
+	_, err := f.Write(data)
+	m.Unlock()
+	if err != nil {
+		return errors.Wrapf(err, "Unable to write %s %d to cell file", reflect.TypeOf(encodedFeature).Name(), encodedFeature.GetID())
+	}
+	return nil
 }
