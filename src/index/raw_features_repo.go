@@ -10,21 +10,21 @@ import (
 	"io"
 	"math"
 	"os"
+	"soq/common"
 	"soq/feature"
 	ownIo "soq/io"
-	"time"
+	ownOsm "soq/osm"
 )
 
 type TemporaryFeatureImporter struct {
 	repository             *RawFeaturesRepository
 	tagIndex               *TagIndex
 	tagIndexTempValueArray []int
-	importStartTime        time.Time
 	nodeWriter             *bufio.Writer
 	wayWriter              *bufio.Writer
 	relationWriter         *bufio.Writer
-	CellToNodeCount        map[CellIndex]int
-	InputDataCellExtent    *CellExtent
+	CellToNodeCount        map[common.CellIndex]int
+	InputDataCellExtent    *common.CellExtent
 }
 
 func NewTemporaryFeatureImporter(repository *RawFeaturesRepository, tagIndex *TagIndex) *TemporaryFeatureImporter {
@@ -32,7 +32,7 @@ func NewTemporaryFeatureImporter(repository *RawFeaturesRepository, tagIndex *Ta
 		repository:             repository,
 		tagIndex:               tagIndex,
 		tagIndexTempValueArray: tagIndex.newTempEncodedValueArray(),
-		CellToNodeCount:        map[CellIndex]int{},
+		CellToNodeCount:        map[common.CellIndex]int{},
 	}
 }
 
@@ -41,27 +41,24 @@ func (i *TemporaryFeatureImporter) Name() string {
 }
 
 func (i *TemporaryFeatureImporter) Init() error {
-	sigolo.Info("Start converting OSM data to raw encoded features")
-	i.importStartTime = time.Now()
-
 	err := i.repository.Clear()
 	if err != nil {
 		return err
 	}
 
-	nodeWriter, err := i.repository.getFileWriter(feature.OsmObjNode.String())
+	nodeWriter, err := i.repository.getFileWriter(ownOsm.OsmObjNode.String())
 	if err != nil {
 		return err
 	}
 	i.nodeWriter = nodeWriter
 
-	wayWriter, err := i.repository.getFileWriter(feature.OsmObjWay.String())
+	wayWriter, err := i.repository.getFileWriter(ownOsm.OsmObjWay.String())
 	if err != nil {
 		return err
 	}
 	i.wayWriter = wayWriter
 
-	relationWriter, err := i.repository.getFileWriter(feature.OsmObjRelation.String())
+	relationWriter, err := i.repository.getFileWriter(ownOsm.OsmObjRelation.String())
 	if err != nil {
 		return err
 	}
@@ -79,7 +76,7 @@ func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
 	}
 
 	if i.InputDataCellExtent == nil {
-		i.InputDataCellExtent = &CellExtent{cell, cell}
+		i.InputDataCellExtent = &common.CellExtent{cell, cell}
 	} else {
 		newExtent := i.InputDataCellExtent.Expand(cell)
 		i.InputDataCellExtent = &newExtent
@@ -119,9 +116,6 @@ func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error 
 }
 
 func (i *TemporaryFeatureImporter) Done() error {
-	importDuration := time.Since(i.importStartTime)
-	sigolo.Infof("Created raw encoded features from OSM data in %s", importDuration)
-
 	err := i.nodeWriter.Flush()
 	if err != nil {
 		return errors.Wrap(err, "Error closing node writer")
@@ -442,11 +436,11 @@ func (r *RawFeaturesRepository) writeRelationData(id osm.RelationID, keys []byte
 	return err
 }
 
-func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.EncodedFeature, extent CellExtent) error {
+func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.EncodedFeature, extent common.CellExtent) error {
 	// TODO Pass the extent to here, so that objects outside of it can be skipped during reading. Maybe create/use wrapper around file to access files by index?
 	// TODO Do not read before processing, read on the fly
 
-	cellFileName := r.BaseFolder + "/" + feature.OsmObjNode.String() + ".rawcell"
+	cellFileName := r.BaseFolder + "/" + ownOsm.OsmObjNode.String() + ".rawcell"
 	cellFile, err := os.OpenFile(cellFileName, os.O_RDONLY, 0666)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to open temp raw node-feature cell %s", cellFileName)
@@ -458,7 +452,7 @@ func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.Enc
 		return errors.Wrapf(err, "Unable to close temp raw node-feature cell %s", cellFileName)
 	}
 
-	cellFileName = r.BaseFolder + "/" + feature.OsmObjWay.String() + ".rawcell"
+	cellFileName = r.BaseFolder + "/" + ownOsm.OsmObjWay.String() + ".rawcell"
 	cellFile, err = os.OpenFile(cellFileName, os.O_RDONLY, 0666)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to open temp raw node-feature cell %s", cellFileName)
@@ -470,7 +464,7 @@ func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.Enc
 		return errors.Wrapf(err, "Unable to close temp raw node-feature cell %s", cellFileName)
 	}
 
-	cellFileName = r.BaseFolder + "/" + feature.OsmObjRelation.String() + ".rawcell"
+	cellFileName = r.BaseFolder + "/" + ownOsm.OsmObjRelation.String() + ".rawcell"
 	cellFile, err = os.OpenFile(cellFileName, os.O_RDONLY, 0666)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to open temp raw node-feature cell %s", cellFileName)
@@ -487,7 +481,7 @@ func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.Enc
 	return nil
 }
 
-func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent CellExtent) {
+func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent common.CellExtent) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
 
@@ -504,7 +498,7 @@ func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.Encode
 
 		pos += int64(headerBytesCount)
 
-		if !extent.containsLonLat(float64(lon), float64(lat), r.CellWidth, r.CellHeight) {
+		if !extent.ContainsLonLat(float64(lon), float64(lat), r.CellWidth, r.CellHeight) {
 			pos += int64(numEncodedKeyBytes)
 			pos += int64(numValues * 3)
 			continue
@@ -542,7 +536,7 @@ func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.Encode
 	}
 }
 
-func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent CellExtent) {
+func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent common.CellExtent) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeWayData".
 
@@ -591,7 +585,7 @@ func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.Encoded
 			}
 			pos += 16
 
-			extentContainsWay = extentContainsWay || extent.containsLonLat(lon, lat, r.CellWidth, r.CellHeight)
+			extentContainsWay = extentContainsWay || extent.ContainsLonLat(lon, lat, r.CellWidth, r.CellHeight)
 		}
 
 		if !extentContainsWay {

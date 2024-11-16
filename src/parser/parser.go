@@ -5,10 +5,10 @@ import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/pkg/errors"
-	"soq/feature"
+	"soq/common"
 	"soq/index"
+	"soq/osm"
 	"soq/query"
-	"soq/util"
 	"strconv"
 	"strings"
 )
@@ -174,7 +174,7 @@ func (p *Parser) parseLocationExpression() (query.LocationExpression, error) {
 		return nil, ParsingTokenStreamEndAtPosition(p.getNextTokenStartPosition(), "Expected keyword for location expression")
 	}
 	token := p.currentToken()
-	if token.kind != TokenKindKeyword || !util.Contains(locationExpressions, token.lexeme) && token.lexeme != contextAwareLocationExpression {
+	if token.kind != TokenKindKeyword || !common.Contains(locationExpressions, token.lexeme) && token.lexeme != contextAwareLocationExpression {
 		return nil, ParsingErrorExpectedButFound("location expression", token.startPosition, token.lexeme, token.kind)
 	}
 
@@ -235,7 +235,7 @@ func (p *Parser) parseBboxLocationExpression() (*query.BboxLocationExpression, e
 	}), nil
 }
 
-func (p *Parser) parseOsmQueryType(isContextAwareStatement bool) (feature.OsmQueryType, error) {
+func (p *Parser) parseOsmQueryType(isContextAwareStatement bool) (osm.OsmQueryType, error) {
 	token := p.currentToken()
 	if token.kind != TokenKindKeyword {
 		return -1, ParsingErrorExpectedButFound(fmt.Sprintf("OSM object type (%s, %s or %s)", objectTypeNodeExpression, objectTypeWaysExpression, objectTypeRelationsExpression), token.startPosition, token.lexeme, token.kind)
@@ -243,16 +243,16 @@ func (p *Parser) parseOsmQueryType(isContextAwareStatement bool) (feature.OsmQue
 
 	switch token.lexeme {
 	case objectTypeNodeExpression:
-		return feature.OsmQueryNode, nil
+		return osm.OsmQueryNode, nil
 	case objectTypeWaysExpression:
-		return feature.OsmQueryWay, nil
+		return osm.OsmQueryWay, nil
 	case objectTypeRelationsExpression:
-		return feature.OsmQueryRelation, nil
+		return osm.OsmQueryRelation, nil
 	case objectTypeChildRelationsExpression:
 		if !isContextAwareStatement {
 			return -1, ParsingErrorExpectedButFound(fmt.Sprintf("OSM object type (%s, %s or %s)", objectTypeNodeExpression, objectTypeWaysExpression, objectTypeRelationsExpression), token.startPosition, token.lexeme, token.kind)
 		}
-		return feature.OsmQueryChildRelation, nil
+		return osm.OsmQueryChildRelation, nil
 	}
 
 	return -1, ParsingErrorExpectedButFound(fmt.Sprintf("OSM object type (%s, %s or %s)", objectTypeNodeExpression, objectTypeWaysExpression, objectTypeRelationsExpression), token.startPosition, token.lexeme, token.kind)

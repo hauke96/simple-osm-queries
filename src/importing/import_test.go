@@ -1,8 +1,8 @@
 package importing
 
 import (
+	"soq/common"
 	"soq/index"
-	"soq/util"
 	"testing"
 )
 
@@ -52,22 +52,22 @@ func TestImport_getNextExtent(t *testing.T) {
 	cellToNodeCount[c22] = 0
 
 	extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 0}, index.CellIndex{1, 1}}, extent)
+	common.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 0}, index.CellIndex{1, 1}}, extent)
 
 	extent = getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertEqual(t, &index.CellExtent{index.CellIndex{2, 0}, index.CellIndex{2, 0}}, extent)
+	common.AssertEqual(t, &index.CellExtent{index.CellIndex{2, 0}, index.CellIndex{2, 0}}, extent)
 
 	extent = getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertEqual(t, &index.CellExtent{index.CellIndex{2, 1}, index.CellIndex{2, 1}}, extent)
+	common.AssertEqual(t, &index.CellExtent{index.CellIndex{2, 1}, index.CellIndex{2, 1}}, extent)
 
 	extent = getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 2}, index.CellIndex{0, 2}}, extent)
+	common.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 2}, index.CellIndex{0, 2}}, extent)
 
 	extent = getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertEqual(t, &index.CellExtent{index.CellIndex{1, 2}, index.CellIndex{2, 2}}, extent)
+	common.AssertEqual(t, &index.CellExtent{index.CellIndex{1, 2}, index.CellIndex{2, 2}}, extent)
 
 	extent = getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertNil(t, extent)
+	common.AssertNil(t, extent)
 }
 
 func TestImport_getNextExtent_rightMostExtent(t *testing.T) {
@@ -116,17 +116,17 @@ func TestImport_getNextExtent_rightMostExtent(t *testing.T) {
 	cellToNodeCount[c22] = 0
 
 	extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 0}, index.CellIndex{1, 0}}, extent)
+	common.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 0}, index.CellIndex{1, 0}}, extent)
 
 	extent = getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertEqual(t, &index.CellExtent{index.CellIndex{2, 0}, index.CellIndex{2, 2}}, extent)
+	common.AssertEqual(t, &index.CellExtent{index.CellIndex{2, 0}, index.CellIndex{2, 2}}, extent)
 
 	extent = getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 1}, index.CellIndex{1, 1}}, extent)
+	common.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 1}, index.CellIndex{1, 1}}, extent)
 
 	extent = getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 2}, index.CellIndex{1, 2}}, extent)
+	common.AssertEqual(t, &index.CellExtent{index.CellIndex{0, 2}, index.CellIndex{1, 2}}, extent)
 
 	extent = getNextExtent(cellsToProcessedState, cellToNodeCount, 5)
-	util.AssertNil(t, extent)
+	common.AssertNil(t, extent)
 }

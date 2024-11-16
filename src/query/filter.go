@@ -4,9 +4,10 @@ import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/pkg/errors"
 	"reflect"
+	"soq/common"
 	"soq/feature"
 	"soq/index"
-	"soq/util"
+	"soq/osm"
 	"strings"
 )
 
@@ -164,14 +165,14 @@ func (f KeyFilterExpression) GetParameter() (int, bool) {
 
 type SubStatementFilterExpression struct {
 	statement   *Statement
-	cachedCells []index.CellIndex // TODO Add LRU-Cache or similar?
+	cachedCells []common.CellIndex // TODO Add LRU-Cache or similar?
 	idCache     map[uint64]uint64
 }
 
 func NewSubStatementFilterExpression(statement *Statement) *SubStatementFilterExpression {
 	return &SubStatementFilterExpression{
 		statement:   statement,
-		cachedCells: []index.CellIndex{},
+		cachedCells: []common.CellIndex{},
 		// This cache is used as generic cache for all sorts of objects. However, we only request the features of the
 		// statements queryType, so this cache only contains features of one kind. This means the IDs are unique.
 		idCache: make(map[uint64]uint64),
@@ -190,7 +191,7 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 
 	var err error
 	var featuresChannel chan *index.GetFeaturesResult
-	cells := map[index.CellIndex]index.CellIndex{} // Map instead of array to have quick lookups
+	cells := map[common.CellIndex]common.CellIndex{} // Map instead of array to have quick lookups
 
 	switch contextFeature := context.(type) {
 	case *feature.EncodedNodeFeature:
@@ -212,7 +213,7 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 
 		for cellX := minCell.X(); cellX <= maxCell.X(); cellX++ {
 			for cellY := minCell.Y(); cellY <= maxCell.Y(); cellY++ {
-				cell := index.CellIndex{cellX, cellY}
+				cell := common.CellIndex{cellX, cellY}
 				cells[cell] = cell
 			}
 		}
@@ -224,9 +225,9 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	}
 
 	// Get those cells that are not in the cache
-	var cellsToFetch []index.CellIndex
+	var cellsToFetch []common.CellIndex
 	for _, cell := range cells {
-		if !util.Contains(f.cachedCells, cell) {
+		if !common.Contains(f.cachedCells, cell) {
 			cellsToFetch = append(cellsToFetch, cell)
 		}
 	}
@@ -265,63 +266,63 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	switch contextFeature := context.(type) {
 	case *feature.EncodedNodeFeature:
 		switch f.statement.queryType {
-		case feature.OsmQueryNode:
+		case osm.OsmQueryNode:
 			return false, errors.Errorf("Invalid query type %s requested for node in sub-statement expression. This is a bug!", f.statement.queryType)
-		case feature.OsmQueryWay:
+		case osm.OsmQueryWay:
 			for _, wayId := range contextFeature.WayIds {
 				if _, ok := f.idCache[uint64(wayId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmQueryRelation:
+		case osm.OsmQueryRelation:
 			for _, relationId := range contextFeature.RelationIds {
 				if _, ok := f.idCache[uint64(relationId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmQueryChildRelation:
+		case osm.OsmQueryChildRelation:
 			return false, errors.Errorf("Invalid query type %s requested for node in sub-statement expression. This is a bug!", f.statement.queryType)
 		}
 	case *feature.EncodedWayFeature:
 		switch f.statement.queryType {
-		case feature.OsmQueryNode:
+		case osm.OsmQueryNode:
 			for _, node := range contextFeature.Nodes {
 				if _, ok := f.idCache[uint64(node.ID)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmQueryWay:
+		case osm.OsmQueryWay:
 			return false, errors.Errorf("Invalid query type %s requested for way in sub-statement expression. This is a bug!", f.statement.queryType)
-		case feature.OsmQueryRelation:
+		case osm.OsmQueryRelation:
 			for _, relationId := range contextFeature.RelationIds {
 				if _, ok := f.idCache[uint64(relationId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmQueryChildRelation:
+		case osm.OsmQueryChildRelation:
 			return false, errors.Errorf("Invalid query type %s requested for way in sub-statement expression. This is a bug!", f.statement.queryType)
 		}
 	case *feature.EncodedRelationFeature:
 		switch f.statement.queryType {
-		case feature.OsmQueryNode:
+		case osm.OsmQueryNode:
 			for _, nodeId := range contextFeature.NodeIds {
 				if _, ok := f.idCache[uint64(nodeId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmQueryWay:
+		case osm.OsmQueryWay:
 			for _, wayId := range contextFeature.WayIds {
 				if _, ok := f.idCache[uint64(wayId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmQueryRelation:
+		case osm.OsmQueryRelation:
 			for _, parentRelationId := range contextFeature.ParentRelationIds {
 				if _, ok := f.idCache[uint64(parentRelationId)]; ok {
 					return true, nil
 				}
 			}
-		case feature.OsmQueryChildRelation:
+		case osm.OsmQueryChildRelation:
 			for _, childRelationId := range contextFeature.ChildRelationIds {
 				if _, ok := f.idCache[uint64(childRelationId)]; ok {
 					return true, nil

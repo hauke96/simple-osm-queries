@@ -1,4 +1,4 @@
-package feature
+package osm
 
 import (
 	"fmt"

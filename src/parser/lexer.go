@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/hauke96/sigolo/v2"
 	"github.com/pkg/errors"
-	"soq/util"
+	"soq/common"
 	"unicode"
 )
 
@@ -98,12 +98,12 @@ func (l *Lexer) nextToken() (*Token, error) {
 		}
 
 		// Keywords and identifier (i.e. token consisting of multi-char words)
-		if util.Contains(keywordChars, char) {
+		if common.Contains(keywordChars, char) {
 			return l.currentKeyword(), nil
 		}
 
 		// Numbers
-		if util.Contains(numberChars, char) {
+		if common.Contains(numberChars, char) {
 			return l.currentNumber(), nil
 		}
 
@@ -184,7 +184,7 @@ func (l *Lexer) currentKeyword() *Token {
 	startIndex := l.index
 
 	// Collect lexeme until end of character (e.g. when "{" or a newline comes)
-	for ; l.index < len(l.input) && util.Contains(keywordChars, l.char()); l.index++ {
+	for ; l.index < len(l.input) && common.Contains(keywordChars, l.char()); l.index++ {
 		lexeme += string(l.char())
 	}
 
@@ -200,7 +200,7 @@ func (l *Lexer) currentNumber() *Token {
 	startIndex := l.index
 
 	// Collect lexeme until end of character (e.g. when ")" or a newline comes)
-	for ; l.index < len(l.input) && util.Contains(numberChars, l.char()); l.index++ {
+	for ; l.index < len(l.input) && common.Contains(numberChars, l.char()); l.index++ {
 		lexeme += string(l.char())
 	}
 

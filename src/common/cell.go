@@ -1,8 +1,12 @@
-package index
+package common
 
 import "github.com/paulmach/orb"
 
 type CellIndex [2]int
+
+func GetCellIndexForCoordinate(x float64, y float64, cellWidth float64, cellHeight float64) CellIndex {
+	return CellIndex{int(x / cellWidth), int(y / cellHeight)}
+}
 
 func (c CellIndex) X() int { return c[0] }
 
@@ -27,7 +31,7 @@ func (c CellExtent) LowerLeftCell() CellIndex { return c[0] }
 func (c CellExtent) UpperRightCell() CellIndex { return c[1] }
 
 func (c CellExtent) Expand(cell CellIndex) CellExtent {
-	if c.contains(cell) {
+	if c.Contains(cell) {
 		return c
 	}
 
@@ -57,20 +61,20 @@ func (c CellExtent) Expand(cell CellIndex) CellExtent {
 	}
 }
 
-func (c CellExtent) contains(cell CellIndex) bool {
+func (c CellExtent) Contains(cell CellIndex) bool {
 	return !cell.isAboveOrRightOf(c.UpperRightCell()) && !cell.isBelowOrLeftOf(c.LowerLeftCell())
 }
 
-func (c CellExtent) containsLonLat(lon float64, lat float64, cellWidth float64, cellHeight float64) bool {
+func (c CellExtent) ContainsLonLat(lon float64, lat float64, cellWidth float64, cellHeight float64) bool {
 	x := int(lon / cellWidth)
 	y := int(lat / cellHeight)
 
 	return x >= c.LowerLeftCell().X() && y >= c.LowerLeftCell().Y() && x <= c.UpperRightCell().X() && y <= c.UpperRightCell().Y()
 }
 
-func (c CellExtent) containsAny(cells []CellIndex) bool {
+func (c CellExtent) ContainsAny(cells []CellIndex) bool {
 	for _, cell := range cells {
-		if c.contains(cell) {
+		if c.Contains(cell) {
 			return true
 		}
 	}
@@ -79,7 +83,7 @@ func (c CellExtent) containsAny(cells []CellIndex) bool {
 
 func (c CellExtent) ContainsAnyInMap(cells map[CellIndex]CellIndex) bool {
 	for _, cell := range cells {
-		if c.contains(cell) {
+		if c.Contains(cell) {
 			return true
 		}
 	}

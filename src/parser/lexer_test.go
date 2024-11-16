@@ -2,7 +2,7 @@ package parser
 
 import (
 	"github.com/hauke96/sigolo/v2"
-	"soq/util"
+	"soq/common"
 	"testing"
 )
 
@@ -15,20 +15,20 @@ func TestLexer_currentAndNextChar(t *testing.T) {
 	}
 
 	// Act & Assert
-	util.AssertEqual(t, '0', l.char())
-	util.AssertEqual(t, '1', l.nextChar())
+	common.AssertEqual(t, '0', l.char())
+	common.AssertEqual(t, '1', l.nextChar())
 
 	l.index = 3
-	util.AssertEqual(t, '3', l.char())
-	util.AssertEqual(t, '4', l.nextChar())
+	common.AssertEqual(t, '3', l.char())
+	common.AssertEqual(t, '4', l.nextChar())
 
 	l.index = 5
-	util.AssertEqual(t, '5', l.char())
-	util.AssertEqual(t, rune(-1), l.nextChar())
+	common.AssertEqual(t, '5', l.char())
+	common.AssertEqual(t, rune(-1), l.nextChar())
 
 	l.index = 6
-	util.AssertEqual(t, rune(-1), l.char())
-	util.AssertEqual(t, rune(-1), l.nextChar())
+	common.AssertEqual(t, rune(-1), l.char())
+	common.AssertEqual(t, rune(-1), l.nextChar())
 }
 
 func TestLexer_skipComment(t *testing.T) {
@@ -43,8 +43,8 @@ func TestLexer_skipComment(t *testing.T) {
 	err := l.skipComment()
 
 	// Assert
-	util.AssertNil(t, err)
-	util.AssertEqual(t, 14, l.index)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, 14, l.index)
 }
 
 func TestLexer_skipComment_noCommentLineReturnsError(t *testing.T) {
@@ -59,8 +59,8 @@ func TestLexer_skipComment_noCommentLineReturnsError(t *testing.T) {
 	err := l.skipComment()
 
 	// Assert
-	util.AssertNotNil(t, err)
-	util.AssertEqual(t, 0, l.index)
+	common.AssertNotNil(t, err)
+	common.AssertEqual(t, 0, l.index)
 }
 
 func TestLexer_currentKeyword(t *testing.T) {
@@ -75,11 +75,11 @@ func TestLexer_currentKeyword(t *testing.T) {
 	token := l.currentKeyword()
 
 	// Assert
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindKeyword, token.kind)
-	util.AssertEqual(t, "bbox", token.lexeme)
-	util.AssertEqual(t, 0, token.startPosition)
-	util.AssertEqual(t, 4, l.index)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindKeyword, token.kind)
+	common.AssertEqual(t, "bbox", token.lexeme)
+	common.AssertEqual(t, 0, token.startPosition)
+	common.AssertEqual(t, 4, l.index)
 }
 
 func TestLexer_currentNumber(t *testing.T) {
@@ -94,11 +94,11 @@ func TestLexer_currentNumber(t *testing.T) {
 	token := l.currentNumber()
 
 	// Assert
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindNumber, token.kind)
-	util.AssertEqual(t, "123", token.lexeme)
-	util.AssertEqual(t, 0, token.startPosition)
-	util.AssertEqual(t, 3, l.index)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindNumber, token.kind)
+	common.AssertEqual(t, "123", token.lexeme)
+	common.AssertEqual(t, 0, token.startPosition)
+	common.AssertEqual(t, 3, l.index)
 }
 
 func TestLexer_nextToken(t *testing.T) {
@@ -111,32 +111,32 @@ func TestLexer_nextToken(t *testing.T) {
 
 	// Act & Assert
 	token, err := l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNil(t, token)
+	common.AssertNil(t, err)
+	common.AssertNil(t, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindKeyword, token.kind)
-	util.AssertEqual(t, "bbox", token.lexeme)
-	util.AssertEqual(t, 13, token.startPosition)
-	util.AssertEqual(t, 17, l.index)
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindKeyword, token.kind)
+	common.AssertEqual(t, "bbox", token.lexeme)
+	common.AssertEqual(t, 13, token.startPosition)
+	common.AssertEqual(t, 17, l.index)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindOpeningParenthesis, token.kind)
-	util.AssertEqual(t, "(", token.lexeme)
-	util.AssertEqual(t, 17, token.startPosition)
-	util.AssertEqual(t, 18, l.index)
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindOpeningParenthesis, token.kind)
+	common.AssertEqual(t, "(", token.lexeme)
+	common.AssertEqual(t, 17, token.startPosition)
+	common.AssertEqual(t, 18, l.index)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindNumber, token.kind)
-	util.AssertEqual(t, "1", token.lexeme)
-	util.AssertEqual(t, 18, token.startPosition)
-	util.AssertEqual(t, 19, l.index)
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindNumber, token.kind)
+	common.AssertEqual(t, "1", token.lexeme)
+	common.AssertEqual(t, 18, token.startPosition)
+	common.AssertEqual(t, 19, l.index)
 }
 
 func TestLexer_nextToken_singleCharTokens(t *testing.T) {
@@ -149,52 +149,52 @@ func TestLexer_nextToken_singleCharTokens(t *testing.T) {
 
 	// Act & Assert
 	token, err := l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindOpeningParenthesis, token.kind)
-	util.AssertEqual(t, "(", token.lexeme)
-	util.AssertEqual(t, 0, token.startPosition)
-	util.AssertEqual(t, 1, l.index)
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindOpeningParenthesis, token.kind)
+	common.AssertEqual(t, "(", token.lexeme)
+	common.AssertEqual(t, 0, token.startPosition)
+	common.AssertEqual(t, 1, l.index)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindClosingParenthesis, token.kind)
-	util.AssertEqual(t, ")", token.lexeme)
-	util.AssertEqual(t, 1, token.startPosition)
-	util.AssertEqual(t, 2, l.index)
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindClosingParenthesis, token.kind)
+	common.AssertEqual(t, ")", token.lexeme)
+	common.AssertEqual(t, 1, token.startPosition)
+	common.AssertEqual(t, 2, l.index)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindOpeningBraces, token.kind)
-	util.AssertEqual(t, "{", token.lexeme)
-	util.AssertEqual(t, 2, token.startPosition)
-	util.AssertEqual(t, 3, l.index)
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindOpeningBraces, token.kind)
+	common.AssertEqual(t, "{", token.lexeme)
+	common.AssertEqual(t, 2, token.startPosition)
+	common.AssertEqual(t, 3, l.index)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindClosingBraces, token.kind)
-	util.AssertEqual(t, "}", token.lexeme)
-	util.AssertEqual(t, 3, token.startPosition)
-	util.AssertEqual(t, 4, l.index)
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindClosingBraces, token.kind)
+	common.AssertEqual(t, "}", token.lexeme)
+	common.AssertEqual(t, 3, token.startPosition)
+	common.AssertEqual(t, 4, l.index)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindWildcard, token.kind)
-	util.AssertEqual(t, "*", token.lexeme)
-	util.AssertEqual(t, 4, token.startPosition)
-	util.AssertEqual(t, 5, l.index)
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindWildcard, token.kind)
+	common.AssertEqual(t, "*", token.lexeme)
+	common.AssertEqual(t, 4, token.startPosition)
+	common.AssertEqual(t, 5, l.index)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, token)
-	util.AssertEqual(t, TokenKindExpressionSeparator, token.kind)
-	util.AssertEqual(t, ".", token.lexeme)
-	util.AssertEqual(t, 5, token.startPosition)
-	util.AssertEqual(t, 6, l.index)
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, token)
+	common.AssertEqual(t, TokenKindExpressionSeparator, token.kind)
+	common.AssertEqual(t, ".", token.lexeme)
+	common.AssertEqual(t, 5, token.startPosition)
+	common.AssertEqual(t, 6, l.index)
 }
 
 func TestLexer_nextToken_unexpectedCharacter(t *testing.T) {
@@ -207,18 +207,18 @@ func TestLexer_nextToken_unexpectedCharacter(t *testing.T) {
 
 	// Act & Assert
 	token, err := l.nextToken()
-	util.AssertNotNil(t, err)
-	util.AssertNil(t, token)
+	common.AssertNotNil(t, err)
+	common.AssertNil(t, token)
 
 	// Act & Assert
 	token, err = l.nextToken()
-	util.AssertNotNil(t, err)
-	util.AssertNil(t, token)
+	common.AssertNotNil(t, err)
+	common.AssertNil(t, token)
 
 	// Act & Assert
 	token, err = l.nextToken()
-	util.AssertNotNil(t, err)
-	util.AssertNil(t, token)
+	common.AssertNotNil(t, err)
+	common.AssertNil(t, token)
 }
 
 func TestLexer_nextToken_operators(t *testing.T) {
@@ -231,36 +231,36 @@ func TestLexer_nextToken_operators(t *testing.T) {
 
 	// Act & Assert
 	token, err := l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "=", startPosition: 0}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "=", startPosition: 0}, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "!=", startPosition: 1}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "!=", startPosition: 1}, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: ">", startPosition: 3}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: ">", startPosition: 3}, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: ">=", startPosition: 4}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: ">=", startPosition: 4}, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<", startPosition: 6}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<", startPosition: 6}, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<=", startPosition: 7}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<=", startPosition: 7}, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "!", startPosition: 9}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "!", startPosition: 9}, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<", startPosition: 10}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "<", startPosition: 10}, token)
 }
 
 func TestLexer_nextToken_wildcardOperator(t *testing.T) {
@@ -273,16 +273,16 @@ func TestLexer_nextToken_wildcardOperator(t *testing.T) {
 
 	// Act & Assert
 	token, err := l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindKeyword, lexeme: "a", startPosition: 0}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindKeyword, lexeme: "a", startPosition: 0}, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "=", startPosition: 1}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindOperator, lexeme: "=", startPosition: 1}, token)
 
 	token, err = l.nextToken()
-	util.AssertNil(t, err)
-	util.AssertEqual(t, &Token{kind: TokenKindWildcard, lexeme: "*", startPosition: 2}, token)
+	common.AssertNil(t, err)
+	common.AssertEqual(t, &Token{kind: TokenKindWildcard, lexeme: "*", startPosition: 2}, token)
 }
 
 func TestLexer_read_simple(t *testing.T) {
@@ -297,17 +297,17 @@ func TestLexer_read_simple(t *testing.T) {
 	tokens, err := l.read()
 
 	// Assert
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, tokens)
-	util.AssertEqual(t, 7, len(tokens))
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, tokens)
+	common.AssertEqual(t, 7, len(tokens))
 
-	util.AssertEqual(t, &Token{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 12}, tokens[0])
-	util.AssertEqual(t, &Token{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 16}, tokens[1])
-	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "1", startPosition: 17}, tokens[2])
-	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "2", startPosition: 19}, tokens[3])
-	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "3", startPosition: 21}, tokens[4])
-	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "4.56", startPosition: 23}, tokens[5])
-	util.AssertEqual(t, &Token{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 27}, tokens[6])
+	common.AssertEqual(t, &Token{kind: TokenKindKeyword, lexeme: "bbox", startPosition: 12}, tokens[0])
+	common.AssertEqual(t, &Token{kind: TokenKindOpeningParenthesis, lexeme: "(", startPosition: 16}, tokens[1])
+	common.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "1", startPosition: 17}, tokens[2])
+	common.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "2", startPosition: 19}, tokens[3])
+	common.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "3", startPosition: 21}, tokens[4])
+	common.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "4.56", startPosition: 23}, tokens[5])
+	common.AssertEqual(t, &Token{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 27}, tokens[6])
 }
 
 func TestLexer_read_commentAfterToken(t *testing.T) {
@@ -322,12 +322,12 @@ func TestLexer_read_commentAfterToken(t *testing.T) {
 	tokens, err := l.read()
 
 	// Assert
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, tokens)
-	util.AssertEqual(t, 2, len(tokens))
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, tokens)
+	common.AssertEqual(t, 2, len(tokens))
 
-	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "123", startPosition: 0}, tokens[0])
-	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "234", startPosition: 17}, tokens[1])
+	common.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "123", startPosition: 0}, tokens[0])
+	common.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "234", startPosition: 17}, tokens[1])
 }
 
 func TestLexer_read_commentAfterClosingBlock(t *testing.T) {
@@ -342,11 +342,11 @@ func TestLexer_read_commentAfterClosingBlock(t *testing.T) {
 	tokens, err := l.read()
 
 	// Assert
-	util.AssertNil(t, err)
-	util.AssertNotNil(t, tokens)
-	util.AssertEqual(t, 3, len(tokens))
+	common.AssertNil(t, err)
+	common.AssertNotNil(t, tokens)
+	common.AssertEqual(t, 3, len(tokens))
 
-	util.AssertEqual(t, &Token{kind: TokenKindOpeningBraces, lexeme: "{", startPosition: 0}, tokens[0])
-	util.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "123", startPosition: 2}, tokens[1])
-	util.AssertEqual(t, &Token{kind: TokenKindClosingBraces, lexeme: "}", startPosition: 6}, tokens[2])
+	common.AssertEqual(t, &Token{kind: TokenKindOpeningBraces, lexeme: "{", startPosition: 0}, tokens[0])
+	common.AssertEqual(t, &Token{kind: TokenKindNumber, lexeme: "123", startPosition: 2}, tokens[1])
+	common.AssertEqual(t, &Token{kind: TokenKindClosingBraces, lexeme: "}", startPosition: 6}, tokens[2])
 }
