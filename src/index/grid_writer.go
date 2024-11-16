@@ -105,10 +105,6 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 		switch rawFeature := obj.(type) {
 		case *feature.EncodedNodeFeature:
 			cell := g.GetCellIndexForCoordinate(rawFeature.GetLon(), rawFeature.GetLat())
-			// TODO Not needed anymore for nodes and ways? Because reading the data already filters it.
-			if !cellExtent.Contains(cell) {
-				continue
-			}
 
 			id := osm.NodeID(rawFeature.GetID())
 			nodeToPoint[id] = &orb.Point{rawFeature.GetLon(), rawFeature.GetLat()}
@@ -121,18 +117,6 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			if !firstWayHasBeenProcessed {
 				sigolo.Debug("Start processing ways (2/3)")
 				firstWayHasBeenProcessed = true
-			}
-
-			extentContainsWay := false
-			for _, node := range rawFeature.Nodes {
-				nodeCell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
-				extentContainsWay = extentContainsWay || cellExtent.Contains(nodeCell)
-				if extentContainsWay {
-					break
-				}
-			}
-			if !extentContainsWay {
-				continue
 			}
 
 			wayCells := map[common.CellIndex]common.CellIndex{}
@@ -254,6 +238,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				continue
 			}
 
+			// TODO This polygon is not accurate. Not only because it's a bbox but also because the relation might stretch over multiple sub-extents which are not covered here. This bbox would roughlty stretch only over one sub-extent.
 			rawFeature.Geometry = bbox.ToPolygon()
 
 			for _, cell := range relCells {

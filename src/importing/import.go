@@ -52,35 +52,10 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	sigolo.Infof("Imported OSM data into tag index in %s", duration)
 
 	//
-	// 2. Write temp features
+	// 2. Determine sub-extents for temporary features
 	//
-	currentStepStartTime = time.Now()
-
-	rawFeatureRepo := index.NewRawFeaturesRepository(cellWidth, cellHeight, "import-temp-cell")
-	temporaryFeatureImporter := index.NewTemporaryFeatureImporter(rawFeatureRepo, tagIndex)
-
-	osmReader = osm.NewOsmReader()
-	err = osmReader.Read(inputFile, temporaryFeatureImporter)
-	if err != nil {
-		return errors.Wrapf(err, "Error importing OSM data")
-	}
-
-	duration = time.Since(currentStepStartTime)
-	sigolo.Infof("Imported OSM data into temp features in %s", duration)
-
-	//
-	// 3. Read temp features and write them into cells
-	//
-	currentStepStartTime = time.Now()
-
-	sigolo.Debugf("Remove the grid-index base folder %s", baseFolder)
-	err = os.RemoveAll(baseFolder)
-	if err != nil {
-		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
-	}
-
-	cellToNodeCount := temporaryFeatureImporter.CellToNodeCount
-	inputDataCellExtent := temporaryFeatureImporter.InputDataCellExtent
+	cellToNodeCount := osmDensityAggregator.CellToNodeCount
+	inputDataCellExtent := osmDensityAggregator.InputDataCellExtent
 
 	var subExtents []common.CellExtent
 
@@ -104,7 +79,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		// 10_000_000 ~ 13 GB RAM / 6 min. / 7 sub-extents
 		// 20_000_000 ~ 17 GB RAM / 9 min. / 3 sub-extents
 		// TODO Make this parameter configurable
-		extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 5_000_000)
+		extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 10_000_000)
 		if extent == nil {
 			break
 		}
@@ -127,10 +102,38 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		}
 	}
 
+	//
+	// 3. Write temp features
+	//
+	currentStepStartTime = time.Now()
+
+	rawFeatureRepo := index.NewRawFeaturesRepository(cellWidth, cellHeight, "import-temp-cell")
+	temporaryFeatureImporter := index.NewTemporaryFeatureImporter(rawFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
+
+	osmReader = osm.NewOsmReader()
+	err = osmReader.Read(inputFile, temporaryFeatureImporter)
+	if err != nil {
+		return errors.Wrapf(err, "Error importing OSM data")
+	}
+
+	duration = time.Since(currentStepStartTime)
+	sigolo.Infof("Imported OSM data into temp features in %s", duration)
+
+	//
+	// 4. Read temp features and write them into cells
+	//
+	currentStepStartTime = time.Now()
+
+	sigolo.Debugf("Remove the grid-index base folder %s", baseFolder)
+	err = os.RemoveAll(baseFolder)
+	if err != nil {
+		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
+	}
+
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
 	for i, subExtent := range subExtents {
 		currentSubExtentStartTime := time.Now()
-		sigolo.Debugf("Process sub-extent %v (%d / %d)", subExtent, i+1, len(subExtents))
+		sigolo.Debugf("=== Process sub-extent %v (%d / %d) ===", subExtent, i+1, len(subExtents))
 
 		tempRawFeatureChannel := make(chan feature.EncodedFeature, 1000)
 		go rawFeatureRepo.ReadFeatures(tempRawFeatureChannel, subExtent) // TODO error handling
