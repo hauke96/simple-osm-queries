@@ -1,7 +1,7 @@
 package feature
 
 import (
-	"soq/util"
+	"soq/common"
 	"testing"
 )
 
@@ -16,21 +16,21 @@ func TestEncodedFeature_GetValueIndex(t *testing.T) {
 	}
 
 	// Act & Assert
-	util.AssertTrue(t, feature.HasKey(1))
+	common.AssertTrue(t, feature.HasKey(1))
 	value1 := feature.GetValueIndex(1)
-	util.AssertEqual(t, 5, value1)
+	common.AssertEqual(t, 5, value1)
 
-	util.AssertTrue(t, feature.HasKey(3))
+	common.AssertTrue(t, feature.HasKey(3))
 	value3 := feature.GetValueIndex(3)
-	util.AssertEqual(t, 6, value3)
+	common.AssertEqual(t, 6, value3)
 
-	util.AssertTrue(t, feature.HasKey(7))
+	common.AssertTrue(t, feature.HasKey(7))
 	value7 := feature.GetValueIndex(7)
-	util.AssertEqual(t, 7, value7)
+	common.AssertEqual(t, 7, value7)
 
-	util.AssertFalse(t, feature.HasKey(0))
-	util.AssertFalse(t, feature.HasKey(2))
-	util.AssertFalse(t, feature.HasKey(4))
-	util.AssertFalse(t, feature.HasKey(5))
-	util.AssertFalse(t, feature.HasKey(6))
+	common.AssertFalse(t, feature.HasKey(0))
+	common.AssertFalse(t, feature.HasKey(2))
+	common.AssertFalse(t, feature.HasKey(4))
+	common.AssertFalse(t, feature.HasKey(5))
+	common.AssertFalse(t, feature.HasKey(6))
 }

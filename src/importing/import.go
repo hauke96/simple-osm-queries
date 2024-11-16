@@ -6,9 +6,10 @@ import (
 	"github.com/pkg/errors"
 	"os"
 	"path"
+	"soq/common"
 	"soq/feature"
 	"soq/index"
-	ownIo "soq/io"
+	"soq/osm"
 	"strings"
 	"time"
 )
@@ -32,9 +33,10 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	currentStepStartTime := time.Now()
 
 	tagIndexCreator := index.NewTagIndexCreator()
+	osmDensityAggregator := osm.NewOsmDensityAggregator(cellWidth, cellHeight)
 
-	osmReader := ownIo.NewOsmReader()
-	err := osmReader.Read(inputFile, tagIndexCreator)
+	osmReader := osm.NewOsmReader()
+	err := osmReader.Read(inputFile, tagIndexCreator, osmDensityAggregator)
 	if err != nil {
 		return errors.Wrapf(err, "Error importing OSM data")
 	}
@@ -50,39 +52,14 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	sigolo.Infof("Imported OSM data into tag index in %s", duration)
 
 	//
-	// 2. Write temp features
+	// 2. Determine sub-extents for temporary features
 	//
-	currentStepStartTime = time.Now()
+	cellToNodeCount := osmDensityAggregator.CellToNodeCount
+	inputDataCellExtent := osmDensityAggregator.InputDataCellExtent
 
-	rawFeatureRepo := index.NewRawFeaturesRepository(cellWidth, cellHeight, "import-temp-cell")
-	temporaryFeatureImporter := index.NewTemporaryFeatureImporter(rawFeatureRepo, tagIndex)
+	var subExtents []common.CellExtent
 
-	osmReader = ownIo.NewOsmReader()
-	err = osmReader.Read(inputFile, temporaryFeatureImporter)
-	if err != nil {
-		return errors.Wrapf(err, "Error importing OSM data")
-	}
-
-	duration = time.Since(currentStepStartTime)
-	sigolo.Infof("Imported OSM data into temp features in %s", duration)
-
-	//
-	// 3. Read temp features and write them into cells
-	//
-	currentStepStartTime = time.Now()
-
-	sigolo.Debugf("Remove the grid-index base folder %s", baseFolder)
-	err = os.RemoveAll(baseFolder)
-	if err != nil {
-		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
-	}
-
-	cellToNodeCount := temporaryFeatureImporter.CellToNodeCount
-	inputDataCellExtent := temporaryFeatureImporter.InputDataCellExtent
-
-	var subExtents []index.CellExtent
-
-	cellsToProcessedState := map[index.CellIndex]bool{}
+	cellsToProcessedState := map[common.CellIndex]bool{}
 	for _, cell := range inputDataCellExtent.GetCellIndices() {
 		cellsToProcessedState[cell] = false
 	}
@@ -125,10 +102,38 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		}
 	}
 
+	//
+	// 3. Write temp features
+	//
+	currentStepStartTime = time.Now()
+
+	rawFeatureRepo := index.NewRawFeaturesRepository(cellWidth, cellHeight, "import-temp-cell")
+	temporaryFeatureImporter := index.NewTemporaryFeatureImporter(rawFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
+
+	osmReader = osm.NewOsmReader()
+	err = osmReader.Read(inputFile, temporaryFeatureImporter)
+	if err != nil {
+		return errors.Wrapf(err, "Error importing OSM data")
+	}
+
+	duration = time.Since(currentStepStartTime)
+	sigolo.Infof("Imported OSM data into temp features in %s", duration)
+
+	//
+	// 4. Read temp features and write them into cells
+	//
+	currentStepStartTime = time.Now()
+
+	sigolo.Debugf("Remove the grid-index base folder %s", baseFolder)
+	err = os.RemoveAll(baseFolder)
+	if err != nil {
+		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
+	}
+
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
 	for i, subExtent := range subExtents {
 		currentSubExtentStartTime := time.Now()
-		sigolo.Debugf("Process sub-extent %v (%d / %d)", subExtent, i+1, len(subExtents))
+		sigolo.Debugf("=== Process sub-extent %v (%d / %d) ===", subExtent, i+1, len(subExtents))
 
 		tempRawFeatureChannel := make(chan feature.EncodedFeature, 1000)
 		go rawFeatureRepo.ReadFeatures(tempRawFeatureChannel, subExtent) // TODO error handling
@@ -152,13 +157,13 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 
 // getNextExtent determines the next largest extent from the bottom left of the given cell indices. The extent is as
 // large as possible without containing more than the given threshold.
-func getNextExtent(cellsToProcessedState map[index.CellIndex]bool, cellToNodeCount map[index.CellIndex]int, nodePerExtentThreshold int) *index.CellExtent {
-	var startCell *index.CellIndex
-	var baseExtent *index.CellExtent
+func getNextExtent(cellsToProcessedState map[common.CellIndex]bool, cellToNodeCount map[common.CellIndex]int, nodePerExtentThreshold int) *common.CellExtent {
+	var startCell *common.CellIndex
+	var baseExtent *common.CellExtent
 
 	for cell, _ := range cellsToProcessedState {
 		if baseExtent == nil {
-			baseExtent = &index.CellExtent{cell, cell}
+			baseExtent = &common.CellExtent{cell, cell}
 		} else {
 			newExtent := baseExtent.Expand(cell)
 			baseExtent = &newExtent
@@ -171,7 +176,7 @@ func getNextExtent(cellsToProcessedState map[index.CellIndex]bool, cellToNodeCou
 
 	for y := baseExtent.LowerLeftCell().Y(); y <= baseExtent.UpperRightCell().Y() && startCell == nil; y++ {
 		for x := baseExtent.LowerLeftCell().X(); x <= baseExtent.UpperRightCell().X() && startCell == nil; x++ {
-			cell := index.CellIndex{x, y}
+			cell := common.CellIndex{x, y}
 			if !cellsToProcessedState[cell] {
 				startCell = &cell
 			}
@@ -183,16 +188,16 @@ func getNextExtent(cellsToProcessedState map[index.CellIndex]bool, cellToNodeCou
 	}
 	if cellToNodeCount[*startCell] > nodePerExtentThreshold {
 		cellsToProcessedState[*startCell] = true
-		return &index.CellExtent{*startCell, *startCell}
+		return &common.CellExtent{*startCell, *startCell}
 	}
 
-	biggestExtent := index.CellExtent{*startCell, *startCell}
+	biggestExtent := common.CellExtent{*startCell, *startCell}
 	biggestExtentCoveredNodes := cellToNodeCount[*startCell]
 
 	for y := startCell.Y(); y <= baseExtent.UpperRightCell().Y(); y++ {
 		for x := startCell.X(); x <= baseExtent.UpperRightCell().X(); x++ {
-			extent := index.CellExtent{*startCell, *startCell}
-			extent = extent.Expand(index.CellIndex{x, y})
+			extent := common.CellExtent{*startCell, *startCell}
+			extent = extent.Expand(common.CellIndex{x, y})
 
 			coveredNodes := 0
 			containsAlreadyProcessedCell := false

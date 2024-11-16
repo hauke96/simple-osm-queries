@@ -4,15 +4,16 @@ import (
 	"github.com/hauke96/sigolo/v2"
 	"soq/feature"
 	"soq/index"
+	"soq/osm"
 )
 
 type Statement struct {
 	location  LocationExpression
-	queryType feature.OsmQueryType
+	queryType osm.OsmQueryType
 	filter    FilterExpression
 }
 
-func NewStatement(locationExpression LocationExpression, queryType feature.OsmQueryType, filterExpression FilterExpression) *Statement {
+func NewStatement(locationExpression LocationExpression, queryType osm.OsmQueryType, filterExpression FilterExpression) *Statement {
 	return &Statement{
 		location:  locationExpression,
 		queryType: queryType,

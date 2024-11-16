@@ -7,8 +7,8 @@ import (
 	"github.com/paulmach/osm"
 	"io"
 	"math"
+	"soq/common"
 	"soq/feature"
-	"soq/util"
 	"sync"
 	"testing"
 )
@@ -46,33 +46,33 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 	err := gridIndex.writeNodeData(encodedFeature, f)
 
 	// Assert
-	util.AssertNil(t, err)
+	common.AssertNil(t, err)
 
 	data := f.Bytes()
-	util.AssertEqual(t, uint64(osmId), binary.LittleEndian.Uint64(data[0:]))
+	common.AssertEqual(t, uint64(osmId), binary.LittleEndian.Uint64(data[0:]))
 
-	util.AssertApprox(t, geometry.(*orb.Point).Lon(), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[8:]))), 0.00001)
-	util.AssertApprox(t, geometry.(*orb.Point).Lat(), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[12:]))), 0.00001)
+	common.AssertApprox(t, geometry.(*orb.Point).Lon(), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[8:]))), 0.00001)
+	common.AssertApprox(t, geometry.(*orb.Point).Lat(), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[12:]))), 0.00001)
 
-	util.AssertEqual(t, uint32(1), binary.LittleEndian.Uint32(data[16:]))
-	util.AssertEqual(t, uint32(3), binary.LittleEndian.Uint32(data[20:]))
-	util.AssertEqual(t, uint16(2), binary.LittleEndian.Uint16(data[24:]))
+	common.AssertEqual(t, uint32(1), binary.LittleEndian.Uint32(data[16:]))
+	common.AssertEqual(t, uint32(3), binary.LittleEndian.Uint32(data[20:]))
+	common.AssertEqual(t, uint16(2), binary.LittleEndian.Uint16(data[24:]))
 
-	util.AssertEqual(t, encodedFeature.Keys[0], data[28])
+	common.AssertEqual(t, encodedFeature.Keys[0], data[28])
 
 	p := 28 + 1
-	util.AssertEqual(t, encodedFeature.Values[0], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
+	common.AssertEqual(t, encodedFeature.Values[0], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
 	p += 3
-	util.AssertEqual(t, encodedFeature.Values[1], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
+	common.AssertEqual(t, encodedFeature.Values[1], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
 	p += 3
-	util.AssertEqual(t, encodedFeature.Values[2], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
+	common.AssertEqual(t, encodedFeature.Values[2], int(uint32(data[p])|uint32(data[p+1])<<8|uint32(data[p+2])<<16))
 
 	p = 38
-	util.AssertEqual(t, encodedFeature.WayIds[0], osm.WayID(binary.LittleEndian.Uint64(data[p:])))
+	common.AssertEqual(t, encodedFeature.WayIds[0], osm.WayID(binary.LittleEndian.Uint64(data[p:])))
 	p += 8
-	util.AssertEqual(t, encodedFeature.WayIds[1], osm.WayID(binary.LittleEndian.Uint64(data[p:])))
+	common.AssertEqual(t, encodedFeature.WayIds[1], osm.WayID(binary.LittleEndian.Uint64(data[p:])))
 
-	util.AssertEqual(t, 54, len(data))
+	common.AssertEqual(t, 54, len(data))
 }
 
 func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
@@ -124,7 +124,7 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	gridIndexWriter.cacheFileMutexes[f] = &sync.Mutex{}
 
 	err := gridIndexWriter.writeNodeData(originalFeature, f)
-	util.AssertNil(t, err)
+	common.AssertNil(t, err)
 
 	outputChannel := make(chan []feature.EncodedFeature)
 	var result []feature.EncodedFeature
@@ -139,7 +139,7 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	close(outputChannel)
 
 	// Assert
-	util.AssertNotNil(t, result[0])
+	common.AssertNotNil(t, result[0])
 	for i := 1; i < len(result); i++ {
 		if result[i] != nil {
 			t.Fail()
@@ -147,9 +147,9 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	}
 
 	encodedFeature := result[0]
-	util.AssertEqual(t, 1, len(encodedFeature.GetKeys()))
-	util.AssertEqual(t, originalFeature.Keys[0], encodedFeature.GetKeys()[0])
-	util.AssertEqual(t, originalFeature.Values, encodedFeature.GetValues())
-	util.AssertApprox(t, originalFeature.GetGeometry().(*orb.Point).Lon(), encodedFeature.GetGeometry().(*orb.Point).Lon(), 0.0001)
-	util.AssertApprox(t, originalFeature.GetGeometry().(*orb.Point).Lat(), encodedFeature.GetGeometry().(*orb.Point).Lat(), 0.0001)
+	common.AssertEqual(t, 1, len(encodedFeature.GetKeys()))
+	common.AssertEqual(t, originalFeature.Keys[0], encodedFeature.GetKeys()[0])
+	common.AssertEqual(t, originalFeature.Values, encodedFeature.GetValues())
+	common.AssertApprox(t, originalFeature.GetGeometry().(*orb.Point).Lon(), encodedFeature.GetGeometry().(*orb.Point).Lon(), 0.0001)
+	common.AssertApprox(t, originalFeature.GetGeometry().(*orb.Point).Lat(), encodedFeature.GetGeometry().(*orb.Point).Lat(), 0.0001)
 }

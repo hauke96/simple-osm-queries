@@ -11,7 +11,9 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"soq/common"
 	"soq/feature"
+	ownOsm "soq/osm"
 	"strconv"
 	"sync"
 	"time"
@@ -24,9 +26,9 @@ type GridIndexWriter struct {
 	cacheFileWriters            map[int64]*[3]*bufio.Writer // Key is a aggregation of the cells x and y coordinate The array index is based on the object type.
 	cacheFileMutexes            map[io.Writer]*sync.Mutex
 	cacheFileMutex              *sync.Mutex
-	cacheRawEncodedNodes        map[CellIndex][]*feature.EncodedNodeFeature
-	cacheRawEncodedWays         map[CellIndex][]*feature.EncodedWayFeature
-	cacheRawEncodedRelations    map[CellIndex][]*feature.EncodedRelationFeature
+	cacheRawEncodedNodes        map[common.CellIndex][]*feature.EncodedNodeFeature
+	cacheRawEncodedWays         map[common.CellIndex][]*feature.EncodedWayFeature
+	cacheRawEncodedRelations    map[common.CellIndex][]*feature.EncodedRelationFeature
 	cacheRawEncodedFeatureMutex *sync.Mutex
 
 	// During writing, some of the half-written data must be read again. This requires some functionality of the
@@ -35,7 +37,7 @@ type GridIndexWriter struct {
 }
 
 // TODO rename this function
-func ImportDataFile(tempRawFeatureChannel chan feature.EncodedFeature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent CellExtent) error {
+func ImportDataFile(tempRawFeatureChannel chan feature.EncodedFeature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent) error {
 	gridIndexWriter := NewGridIndexWriter(cellWidth, cellHeight, baseFolder)
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
@@ -62,9 +64,9 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 		cacheFileWriters:            map[int64]*[3]*bufio.Writer{},
 		cacheFileMutexes:            map[io.Writer]*sync.Mutex{},
 		cacheFileMutex:              &sync.Mutex{},
-		cacheRawEncodedNodes:        map[CellIndex][]*feature.EncodedNodeFeature{},
-		cacheRawEncodedWays:         map[CellIndex][]*feature.EncodedWayFeature{},
-		cacheRawEncodedRelations:    map[CellIndex][]*feature.EncodedRelationFeature{},
+		cacheRawEncodedNodes:        map[common.CellIndex][]*feature.EncodedNodeFeature{},
+		cacheRawEncodedWays:         map[common.CellIndex][]*feature.EncodedWayFeature{},
+		cacheRawEncodedRelations:    map[common.CellIndex][]*feature.EncodedRelationFeature{},
 		cacheRawEncodedFeatureMutex: &sync.Mutex{},
 		gridIndexReader: &GridIndexReader{
 			baseGridIndex:        baseGridIndex,
@@ -76,13 +78,13 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 
 // WriteOsmToRawEncodedFeatures Reads the input feature channel and converts all OSM objects into raw encoded features and
 // writes them into their respective cells. The returned cell map contains all cells that contain nodes.
-func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.EncodedFeature, cellExtent CellExtent) (map[CellIndex]CellIndex, error) {
+func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.EncodedFeature, cellExtent common.CellExtent) (map[common.CellIndex]common.CellIndex, error) {
 	sigolo.Info("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 
 	// TODO Fill these maps during the first call of this method and store these maps in the GridIndexWriter. All subsequent runs don't need to create, fill and destroy these maps again. This may increase memory usage (has to be determined) but might decrease stress on GC.
 
-	nodeCells := map[CellIndex]CellIndex{}
+	nodeCells := map[common.CellIndex]common.CellIndex{}
 
 	// We assume relations, like all other object types, to be sorted in a way that when a relation with child relations
 	// appears, all child relation members have been visited before. Therefore, this map then contains all bounds of the
@@ -92,8 +94,8 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 	firstWayHasBeenProcessed := false
 	firstRelationHasBeenProcessed := false
 
-	wayToCellsMap := map[osm.WayID][]CellIndex{}
-	relationToCellsMap := map[osm.RelationID][]CellIndex{}
+	wayToCellsMap := map[osm.WayID][]common.CellIndex{}
+	relationToCellsMap := map[osm.RelationID][]common.CellIndex{}
 
 	nodeToPoint := map[osm.NodeID]*orb.Point{}
 	wayToBound := map[osm.WayID]*orb.Bound{}
@@ -103,10 +105,6 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 		switch rawFeature := obj.(type) {
 		case *feature.EncodedNodeFeature:
 			cell := g.GetCellIndexForCoordinate(rawFeature.GetLon(), rawFeature.GetLat())
-			// TODO Not needed anymore for nodes and ways? Because reading the data already filters it.
-			if !cellExtent.contains(cell) {
-				continue
-			}
 
 			id := osm.NodeID(rawFeature.GetID())
 			nodeToPoint[id] = &orb.Point{rawFeature.GetLon(), rawFeature.GetLat()}
@@ -121,26 +119,14 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				firstWayHasBeenProcessed = true
 			}
 
-			extentContainsWay := false
-			for _, node := range rawFeature.Nodes {
-				nodeCell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
-				extentContainsWay = extentContainsWay || cellExtent.contains(nodeCell)
-				if extentContainsWay {
-					break
-				}
-			}
-			if !extentContainsWay {
-				continue
-			}
-
-			wayCells := map[CellIndex]CellIndex{}
+			wayCells := map[common.CellIndex]common.CellIndex{}
 			for _, node := range rawFeature.Nodes {
 				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 				wayCells[cell] = cell
 			}
 
 			id := osm.WayID(rawFeature.GetID())
-			wayToCellsMap[id] = make([]CellIndex, len(wayCells))
+			wayToCellsMap[id] = make([]common.CellIndex, len(wayCells))
 			j := 0
 			for _, cell := range wayCells {
 				wayToCellsMap[id][j] = cell
@@ -150,11 +136,11 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			bbox := rawFeature.GetGeometry().Bound()
 			wayToBound[id] = &bbox
 
-			savedCells := map[CellIndex]bool{}
+			savedCells := map[common.CellIndex]bool{}
 			for _, node := range rawFeature.Nodes {
 				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 
-				if _, cellAlreadySaved := savedCells[cell]; !cellAlreadySaved && cellExtent.contains(cell) {
+				if _, cellAlreadySaved := savedCells[cell]; !cellAlreadySaved && cellExtent.Contains(cell) {
 					err := g.writeOsmObjectToCellCache(cell, rawFeature)
 					sigolo.FatalCheck(err)
 					savedCells[cell] = true
@@ -171,7 +157,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				nodePoint := nodeToPoint[nodeId]
 				if nodePoint != nil {
 					cell := g.GetCellIndexForCoordinate(nodePoint.X(), nodePoint.Y())
-					extentContainsRelation = extentContainsRelation || cellExtent.contains(cell)
+					extentContainsRelation = extentContainsRelation || cellExtent.Contains(cell)
 					if extentContainsRelation {
 						break
 					}
@@ -179,7 +165,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			}
 			if !extentContainsRelation {
 				for _, wayId := range rawFeature.WayIds {
-					extentContainsRelation = extentContainsRelation || cellExtent.containsAny(wayToCellsMap[wayId])
+					extentContainsRelation = extentContainsRelation || cellExtent.ContainsAny(wayToCellsMap[wayId])
 					if extentContainsRelation {
 						break
 					}
@@ -187,7 +173,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			}
 			if !extentContainsRelation {
 				for _, relationId := range rawFeature.ChildRelationIds {
-					extentContainsRelation = extentContainsRelation || cellExtent.containsAny(relationToCellsMap[relationId])
+					extentContainsRelation = extentContainsRelation || cellExtent.ContainsAny(relationToCellsMap[relationId])
 					if extentContainsRelation {
 						break
 					}
@@ -197,7 +183,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				continue
 			}
 
-			relCells := map[CellIndex]CellIndex{}
+			relCells := map[common.CellIndex]common.CellIndex{}
 
 			var bbox *orb.Bound
 
@@ -252,6 +238,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				continue
 			}
 
+			// TODO This polygon is not accurate. Not only because it's a bbox but also because the relation might stretch over multiple sub-extents which are not covered here. This bbox would roughlty stretch only over one sub-extent.
 			rawFeature.Geometry = bbox.ToPolygon()
 
 			for _, cell := range relCells {
@@ -294,7 +281,7 @@ func (g *GridIndexWriter) closeOpenFileHandles() {
 	g.cacheFileMutex.Unlock()
 }
 
-func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells map[CellIndex]CellIndex) {
+func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells map[common.CellIndex]common.CellIndex) {
 	numberOfCells := len(cells)
 	sigolo.Infof("Start adding way and relation IDs to raw encoded nodes in %d cells", numberOfCells)
 
@@ -303,14 +290,14 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells map[CellIndex]C
 	currentCell := 1
 
 	numThreads := 1 // TODO would otherwise cause "concurrent map read and map write" error for maybe objectTypeToRelationMapping in addAdditionalIdsToObjectsOfType
-	cellQueue := make(chan CellIndex, numThreads*2)
+	cellQueue := make(chan common.CellIndex, numThreads*2)
 	cellSync := &sync.WaitGroup{}
 	for i := 0; i < numThreads; i++ {
 		cellSync.Add(1)
 		go g.addAdditionalIdsToObjectsInCell(cellQueue, cellSync)
 	}
 
-	for cell, _ := range cells {
+	for cell := range cells {
 		sigolo.Tracef("Add cell %v to queue (%d/%d)", cell, currentCell, numberOfCells)
 		currentCell++
 
@@ -326,7 +313,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells map[CellIndex]C
 	g.closeOpenFileHandles()
 }
 
-func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan CellIndex, waitGroup *sync.WaitGroup) {
+func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan common.CellIndex, waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 
 	for cell := range cellChannel {
@@ -354,19 +341,19 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan CellI
 			}
 		}
 
-		err := g.addAdditionalIdsToObjectsOfType(feature.OsmObjNode, nodeToRelations, cell)
+		err := g.addAdditionalIdsToObjectsOfType(ownOsm.OsmObjNode, nodeToRelations, cell)
 		if err != nil {
 			sigolo.Errorf("Error adding additional IDs to nodes: %+v", err)
 			// TODO return error
 		}
 
-		err = g.addAdditionalIdsToObjectsOfType(feature.OsmObjWay, waysToRelations, cell)
+		err = g.addAdditionalIdsToObjectsOfType(ownOsm.OsmObjWay, waysToRelations, cell)
 		if err != nil {
 			sigolo.Errorf("Error adding additional IDs to ways: %+v", err)
 			// TODO return error
 		}
 
-		err = g.addAdditionalIdsToObjectsOfType(feature.OsmObjRelation, relationsToParentRelations, cell)
+		err = g.addAdditionalIdsToObjectsOfType(ownOsm.OsmObjRelation, relationsToParentRelations, cell)
 		if err != nil {
 			sigolo.Errorf("Error adding additional IDs to relations: %+v", err)
 			// TODO return error
@@ -378,7 +365,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan CellI
 // contain IDs to the ways they belong to. So this function adds this information to the given object type. In case of
 // relations, this is done using the given object to relation map. This map maps an ID of the given object type to the
 // relations this object is part of.
-func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.OsmObjectType, objectTypeToRelationMapping map[uint64][]osm.RelationID, cell CellIndex) error {
+func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmObjectType, objectTypeToRelationMapping map[uint64][]osm.RelationID, cell common.CellIndex) error {
 	var err error
 
 	nodeToWays := map[uint64][]osm.WayID{}
@@ -392,7 +379,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 	//cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
 
 	//if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
-	//	if objectType == feature.OsmObjNode {
+	//	if objectType == ownOsm.OsmObjNode {
 	//		// We got all the cells in which nodes are. When this cell doesn't exist, then something went really wrong.
 	//		util.LogFatalBug("Cell file %s for nodes could not be found in the list of node-cells. This is a critical error and should not have happened", cellFileName)
 	//	}
@@ -420,7 +407,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 	//			}
 
 	switch objectType {
-	case feature.OsmObjNode:
+	case ownOsm.OsmObjNode:
 		for _, encFeature := range g.cacheRawEncodedNodes[cell] {
 			if wayIds, ok := nodeToWays[encFeature.GetID()]; ok {
 				encFeature.WayIds = wayIds
@@ -433,7 +420,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 			sigolo.FatalCheck(err)
 		}
 		delete(g.cacheRawEncodedNodes, cell)
-	case feature.OsmObjWay:
+	case ownOsm.OsmObjWay:
 		for _, encFeature := range g.cacheRawEncodedWays[cell] {
 			if relationIds, ok := objectTypeToRelationMapping[encFeature.GetID()]; ok {
 				encFeature.RelationIds = relationIds
@@ -443,7 +430,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 			sigolo.FatalCheck(err)
 		}
 		delete(g.cacheRawEncodedWays, cell)
-	case feature.OsmObjRelation:
+	case ownOsm.OsmObjRelation:
 		for _, encFeature := range g.cacheRawEncodedRelations[cell] {
 			if relationIds, ok := objectTypeToRelationMapping[encFeature.GetID()]; ok {
 				encFeature.ParentRelationIds = relationIds
@@ -463,7 +450,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType feature.Osm
 func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeature feature.EncodedFeature) error {
 	switch featureObj := encodedFeature.(type) {
 	case *feature.EncodedNodeFeature:
-		f, err := g.getCellFile(cellX, cellY, feature.OsmObjNode)
+		f, err := g.getCellFile(cellX, cellY, ownOsm.OsmObjNode)
 		if err != nil {
 			return err
 		}
@@ -473,7 +460,7 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 		}
 		return nil
 	case *feature.EncodedWayFeature:
-		f, err := g.getCellFile(cellX, cellY, feature.OsmObjWay)
+		f, err := g.getCellFile(cellX, cellY, ownOsm.OsmObjWay)
 		if err != nil {
 			return err
 		}
@@ -483,7 +470,7 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 		}
 		return nil
 	case *feature.EncodedRelationFeature:
-		f, err := g.getCellFile(cellX, cellY, feature.OsmObjRelation)
+		f, err := g.getCellFile(cellX, cellY, ownOsm.OsmObjRelation)
 		if err != nil {
 			return err
 		}
@@ -497,7 +484,7 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 	return nil
 }
 
-func (g *GridIndexWriter) writeOsmObjectToCellCache(cell CellIndex, encodedFeature feature.EncodedFeature) error {
+func (g *GridIndexWriter) writeOsmObjectToCellCache(cell common.CellIndex, encodedFeature feature.EncodedFeature) error {
 	g.cacheRawEncodedFeatureMutex.Lock()
 	switch featureObj := encodedFeature.(type) {
 	case *feature.EncodedNodeFeature:
@@ -512,7 +499,7 @@ func (g *GridIndexWriter) writeOsmObjectToCellCache(cell CellIndex, encodedFeatu
 	return nil
 }
 
-func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType feature.OsmObjectType) (io.Writer, error) {
+func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType ownOsm.OsmObjectType) (io.Writer, error) {
 	g.cacheFileMutex.Lock()
 
 	cellPositionKey := g.getMapKeyForCell(cellX, cellY)
@@ -586,11 +573,11 @@ func (g *GridIndexWriter) getMapKeyForCell(cellX int, cellY int) int64 {
 	return int64(cellX)<<32 | int64(cellY)
 }
 
-func (g *GridIndexWriter) getWriterIndex(objectType feature.OsmObjectType) int {
+func (g *GridIndexWriter) getWriterIndex(objectType ownOsm.OsmObjectType) int {
 	writersIndex := -1
-	if objectType == feature.OsmObjNode {
+	if objectType == ownOsm.OsmObjNode {
 		writersIndex = 0
-	} else if objectType == feature.OsmObjWay {
+	} else if objectType == ownOsm.OsmObjWay {
 		writersIndex = 1
 	} else {
 		writersIndex = 2

@@ -1,7 +1,7 @@
 package index
 
 import (
-	"soq/util"
+	"soq/common"
 	"testing"
 )
 
@@ -15,32 +15,32 @@ func TestTag_GetNextLowerValueIndexForKey(t *testing.T) {
 
 	// Act & Assert
 	valueIndex, foundExactValue := tagIndex.GetNextLowerValueIndexForKey(0, "v1")
-	util.AssertEqual(t, 0, valueIndex)
-	util.AssertTrue(t, foundExactValue)
+	common.AssertEqual(t, 0, valueIndex)
+	common.AssertTrue(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "v2")
-	util.AssertEqual(t, 1, valueIndex)
-	util.AssertTrue(t, foundExactValue)
+	common.AssertEqual(t, 1, valueIndex)
+	common.AssertTrue(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "v4")
-	util.AssertEqual(t, 2, valueIndex)
-	util.AssertTrue(t, foundExactValue)
+	common.AssertEqual(t, 2, valueIndex)
+	common.AssertTrue(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "v3")
-	util.AssertEqual(t, 1, valueIndex)
-	util.AssertFalse(t, foundExactValue)
+	common.AssertEqual(t, 1, valueIndex)
+	common.AssertFalse(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "v0")
-	util.AssertEqual(t, NotFound, valueIndex)
-	util.AssertFalse(t, foundExactValue)
+	common.AssertEqual(t, NotFound, valueIndex)
+	common.AssertFalse(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "v5")
-	util.AssertEqual(t, 2, valueIndex)
-	util.AssertFalse(t, foundExactValue)
+	common.AssertEqual(t, 2, valueIndex)
+	common.AssertFalse(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "v2.5")
-	util.AssertEqual(t, 1, valueIndex)
-	util.AssertFalse(t, foundExactValue)
+	common.AssertEqual(t, 1, valueIndex)
+	common.AssertFalse(t, foundExactValue)
 }
 
 func TestTag_GetNextLowerValueIndexForKey_mixedNumbersAndStrings(t *testing.T) {
@@ -53,34 +53,34 @@ func TestTag_GetNextLowerValueIndexForKey_mixedNumbersAndStrings(t *testing.T) {
 
 	// Act & Assert
 	valueIndex, foundExactValue := tagIndex.GetNextLowerValueIndexForKey(0, "1")
-	util.AssertEqual(t, 0, valueIndex)
-	util.AssertTrue(t, foundExactValue)
+	common.AssertEqual(t, 0, valueIndex)
+	common.AssertTrue(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "1m")
-	util.AssertEqual(t, 1, valueIndex)
-	util.AssertTrue(t, foundExactValue)
+	common.AssertEqual(t, 1, valueIndex)
+	common.AssertTrue(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "1.5 m")
-	util.AssertEqual(t, 2, valueIndex)
-	util.AssertTrue(t, foundExactValue)
+	common.AssertEqual(t, 2, valueIndex)
+	common.AssertTrue(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "1.5")
-	util.AssertEqual(t, 1, valueIndex)
-	util.AssertFalse(t, foundExactValue)
+	common.AssertEqual(t, 1, valueIndex)
+	common.AssertFalse(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "0")
-	util.AssertEqual(t, NotFound, valueIndex)
-	util.AssertFalse(t, foundExactValue)
+	common.AssertEqual(t, NotFound, valueIndex)
+	common.AssertFalse(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "2")
-	util.AssertEqual(t, 2, valueIndex)
-	util.AssertFalse(t, foundExactValue)
+	common.AssertEqual(t, 2, valueIndex)
+	common.AssertFalse(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "2m")
-	util.AssertEqual(t, 2, valueIndex)
-	util.AssertFalse(t, foundExactValue)
+	common.AssertEqual(t, 2, valueIndex)
+	common.AssertFalse(t, foundExactValue)
 
 	valueIndex, foundExactValue = tagIndex.GetNextLowerValueIndexForKey(0, "2.5m")
-	util.AssertEqual(t, 3, valueIndex)
-	util.AssertFalse(t, foundExactValue)
+	common.AssertEqual(t, 3, valueIndex)
+	common.AssertFalse(t, foundExactValue)
 }

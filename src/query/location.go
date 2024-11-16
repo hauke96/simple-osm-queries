@@ -5,13 +5,15 @@ import (
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/pkg/errors"
+	"soq/common"
 	"soq/feature"
 	"soq/index"
+	ownOsm "soq/osm"
 )
 
 type LocationExpression interface {
-	GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error)
-	GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []index.CellIndex, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error)
+	GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType ownOsm.OsmObjectType) (chan *index.GetFeaturesResult, error)
+	GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []common.CellIndex, objectType ownOsm.OsmObjectType) (chan *index.GetFeaturesResult, error)
 	IsWithin(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error)
 	Print(indent int)
 }
@@ -24,11 +26,11 @@ func NewBboxLocationExpression(bbox *orb.Bound) *BboxLocationExpression {
 	return &BboxLocationExpression{bbox: bbox}
 }
 
-func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
+func (b *BboxLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType ownOsm.OsmObjectType) (chan *index.GetFeaturesResult, error) {
 	return geometryIndex.Get(b.bbox, objectType)
 }
 
-func (b *BboxLocationExpression) GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []index.CellIndex, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
+func (b *BboxLocationExpression) GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []common.CellIndex, objectType ownOsm.OsmObjectType) (chan *index.GetFeaturesResult, error) {
 	return geometryIndex.GetFeaturesForCells(cells, objectType), nil
 }
 
@@ -66,12 +68,12 @@ func NewContextAwareLocationExpression() *ContextAwareLocationExpression {
 	return &ContextAwareLocationExpression{}
 }
 
-func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
+func (e *ContextAwareLocationExpression) GetFeatures(geometryIndex index.GeometryIndex, context feature.EncodedFeature, objectType ownOsm.OsmObjectType) (chan *index.GetFeaturesResult, error) {
 	// Should never been called since the SubStatementFilterExpression itself queries the features and does some caching.
 	panic("THe GetFeatures function of a ContextAwareLocationExpression should never been called. This is a bug.")
 }
 
-func (e *ContextAwareLocationExpression) GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []index.CellIndex, objectType feature.OsmObjectType) (chan *index.GetFeaturesResult, error) {
+func (e *ContextAwareLocationExpression) GetFeaturesForCells(geometryIndex index.GeometryIndex, cells []common.CellIndex, objectType ownOsm.OsmObjectType) (chan *index.GetFeaturesResult, error) {
 	return geometryIndex.GetFeaturesForCells(cells, objectType), nil
 }
 

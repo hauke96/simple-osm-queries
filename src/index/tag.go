@@ -9,7 +9,7 @@ import (
 	"io"
 	"os"
 	"path"
-	"soq/util"
+	"soq/common"
 	"strings"
 )
 
@@ -60,7 +60,7 @@ func (t *TagIndexCreator) Done() error {
 	// OSM objects are not yet stored, this happens in a separate index.
 	sigolo.Debug("Sort values for each key")
 	for i, values := range t.valueMap {
-		t.valueMap[i] = util.Sort(values)
+		t.valueMap[i] = common.Sort(values)
 	}
 
 	return nil
@@ -222,7 +222,7 @@ func (i *TagIndex) GetNextLowerValueIndexForKey(key int, value string) (int, boo
 		if v == value {
 			return idx, true
 		}
-		if util.IsLessThan(value, v) {
+		if common.IsLessThan(value, v) {
 			// This is the first value from the map that is larger than the given one -> the previous value is therefore
 			// the next lower one for the given parameter. This returns -1 is the given value is lower than the lowest
 			// value for the given key.
