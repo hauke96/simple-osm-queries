@@ -19,7 +19,7 @@ import (
 )
 
 type TemporaryFeatureImporter struct {
-	repository             *RawFeaturesRepository
+	repository             *TemporaryFeatureRepository
 	tagIndex               *index.TagIndex
 	tagIndexTempValueArray []int
 	nodeWriter             map[common.CellExtent]*bufio.Writer
@@ -30,7 +30,7 @@ type TemporaryFeatureImporter struct {
 	cellHeight             float64
 }
 
-func NewTemporaryFeatureImporter(repository *RawFeaturesRepository, tagIndex *index.TagIndex, cellExtents []common.CellExtent, cellWidth float64, cellHeight float64) *TemporaryFeatureImporter {
+func NewTemporaryFeatureImporter(repository *TemporaryFeatureRepository, tagIndex *index.TagIndex, cellExtents []common.CellExtent, cellWidth float64, cellHeight float64) *TemporaryFeatureImporter {
 	return &TemporaryFeatureImporter{
 		repository:             repository,
 		tagIndex:               tagIndex,
@@ -162,12 +162,12 @@ func (i *TemporaryFeatureImporter) Done() error {
 	return nil
 }
 
-type RawFeaturesRepository struct {
+type TemporaryFeatureRepository struct {
 	index.BaseGridIndex
 }
 
-func NewRawFeaturesRepository(cellWidth float64, cellHeight float64, baseFolder string) *RawFeaturesRepository {
-	gridIndexWriter := &RawFeaturesRepository{
+func NewTemporaryFeatureRepository(cellWidth float64, cellHeight float64, baseFolder string) *TemporaryFeatureRepository {
+	gridIndexWriter := &TemporaryFeatureRepository{
 		BaseGridIndex: index.BaseGridIndex{
 			CellWidth:  cellWidth,
 			CellHeight: cellHeight,
@@ -178,16 +178,16 @@ func NewRawFeaturesRepository(cellWidth float64, cellHeight float64, baseFolder 
 }
 
 // Clear removes all files belonging to this repository.
-func (r *RawFeaturesRepository) Clear() error {
+func (r *TemporaryFeatureRepository) Clear() error {
 	err := os.RemoveAll(r.BaseFolder)
 	if err != nil {
-		return errors.Wrapf(err, "Error deleting directory for temporary raw features %s", r.BaseFolder)
+		return errors.Wrapf(err, "Error deleting directory for temporary features %s", r.BaseFolder)
 	}
 
 	return nil
 }
 
-func (r *RawFeaturesRepository) writeNodeData(id osm.NodeID, keys []byte, values []int, point *orb.Point, f io.Writer) error {
+func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []byte, values []int, point *orb.Point, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -249,7 +249,7 @@ func (r *RawFeaturesRepository) writeNodeData(id osm.NodeID, keys []byte, values
 	return err
 }
 
-func (r *RawFeaturesRepository) writeWayData(id osm.WayID, keys []byte, values []int, nodes osm.WayNodes, f io.Writer) error {
+func (r *TemporaryFeatureRepository) writeWayData(id osm.WayID, keys []byte, values []int, nodes osm.WayNodes, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -327,7 +327,7 @@ func (r *RawFeaturesRepository) writeWayData(id osm.WayID, keys []byte, values [
 	return err
 }
 
-func (r *RawFeaturesRepository) writeRelationData(id osm.RelationID, keys []byte, values []int, nodeIds []osm.NodeID, wayIds []osm.WayID, childRelationIds []osm.RelationID, f io.Writer) error {
+func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys []byte, values []int, nodeIds []osm.NodeID, wayIds []osm.WayID, childRelationIds []osm.RelationID, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -419,7 +419,8 @@ func (r *RawFeaturesRepository) writeRelationData(id osm.RelationID, keys []byte
 	return err
 }
 
-func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.EncodedFeature, extent common.CellExtent) error {
+// TODO Create own tmp feature object that is only a wrapper for []byte. This makes deserialization faster. Of course such object should contain methods to obtain necessary data (ID, geometry, ...).
+func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan feature.EncodedFeature, extent common.CellExtent) error {
 	cellFile, err := getFileForExtent(r.BaseFolder, ownOsm.OsmObjNode.String(), extent)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to open tmp node-feature cell %s", cellFile.Name())
@@ -459,7 +460,7 @@ func (r *RawFeaturesRepository) ReadFeatures(readFeatureChannel chan feature.Enc
 	return nil
 }
 
-func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent common.CellExtent) {
+func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent common.CellExtent) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
 
@@ -514,7 +515,7 @@ func (r *RawFeaturesRepository) readNodesFromCellData(output chan feature.Encode
 	}
 }
 
-func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent common.CellExtent) {
+func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent common.CellExtent) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeWayData".
 
@@ -592,7 +593,7 @@ func (r *RawFeaturesRepository) readWaysFromCellData(output chan feature.Encoded
 	}
 }
 
-func (r *RawFeaturesRepository) readRelationsFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader) {
+func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeRelationData".
 

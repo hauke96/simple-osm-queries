@@ -107,8 +107,8 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	//
 	currentStepStartTime = time.Now()
 
-	rawFeatureRepo := NewRawFeaturesRepository(cellWidth, cellHeight, "import-temp-cell")
-	temporaryFeatureImporter := NewTemporaryFeatureImporter(rawFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
+	tmpFeatureRepo := NewTemporaryFeatureRepository(cellWidth, cellHeight, "import-temp-cell")
+	temporaryFeatureImporter := NewTemporaryFeatureImporter(tmpFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
 
 	osmReader = osm.NewOsmReader()
 	err = osmReader.Read(inputFile, temporaryFeatureImporter)
@@ -135,9 +135,9 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		currentSubExtentStartTime := time.Now()
 		sigolo.Debugf("=== Process sub-extent %v (%d / %d) ===", subExtent, i+1, len(subExtents))
 
-		tempRawFeatureChannel := make(chan feature.EncodedFeature, 1000)
-		go rawFeatureRepo.ReadFeatures(tempRawFeatureChannel, subExtent) // TODO error handling
-		err = index.ImportDataFile(tempRawFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
+		tmpFeatureChannel := make(chan feature.EncodedFeature, 1000)
+		go tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent) // TODO error handling
+		err = index.ImportDataFile(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
 		if err != nil {
 			return err
 		}
