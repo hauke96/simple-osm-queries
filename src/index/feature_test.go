@@ -1,4 +1,4 @@
-package feature
+package index
 
 import (
 	"soq/common"

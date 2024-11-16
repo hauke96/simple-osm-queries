@@ -21,11 +21,11 @@ func NewStatement(locationExpression LocationExpression, queryType osm.OsmQueryT
 	}
 }
 
-func (s Statement) GetFeatures(context feature.EncodedFeature) (chan *index.GetFeaturesResult, error) {
+func (s Statement) GetFeatures(context feature.Feature) (chan *index.GetFeaturesResult, error) {
 	return s.location.GetFeatures(geometryIndex, context, s.queryType.GetObjectType())
 }
 
-func (s Statement) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
+func (s Statement) Applies(feature feature.Feature, context feature.Feature) (bool, error) {
 	// TODO Respect object type (this should also not be necessary, should it?)
 
 	applies, err := s.filter.Applies(feature, context)
@@ -36,7 +36,7 @@ func (s Statement) Applies(feature feature.EncodedFeature, context feature.Encod
 	return applies, nil
 }
 
-func (s Statement) Execute(context feature.EncodedFeature) ([]feature.EncodedFeature, error) {
+func (s Statement) Execute(context feature.Feature) ([]feature.Feature, error) {
 	s.Print(0)
 
 	featuresChannel, err := s.GetFeatures(context)
@@ -44,7 +44,7 @@ func (s Statement) Execute(context feature.EncodedFeature) ([]feature.EncodedFea
 		return nil, err
 	}
 
-	var result []feature.EncodedFeature
+	var result []feature.Feature
 
 	for getFeatureResult := range featuresChannel {
 		sigolo.Tracef("Received %d features from cell %v", len(getFeatureResult.Features), getFeatureResult.Cell)

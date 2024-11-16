@@ -10,7 +10,7 @@ import (
 
 type GetFeaturesResult struct {
 	Cell     common.CellIndex
-	Features []feature.EncodedFeature
+	Features []feature.Feature
 }
 
 type GeometryIndex interface {

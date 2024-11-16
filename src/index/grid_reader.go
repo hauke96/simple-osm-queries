@@ -103,7 +103,7 @@ func (g *GridIndexReader) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult,
 	go func() {
 		for cell, nodeIds := range cells {
 			innerCellBound := innerCellBounds[cell]
-			outputBuffer := []feature.EncodedFeature{}
+			outputBuffer := []feature.Feature{}
 
 			unfilteredFeatures, err := g.readFeaturesFromCellFile(cell[0], cell[1], ownOsm.OsmObjNode)
 			sigolo.FatalCheck(err)
@@ -148,7 +148,7 @@ func (g *GridIndexReader) GetFeaturesForCells(cells []common.CellIndex, objectTy
 		for _, cell := range cells {
 			featuresInCell := &GetFeaturesResult{
 				Cell:     cell,
-				Features: []feature.EncodedFeature{},
+				Features: []feature.Feature{},
 			}
 
 			encodedFeatures, err := g.readFeaturesFromCellFile(cell[0], cell[1], objectType)
@@ -171,7 +171,7 @@ func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesRe
 
 			featuresInBbox := &GetFeaturesResult{
 				Cell:     common.CellIndex{cellX, cellY},
-				Features: []feature.EncodedFeature{},
+				Features: []feature.Feature{},
 			}
 
 			encodedFeatures, err := g.readFeaturesFromCellFile(cellX, cellY, objectType)
@@ -191,7 +191,7 @@ func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesRe
 }
 
 // readFeaturesFromCellFile reads all features from the specified cell and writes them periodically to the output channel.
-func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectType ownOsm.OsmObjectType) ([]feature.EncodedFeature, error) {
+func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectType ownOsm.OsmObjectType) ([]feature.Feature, error) {
 	cellFolderName := path.Join(g.BaseFolder, objectType.String(), strconv.Itoa(cellX))
 	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
 
@@ -216,7 +216,7 @@ func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectT
 		return nil, errors.Wrapf(err, "Unable to read cell x=%d, y=%d, type=%s", cellX, cellY, objectType)
 	}
 
-	readFeatureChannel := make(chan []feature.EncodedFeature)
+	readFeatureChannel := make(chan []feature.Feature)
 	featureCachedWaitGroup := &sync.WaitGroup{}
 	featureCachedWaitGroup.Add(1)
 	go func() {
@@ -246,8 +246,8 @@ func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectT
 	return cachedFeatures, nil
 }
 
-func (g *GridIndexReader) readNodesFromCellData(output chan []feature.EncodedFeature, data []byte) {
-	outputBuffer := make([]feature.EncodedFeature, 1000)
+func (g *GridIndexReader) readNodesFromCellData(output chan []feature.Feature, data []byte) {
+	outputBuffer := make([]feature.Feature, 1000)
 	currentBufferPos := 0
 
 	for pos := 0; pos < len(data); {
@@ -307,8 +307,8 @@ func (g *GridIndexReader) readNodesFromCellData(output chan []feature.EncodedFea
 		/*
 			Create encoded feature from raw data
 		*/
-		encodedFeature := &feature.EncodedNodeFeature{
-			AbstractEncodedFeature: feature.AbstractEncodedFeature{
+		encodedFeature := &EncodedNodeFeature{
+			AbstractEncodedFeature: AbstractEncodedFeature{
 				ID:       osmId,
 				Geometry: &orb.Point{float64(lon), float64(lat)},
 				Keys:     encodedKeys,
@@ -327,7 +327,7 @@ func (g *GridIndexReader) readNodesFromCellData(output chan []feature.EncodedFea
 
 		if currentBufferPos == len(outputBuffer)-1 {
 			output <- outputBuffer
-			outputBuffer = make([]feature.EncodedFeature, len(outputBuffer))
+			outputBuffer = make([]feature.Feature, len(outputBuffer))
 			currentBufferPos = 0
 		}
 	}
@@ -335,8 +335,8 @@ func (g *GridIndexReader) readNodesFromCellData(output chan []feature.EncodedFea
 	output <- outputBuffer
 }
 
-func (g *GridIndexReader) readWaysFromCellData(output chan []feature.EncodedFeature, data []byte) {
-	outputBuffer := make([]feature.EncodedFeature, 1000)
+func (g *GridIndexReader) readWaysFromCellData(output chan []feature.Feature, data []byte) {
+	outputBuffer := make([]feature.Feature, 1000)
 	currentBufferPos := 0
 	totalReadFeatures := 0
 
@@ -404,8 +404,8 @@ func (g *GridIndexReader) readWaysFromCellData(output chan []feature.EncodedFeat
 			lineString[i] = orb.Point{node.Lon, node.Lat}
 		}
 
-		encodedFeature := feature.EncodedWayFeature{
-			AbstractEncodedFeature: feature.AbstractEncodedFeature{
+		encodedFeature := EncodedWayFeature{
+			AbstractEncodedFeature: AbstractEncodedFeature{
 				ID:       osmId,
 				Keys:     encodedKeys,
 				Values:   encodedValues,
@@ -424,7 +424,7 @@ func (g *GridIndexReader) readWaysFromCellData(output chan []feature.EncodedFeat
 
 		if currentBufferPos == len(outputBuffer)-1 {
 			output <- outputBuffer
-			outputBuffer = make([]feature.EncodedFeature, len(outputBuffer))
+			outputBuffer = make([]feature.Feature, len(outputBuffer))
 			currentBufferPos = 0
 		}
 
@@ -434,8 +434,8 @@ func (g *GridIndexReader) readWaysFromCellData(output chan []feature.EncodedFeat
 	output <- outputBuffer
 }
 
-func (g *GridIndexReader) readRelationsFromCellData(output chan []feature.EncodedFeature, data []byte) {
-	outputBuffer := make([]feature.EncodedFeature, 1000)
+func (g *GridIndexReader) readRelationsFromCellData(output chan []feature.Feature, data []byte) {
+	outputBuffer := make([]feature.Feature, 1000)
 	currentBufferPos := 0
 
 	for pos := 0; pos < len(data); {
@@ -523,8 +523,8 @@ func (g *GridIndexReader) readRelationsFromCellData(output chan []feature.Encode
 			Create encoded feature from raw data
 		*/
 		bboxPolygon := bbox.ToPolygon()
-		encodedFeature := &feature.EncodedRelationFeature{
-			AbstractEncodedFeature: feature.AbstractEncodedFeature{
+		encodedFeature := &EncodedRelationFeature{
+			AbstractEncodedFeature: AbstractEncodedFeature{
 				ID:       osmId,
 				Geometry: &bboxPolygon, // This is probably temporary until the real geometry collection is stored
 				Keys:     encodedKeys,
@@ -545,7 +545,7 @@ func (g *GridIndexReader) readRelationsFromCellData(output chan []feature.Encode
 
 		if currentBufferPos == len(outputBuffer)-1 {
 			output <- outputBuffer
-			outputBuffer = make([]feature.EncodedFeature, len(outputBuffer))
+			outputBuffer = make([]feature.Feature, len(outputBuffer))
 			currentBufferPos = 0
 		}
 	}
@@ -695,7 +695,7 @@ func (g *GridIndexReader) readObjectsToRelationMappingFromCellData(cellX int, ce
 	return nodeToRelations, wayToRelations, relationToParentRelations, nil
 }
 
-func (g *GridIndexReader) checkValidity(encodedFeature feature.EncodedFeature) {
+func (g *GridIndexReader) checkValidity(encodedFeature feature.Feature) {
 	// Check keys
 	if len(encodedFeature.GetKeys()) > len(g.TagIndex.keyMap) {
 		sigolo.Fatalf("Invalid length of keys in feature %d: Expected less than %d but found %d", encodedFeature.GetID(), len(g.TagIndex.keyMap), len(encodedFeature.GetKeys()))

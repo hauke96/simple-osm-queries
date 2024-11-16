@@ -13,38 +13,38 @@ type featureCache interface {
 	has(filename string) bool
 
 	// getAll returns the current entries for the given file. It returns an error when this file is not cached.
-	getAll(filename string) ([]feature.EncodedFeature, error)
+	getAll(filename string) ([]feature.Feature, error)
 
 	// getOrInsert returns the current entries for the given file. It creates a new empty cache entry when the file has not
 	// been cached yet. The boolean is true when the returned array is new in the cache.
-	getOrInsert(filename string) ([]feature.EncodedFeature, bool, error)
+	getOrInsert(filename string) ([]feature.Feature, bool, error)
 
 	// insert adds the given features to the cache. When the cache is full, items might get evicted based on the cache
 	// replacement policy of the concrete implementation. It returns an error when this file is already cached.
-	insert(filename string, features []feature.EncodedFeature) error
+	insert(filename string, features []feature.Feature) error
 
 	// insertOrAppend adds the given features to the cache, when the file is not caches, or it appends it, when the file
 	//is already cached.
-	insertOrAppend(filename string, features []feature.EncodedFeature)
+	insertOrAppend(filename string, features []feature.Feature)
 
 	// appendAll adds the given entries to the array is the given filename. It returns an error when this file is not
 	// cached.
-	appendAll(filename string, features []feature.EncodedFeature) error
+	appendAll(filename string, features []feature.Feature) error
 }
 
 // lruFeatureCache is a simple LRU (least recently used) cache for files containing encoded features. It has an internal
 // locking mechanism and can be used in concurrent goroutines. The eviction strategy uses the UTC nanoseconds as
 // measurement for the recency of entries. This timestamp only gets updates when data is read, not when it's written.
 type lruFeatureCache struct {
-	featureCache                map[string][]feature.EncodedFeature // Filename to feature within it
-	featureCacheLastAccessTimes map[string]int64                    // Filename to UTC millis of last access
+	featureCache                map[string][]feature.Feature // Filename to feature within it
+	featureCacheLastAccessTimes map[string]int64             // Filename to UTC millis of last access
 	featureCacheMutex           *sync.Mutex
 	maxSize                     int // Maximum number of entries this cache should hold
 }
 
 func newLruCache(maxSize int) *lruFeatureCache {
 	return &lruFeatureCache{
-		featureCache:                map[string][]feature.EncodedFeature{},
+		featureCache:                map[string][]feature.Feature{},
 		featureCacheLastAccessTimes: map[string]int64{},
 		featureCacheMutex:           &sync.Mutex{},
 		maxSize:                     maxSize,
@@ -57,7 +57,7 @@ func (c lruFeatureCache) has(filename string) bool {
 	return ok
 }
 
-func (c lruFeatureCache) getAll(filename string) ([]feature.EncodedFeature, error) {
+func (c lruFeatureCache) getAll(filename string) ([]feature.Feature, error) {
 	c.featureCacheMutex.Lock()
 	defer c.featureCacheMutex.Unlock()
 
@@ -71,14 +71,14 @@ func (c lruFeatureCache) getAll(filename string) ([]feature.EncodedFeature, erro
 	return features, nil
 }
 
-func (c lruFeatureCache) getOrInsert(filename string) ([]feature.EncodedFeature, bool, error) {
+func (c lruFeatureCache) getOrInsert(filename string) ([]feature.Feature, bool, error) {
 	c.featureCacheMutex.Lock()
 	defer c.featureCacheMutex.Unlock()
 
 	entryIsNew := false
 
 	if !c.has(filename) {
-		c.insertUnsafe(filename, []feature.EncodedFeature{})
+		c.insertUnsafe(filename, []feature.Feature{})
 		entryIsNew = true
 	}
 
@@ -87,7 +87,7 @@ func (c lruFeatureCache) getOrInsert(filename string) ([]feature.EncodedFeature,
 
 // insert adds the given features to the cache. If the cache is full, the item that hasn't been used longest will be
 // evicted from the cache.
-func (c lruFeatureCache) insert(filename string, features []feature.EncodedFeature) error {
+func (c lruFeatureCache) insert(filename string, features []feature.Feature) error {
 	c.featureCacheMutex.Lock()
 	defer c.featureCacheMutex.Unlock()
 
@@ -100,7 +100,7 @@ func (c lruFeatureCache) insert(filename string, features []feature.EncodedFeatu
 	return nil
 }
 
-func (c lruFeatureCache) insertOrAppend(filename string, features []feature.EncodedFeature) {
+func (c lruFeatureCache) insertOrAppend(filename string, features []feature.Feature) {
 	c.featureCacheMutex.Lock()
 	defer c.featureCacheMutex.Unlock()
 
@@ -113,7 +113,7 @@ func (c lruFeatureCache) insertOrAppend(filename string, features []feature.Enco
 
 // insertUnsafe is the core functionality of the insertion of elements. This function does NOT use locking and is meant
 // for internal use only! Use insert to normally insert elements.
-func (c lruFeatureCache) insertUnsafe(filename string, features []feature.EncodedFeature) {
+func (c lruFeatureCache) insertUnsafe(filename string, features []feature.Feature) {
 	if len(c.featureCache) >= c.maxSize {
 		// Cache is full -> evict entry that has been unused the longest
 		longestUnusedFilename := c.getMinEntry()
@@ -141,7 +141,7 @@ func (c lruFeatureCache) getMinEntry() string {
 	return minFilename
 }
 
-func (c lruFeatureCache) appendAll(filename string, additionalFeatures []feature.EncodedFeature) error {
+func (c lruFeatureCache) appendAll(filename string, additionalFeatures []feature.Feature) error {
 	c.featureCacheMutex.Lock()
 	defer c.featureCacheMutex.Unlock()
 

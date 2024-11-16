@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func WriteFeaturesAsGeoJsonFile(encodedFeatures []feature.EncodedFeature, tagIndex *TagIndex) error {
+func WriteFeaturesAsGeoJsonFile(encodedFeatures []feature.Feature, tagIndex *TagIndex) error {
 	file, err := os.Create("output.geojson")
 	if err != nil {
 		return err
@@ -24,7 +24,7 @@ func WriteFeaturesAsGeoJsonFile(encodedFeatures []feature.EncodedFeature, tagInd
 	return WriteFeaturesAsGeoJson(encodedFeatures, tagIndex, file)
 }
 
-func WriteFeaturesAsGeoJson(encodedFeatures []feature.EncodedFeature, tagIndex *TagIndex, writer io.Writer) error {
+func WriteFeaturesAsGeoJson(encodedFeatures []feature.Feature, tagIndex *TagIndex, writer io.Writer) error {
 	sigolo.Info("Write features to GeoJSON")
 	writeStartTime := time.Now()
 
@@ -35,11 +35,11 @@ func WriteFeaturesAsGeoJson(encodedFeatures []feature.EncodedFeature, tagIndex *
 		geoJsonFeature.Properties["@osm_id"] = encodedFeature.GetID()
 
 		switch encodedFeature.(type) {
-		case *feature.EncodedNodeFeature:
+		case feature.NodeFeature:
 			geoJsonFeature.Properties["@osm_type"] = "node"
-		case *feature.EncodedWayFeature:
+		case feature.WayFeature:
 			geoJsonFeature.Properties["@osm_type"] = "way"
-		case *feature.EncodedRelationFeature:
+		case feature.RelationFeature:
 			geoJsonFeature.Properties["@osm_type"] = "relation"
 		}
 

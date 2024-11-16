@@ -12,13 +12,13 @@ func TestLruCache_insertAndEviction(t *testing.T) {
 	cache := newLruCache(3)
 
 	filenameA := "A"
-	entryA := []feature.EncodedFeature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entryA := []feature.Feature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 	filenameB := "B"
-	entryB := []feature.EncodedFeature{&feature.EncodedWayFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entryB := []feature.Feature{&feature.EncodedWayFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 	filenameC := "C"
-	entryC := []feature.EncodedFeature{&feature.EncodedRelationFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entryC := []feature.Feature{&feature.EncodedRelationFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 	filenameD := "D"
-	entryD := []feature.EncodedFeature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}, WayIds: []osm.WayID{}}}
+	entryD := []feature.Feature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}, WayIds: []osm.WayID{}}}
 
 	common.AssertFalse(t, cache.has(filenameA))
 	common.AssertFalse(t, cache.has(filenameB))
@@ -66,7 +66,7 @@ func TestLruCache_insertTwice(t *testing.T) {
 	cache := newLruCache(3)
 
 	filename := "A"
-	entry := []feature.EncodedFeature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entry := []feature.Feature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 
 	common.AssertFalse(t, cache.has(filename))
 	err := cache.insert(filename, entry)
@@ -87,7 +87,7 @@ func TestLruCache_insertOrAppend(t *testing.T) {
 	cache := newLruCache(3)
 
 	filename := "A"
-	entry := []feature.EncodedFeature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entry := []feature.Feature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 
 	common.AssertFalse(t, cache.has(filename))
 	cache.insertOrAppend(filename, entry)
@@ -108,7 +108,7 @@ func TestLruCache_getAll(t *testing.T) {
 	cache := newLruCache(3)
 
 	filename := "A"
-	entry := []feature.EncodedFeature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entry := []feature.Feature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 
 	err := cache.insert(filename, entry)
 	common.AssertNil(t, err)
@@ -147,7 +147,7 @@ func TestLruCache_getOrInsert(t *testing.T) {
 	// Assert
 	common.AssertNil(t, err)
 	common.AssertTrue(t, entryIsNew)
-	common.AssertEqual(t, entry, []feature.EncodedFeature{})
+	common.AssertEqual(t, entry, []feature.Feature{})
 }
 
 func TestLruCache_getOrInsertFullCache(t *testing.T) {
@@ -156,11 +156,11 @@ func TestLruCache_getOrInsertFullCache(t *testing.T) {
 
 	// Insert entries
 	filenameA := "A"
-	entryA := []feature.EncodedFeature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entryA := []feature.Feature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 	filenameB := "B"
-	entryB := []feature.EncodedFeature{&feature.EncodedWayFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entryB := []feature.Feature{&feature.EncodedWayFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 	filenameC := "C"
-	entryC := []feature.EncodedFeature{&feature.EncodedRelationFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entryC := []feature.Feature{&feature.EncodedRelationFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 
 	err := cache.insert(filenameA, entryA)
 	time.Sleep(10 * time.Nanosecond)
@@ -181,7 +181,7 @@ func TestLruCache_getOrInsertFullCache(t *testing.T) {
 	common.AssertTrue(t, cache.has(filenameB))
 	common.AssertTrue(t, cache.has(filenameC))
 	common.AssertTrue(t, cache.has(filenameD))
-	common.AssertEqual(t, entry, []feature.EncodedFeature{})
+	common.AssertEqual(t, entry, []feature.Feature{})
 }
 
 func TestLruCache_getOrInsertTwice(t *testing.T) {
@@ -197,7 +197,7 @@ func TestLruCache_getOrInsertTwice(t *testing.T) {
 	// Assert
 	common.AssertNil(t, err)
 	common.AssertFalse(t, entryIsNew)
-	common.AssertEqual(t, entry, []feature.EncodedFeature{})
+	common.AssertEqual(t, entry, []feature.Feature{})
 }
 
 func TestLruCache_appendAll(t *testing.T) {
@@ -205,8 +205,8 @@ func TestLruCache_appendAll(t *testing.T) {
 	cache := newLruCache(3)
 
 	filename := "A"
-	entry := []feature.EncodedFeature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
-	additionalFeatures := []feature.EncodedFeature{&feature.EncodedWayFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entry := []feature.Feature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	additionalFeatures := []feature.Feature{&feature.EncodedWayFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 
 	err := cache.insert(filename, entry)
 	common.AssertNil(t, err)
@@ -226,7 +226,7 @@ func TestLruCache_appendAllNotExisting(t *testing.T) {
 	cache := newLruCache(3)
 
 	filename := "A"
-	entry := []feature.EncodedFeature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
+	entry := []feature.Feature{&feature.EncodedNodeFeature{AbstractEncodedFeature: feature.AbstractEncodedFeature{}}}
 
 	// Act
 	err := cache.appendAll(filename, entry)

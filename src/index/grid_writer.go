@@ -26,9 +26,9 @@ type GridIndexWriter struct {
 	cacheFileWriters            map[int64]*[3]*bufio.Writer // Key is a aggregation of the cells x and y coordinate The array index is based on the object type.
 	cacheFileMutexes            map[io.Writer]*sync.Mutex
 	cacheFileMutex              *sync.Mutex
-	cacheRawEncodedNodes        map[common.CellIndex][]*feature.EncodedNodeFeature
-	cacheRawEncodedWays         map[common.CellIndex][]*feature.EncodedWayFeature
-	cacheRawEncodedRelations    map[common.CellIndex][]*feature.EncodedRelationFeature
+	cacheRawEncodedNodes        map[common.CellIndex][]feature.NodeFeature
+	cacheRawEncodedWays         map[common.CellIndex][]feature.WayFeature
+	cacheRawEncodedRelations    map[common.CellIndex][]feature.RelationFeature
 	cacheRawEncodedFeatureMutex *sync.Mutex
 
 	// During writing, some of the half-written data must be read again. This requires some functionality of the
@@ -37,7 +37,7 @@ type GridIndexWriter struct {
 }
 
 // TODO rename this function
-func ImportDataFile(tempRawFeatureChannel chan feature.EncodedFeature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent) error {
+func ImportDataFile(tempRawFeatureChannel chan feature.Feature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent) error {
 	gridIndexWriter := NewGridIndexWriter(cellWidth, cellHeight, baseFolder)
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
@@ -64,9 +64,9 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 		cacheFileWriters:            map[int64]*[3]*bufio.Writer{},
 		cacheFileMutexes:            map[io.Writer]*sync.Mutex{},
 		cacheFileMutex:              &sync.Mutex{},
-		cacheRawEncodedNodes:        map[common.CellIndex][]*feature.EncodedNodeFeature{},
-		cacheRawEncodedWays:         map[common.CellIndex][]*feature.EncodedWayFeature{},
-		cacheRawEncodedRelations:    map[common.CellIndex][]*feature.EncodedRelationFeature{},
+		cacheRawEncodedNodes:        map[common.CellIndex][]feature.NodeFeature{},
+		cacheRawEncodedWays:         map[common.CellIndex][]feature.WayFeature{},
+		cacheRawEncodedRelations:    map[common.CellIndex][]feature.RelationFeature{},
 		cacheRawEncodedFeatureMutex: &sync.Mutex{},
 		gridIndexReader: &GridIndexReader{
 			BaseGridIndex:        baseGridIndex,
@@ -78,7 +78,7 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 
 // WriteOsmToRawEncodedFeatures Reads the input feature channel and converts all OSM objects into raw encoded features and
 // writes them into their respective cells. The returned cell map contains all cells that contain nodes.
-func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.EncodedFeature, cellExtent common.CellExtent) (map[common.CellIndex]common.CellIndex, error) {
+func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.Feature, cellExtent common.CellExtent) (map[common.CellIndex]common.CellIndex, error) {
 	sigolo.Info("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 
@@ -103,7 +103,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 	sigolo.Debug("Process nodes (1/3)")
 	for obj := range tempRawFeatureChannel {
 		switch rawFeature := obj.(type) {
-		case *feature.EncodedNodeFeature:
+		case feature.NodeFeature:
 			cell := g.GetCellIndexForCoordinate(rawFeature.GetLon(), rawFeature.GetLat())
 
 			id := osm.NodeID(rawFeature.GetID())
@@ -113,14 +113,14 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			sigolo.FatalCheck(err)
 
 			nodeCells[cell] = cell
-		case *feature.EncodedWayFeature:
+		case feature.WayFeature:
 			if !firstWayHasBeenProcessed {
 				sigolo.Debug("Start processing ways (2/3)")
 				firstWayHasBeenProcessed = true
 			}
 
 			wayCells := map[common.CellIndex]common.CellIndex{}
-			for _, node := range rawFeature.Nodes {
+			for _, node := range rawFeature.GetNodes() {
 				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 				wayCells[cell] = cell
 			}
@@ -137,7 +137,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			wayToBound[id] = &bbox
 
 			savedCells := map[common.CellIndex]bool{}
-			for _, node := range rawFeature.Nodes {
+			for _, node := range rawFeature.GetNodes() {
 				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
 
 				if _, cellAlreadySaved := savedCells[cell]; !cellAlreadySaved && cellExtent.Contains(cell) {
@@ -146,14 +146,14 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 					savedCells[cell] = true
 				}
 			}
-		case *feature.EncodedRelationFeature:
+		case feature.RelationFeature:
 			if !firstRelationHasBeenProcessed {
 				sigolo.Debug("Start processing relations (3/3)")
 				firstRelationHasBeenProcessed = true
 			}
 
 			extentContainsRelation := false
-			for _, nodeId := range rawFeature.NodeIds {
+			for _, nodeId := range rawFeature.GetNodeIds() {
 				nodePoint := nodeToPoint[nodeId]
 				if nodePoint != nil {
 					cell := g.GetCellIndexForCoordinate(nodePoint.X(), nodePoint.Y())
@@ -164,7 +164,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				}
 			}
 			if !extentContainsRelation {
-				for _, wayId := range rawFeature.WayIds {
+				for _, wayId := range rawFeature.GetWayIds() {
 					extentContainsRelation = extentContainsRelation || cellExtent.ContainsAny(wayToCellsMap[wayId])
 					if extentContainsRelation {
 						break
@@ -172,7 +172,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 				}
 			}
 			if !extentContainsRelation {
-				for _, relationId := range rawFeature.ChildRelationIds {
+				for _, relationId := range rawFeature.GetChildRelationIds() {
 					extentContainsRelation = extentContainsRelation || cellExtent.ContainsAny(relationToCellsMap[relationId])
 					if extentContainsRelation {
 						break
@@ -187,7 +187,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 
 			var bbox *orb.Bound
 
-			for _, nodeId := range rawFeature.NodeIds {
+			for _, nodeId := range rawFeature.GetNodeIds() {
 				point, ok := nodeToPoint[nodeId]
 				if ok {
 					cell := g.GetCellIndexForCoordinate(point.X(), point.Y())
@@ -201,7 +201,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 					}
 				}
 			}
-			for _, wayId := range rawFeature.WayIds {
+			for _, wayId := range rawFeature.GetWayIds() {
 				cells := wayToCellsMap[wayId]
 				for _, cell := range cells {
 					relCells[cell] = cell
@@ -215,7 +215,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 					}
 				}
 			}
-			for _, relationId := range rawFeature.ChildRelationIds {
+			for _, relationId := range rawFeature.GetChildRelationIds() {
 				cells := relationToCellsMap[relationId]
 				for _, cell := range cells {
 					relCells[cell] = cell
@@ -239,7 +239,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			}
 
 			// TODO This polygon is not accurate. Not only because it's a bbox but also because the relation might stretch over multiple sub-extents which are not covered here. This bbox would roughlty stretch only over one sub-extent.
-			rawFeature.Geometry = bbox.ToPolygon()
+			rawFeature.SetGeometry(bbox.ToPolygon())
 
 			for _, cell := range relCells {
 				err := g.writeOsmObjectToCellCache(cell, rawFeature)
@@ -330,14 +330,14 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan commo
 		relationsToParentRelations := make(map[uint64][]osm.RelationID)
 
 		for _, relation := range g.cacheRawEncodedRelations[cell] {
-			for _, nodeId := range relation.NodeIds {
-				nodeToRelations[uint64(nodeId)] = append(nodeToRelations[uint64(nodeId)], osm.RelationID(relation.ID))
+			for _, nodeId := range relation.GetNodeIds() {
+				nodeToRelations[uint64(nodeId)] = append(nodeToRelations[uint64(nodeId)], osm.RelationID(relation.GetID()))
 			}
-			for _, wayId := range relation.WayIds {
-				waysToRelations[uint64(wayId)] = append(nodeToRelations[uint64(wayId)], osm.RelationID(relation.ID))
+			for _, wayId := range relation.GetWayIds() {
+				waysToRelations[uint64(wayId)] = append(nodeToRelations[uint64(wayId)], osm.RelationID(relation.GetID()))
 			}
-			for _, relId := range relation.ChildRelationIds {
-				relationsToParentRelations[uint64(relId)] = append(nodeToRelations[uint64(relId)], osm.RelationID(relation.ID))
+			for _, relId := range relation.GetChildRelationIds() {
+				relationsToParentRelations[uint64(relId)] = append(nodeToRelations[uint64(relId)], osm.RelationID(relation.GetID()))
 			}
 		}
 
@@ -370,8 +370,8 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 
 	nodeToWays := map[uint64][]osm.WayID{}
 	for _, way := range g.cacheRawEncodedWays[cell] {
-		for _, nodeId := range way.Nodes.NodeIDs() {
-			nodeToWays[uint64(nodeId)] = append(nodeToWays[uint64(nodeId)], osm.WayID(way.ID))
+		for _, nodeId := range way.GetNodes().NodeIDs() {
+			nodeToWays[uint64(nodeId)] = append(nodeToWays[uint64(nodeId)], osm.WayID(way.GetID()))
 		}
 	}
 
@@ -394,7 +394,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 	//sigolo.FatalCheck(errors.Wrapf(err, "Unable to read %v-cell x=%d, y=%d", objectType, cell.X(), cell.Y()))
 
 	//sigolo.Tracef("[Cell %v] Read %v objects from cell and write them including additional IDs", cell, objectType)
-	//readFeatureChannel := make(chan []feature.EncodedFeature)
+	//readFeatureChannel := make(chan []feature.Feature)
 	//var finishWaitGroup sync.WaitGroup
 	//finishWaitGroup.Add(1)
 
@@ -410,10 +410,10 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 	case ownOsm.OsmObjNode:
 		for _, encFeature := range g.cacheRawEncodedNodes[cell] {
 			if wayIds, ok := nodeToWays[encFeature.GetID()]; ok {
-				encFeature.WayIds = wayIds
+				encFeature.SetWayIds(wayIds)
 			}
 			if relationIds, ok := objectTypeToRelationMapping[encFeature.GetID()]; ok {
-				encFeature.RelationIds = relationIds
+				encFeature.SetRelationIds(relationIds)
 			}
 
 			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encFeature)
@@ -423,7 +423,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 	case ownOsm.OsmObjWay:
 		for _, encFeature := range g.cacheRawEncodedWays[cell] {
 			if relationIds, ok := objectTypeToRelationMapping[encFeature.GetID()]; ok {
-				encFeature.RelationIds = relationIds
+				encFeature.SetRelationIds(relationIds)
 			}
 
 			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encFeature)
@@ -433,7 +433,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 	case ownOsm.OsmObjRelation:
 		for _, encFeature := range g.cacheRawEncodedRelations[cell] {
 			if relationIds, ok := objectTypeToRelationMapping[encFeature.GetID()]; ok {
-				encFeature.ParentRelationIds = relationIds
+				encFeature.SetParentRelationIds(relationIds)
 			}
 
 			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encFeature)
@@ -447,9 +447,9 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 	return nil
 }
 
-func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeature feature.EncodedFeature) error {
+func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeature feature.Feature) error {
 	switch featureObj := encodedFeature.(type) {
-	case *feature.EncodedNodeFeature:
+	case feature.NodeFeature:
 		f, err := g.getCellFile(cellX, cellY, ownOsm.OsmObjNode)
 		if err != nil {
 			return err
@@ -459,7 +459,7 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 			return errors.Wrapf(err, "Unable to write node %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
 		}
 		return nil
-	case *feature.EncodedWayFeature:
+	case feature.WayFeature:
 		f, err := g.getCellFile(cellX, cellY, ownOsm.OsmObjWay)
 		if err != nil {
 			return err
@@ -469,7 +469,7 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
 		}
 		return nil
-	case *feature.EncodedRelationFeature:
+	case feature.RelationFeature:
 		f, err := g.getCellFile(cellX, cellY, ownOsm.OsmObjRelation)
 		if err != nil {
 			return err
@@ -484,14 +484,14 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 	return nil
 }
 
-func (g *GridIndexWriter) writeOsmObjectToCellCache(cell common.CellIndex, encodedFeature feature.EncodedFeature) error {
+func (g *GridIndexWriter) writeOsmObjectToCellCache(cell common.CellIndex, encodedFeature feature.Feature) error {
 	g.cacheRawEncodedFeatureMutex.Lock()
 	switch featureObj := encodedFeature.(type) {
-	case *feature.EncodedNodeFeature:
+	case feature.NodeFeature:
 		g.cacheRawEncodedNodes[cell] = append(g.cacheRawEncodedNodes[cell], featureObj)
-	case *feature.EncodedWayFeature:
+	case feature.WayFeature:
 		g.cacheRawEncodedWays[cell] = append(g.cacheRawEncodedWays[cell], featureObj)
-	case *feature.EncodedRelationFeature:
+	case feature.RelationFeature:
 		g.cacheRawEncodedRelations[cell] = append(g.cacheRawEncodedRelations[cell], featureObj)
 	}
 	g.cacheRawEncodedFeatureMutex.Unlock()
@@ -585,7 +585,7 @@ func (g *GridIndexWriter) getWriterIndex(objectType ownOsm.OsmObjectType) int {
 	return writersIndex
 }
 
-func (g *GridIndexWriter) writeNodeData(encodedFeature *feature.EncodedNodeFeature, f io.Writer) error {
+func (g *GridIndexWriter) writeNodeData(encodedFeature feature.NodeFeature, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -609,10 +609,10 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature *feature.EncodedNodeFeatu
 		}
 	}
 
-	encodedKeyBytes := numKeys                               // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
-	wayIdBytes := len(encodedFeature.WayIds) * 8             // IDs are all 64-bit integers
-	relationIdBytes := len(encodedFeature.RelationIds) * 8   // IDs are all 64-bit integers
+	encodedKeyBytes := numKeys                                  // Is already a byte-array -> no division by 8 needed
+	encodedValueBytes := len(encodedFeature.GetValues()) * 3    // Int array and int = 4 bytes
+	wayIdBytes := len(encodedFeature.GetWayIds()) * 8           // IDs are all 64-bit integers
+	relationIdBytes := len(encodedFeature.GetRelationIds()) * 8 // IDs are all 64-bit integers
 
 	headerBytesCount := 8 + 4 + 4 + 4 + 4 + 2 + 2 // = 28
 	byteCount := headerBytesCount
@@ -623,15 +623,13 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature *feature.EncodedNodeFeatu
 
 	data := make([]byte, byteCount)
 
-	point := encodedFeature.Geometry.(*orb.Point)
-
-	binary.LittleEndian.PutUint64(data[0:], encodedFeature.ID)
-	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(point.Lon())))
-	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(point.Lat())))
+	binary.LittleEndian.PutUint64(data[0:], encodedFeature.GetID())
+	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(encodedFeature.GetLon())))
+	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(encodedFeature.GetLat())))
 	binary.LittleEndian.PutUint32(data[16:], uint32(numKeys))
 	binary.LittleEndian.PutUint32(data[20:], uint32(len(encodedFeature.GetValues())))
-	binary.LittleEndian.PutUint16(data[24:], uint16(len(encodedFeature.WayIds)))
-	binary.LittleEndian.PutUint16(data[26:], uint16(len(encodedFeature.RelationIds)))
+	binary.LittleEndian.PutUint16(data[24:], uint16(len(encodedFeature.GetWayIds())))
+	binary.LittleEndian.PutUint16(data[26:], uint16(len(encodedFeature.GetRelationIds())))
 
 	pos := headerBytesCount
 
@@ -654,7 +652,7 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature *feature.EncodedNodeFeatu
 	/*
 		Write way-IDs
 	*/
-	for _, wayId := range encodedFeature.WayIds {
+	for _, wayId := range encodedFeature.GetWayIds() {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(wayId))
 		pos += 8
 	}
@@ -662,7 +660,7 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature *feature.EncodedNodeFeatu
 	/*
 		Write relation-IDs
 	*/
-	for _, relationId := range encodedFeature.RelationIds {
+	for _, relationId := range encodedFeature.GetRelationIds() {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
 		pos += 8
 	}
@@ -670,7 +668,7 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature *feature.EncodedNodeFeatu
 	return g.writeData(encodedFeature, data, f)
 }
 
-func (g *GridIndexWriter) writeWayData(encodedFeature *feature.EncodedWayFeature, f io.Writer) error {
+func (g *GridIndexWriter) writeWayData(encodedFeature feature.WayFeature, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -698,8 +696,8 @@ func (g *GridIndexWriter) writeWayData(encodedFeature *feature.EncodedWayFeature
 	}
 
 	numEncodedValueBytes := len(encodedFeature.GetValues()) * 3 // Int array and int = 4 bytes
-	nodeIdBytes := len(encodedFeature.Nodes) * 16               // Each ID is a 64-bit int + 2*4 bytes for lat/lon
-	relationIdBytes := len(encodedFeature.RelationIds) * 8      // Each ID is a 64-bit int
+	nodeIdBytes := len(encodedFeature.GetNodes()) * 16          // Each ID is a 64-bit int + 2*4 bytes for lat/lon
+	relationIdBytes := len(encodedFeature.GetRelationIds()) * 8 // Each ID is a 64-bit int
 
 	headerByteCount := 8 + 4 + 4 + 2 + 2
 	byteCount := headerByteCount
@@ -713,11 +711,11 @@ func (g *GridIndexWriter) writeWayData(encodedFeature *feature.EncodedWayFeature
 	/*
 		Write header
 	*/
-	binary.LittleEndian.PutUint64(data[0:], encodedFeature.ID)
+	binary.LittleEndian.PutUint64(data[0:], encodedFeature.GetID())
 	binary.LittleEndian.PutUint32(data[8:], uint32(numEncodedKeyBytes))
 	binary.LittleEndian.PutUint32(data[12:], uint32(len(encodedFeature.GetValues())))
-	binary.LittleEndian.PutUint16(data[16:], uint16(len(encodedFeature.Nodes)))
-	binary.LittleEndian.PutUint16(data[18:], uint16(len(encodedFeature.RelationIds)))
+	binary.LittleEndian.PutUint16(data[16:], uint16(len(encodedFeature.GetNodes())))
+	binary.LittleEndian.PutUint16(data[18:], uint16(len(encodedFeature.GetRelationIds())))
 
 	pos := headerByteCount
 
@@ -740,7 +738,7 @@ func (g *GridIndexWriter) writeWayData(encodedFeature *feature.EncodedWayFeature
 	/*
 		Write nodes
 	*/
-	for _, node := range encodedFeature.Nodes {
+	for _, node := range encodedFeature.GetNodes() {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(node.ID))
 		binary.LittleEndian.PutUint32(data[pos+8:], math.Float32bits(float32(node.Lon)))
 		binary.LittleEndian.PutUint32(data[pos+12:], math.Float32bits(float32(node.Lat)))
@@ -750,7 +748,7 @@ func (g *GridIndexWriter) writeWayData(encodedFeature *feature.EncodedWayFeature
 	/*
 		Write relation-IDs
 	*/
-	for _, relationId := range encodedFeature.RelationIds {
+	for _, relationId := range encodedFeature.GetRelationIds() {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
 		pos += 8
 	}
@@ -758,7 +756,7 @@ func (g *GridIndexWriter) writeWayData(encodedFeature *feature.EncodedWayFeature
 	return g.writeData(encodedFeature, data, f)
 }
 
-func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelationFeature, f io.Writer) error {
+func (g *GridIndexWriter) writeRelationData(encodedFeature feature.RelationFeature, f io.Writer) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -781,12 +779,12 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 		}
 	}
 
-	encodedKeyBytes := numKeys                                         // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(encodedFeature.GetValues()) * 3           // Int array and int = 4 bytes
-	nodeIdBytes := len(encodedFeature.NodeIds) * 8                     // IDs are all 64-bit integers
-	wayIdBytes := len(encodedFeature.WayIds) * 8                       // IDs are all 64-bit integers
-	childRelationIdBytes := len(encodedFeature.ChildRelationIds) * 8   // IDs are all 64-bit integers
-	parentRelationIdBytes := len(encodedFeature.ParentRelationIds) * 8 // IDs are all 64-bit integers
+	encodedKeyBytes := numKeys                                              // Is already a byte-array -> no division by 8 needed
+	encodedValueBytes := len(encodedFeature.GetValues()) * 3                // Int array and int = 4 bytes
+	nodeIdBytes := len(encodedFeature.GetNodeIds()) * 8                     // IDs are all 64-bit integers
+	wayIdBytes := len(encodedFeature.GetWayIds()) * 8                       // IDs are all 64-bit integers
+	childRelationIdBytes := len(encodedFeature.GetChildRelationIds()) * 8   // IDs are all 64-bit integers
+	parentRelationIdBytes := len(encodedFeature.GetParentRelationIds()) * 8 // IDs are all 64-bit integers
 
 	headerBytesCount := 8 + 16 + 4 + 4 + 2 + 2 + 2 + 2 // = 40
 	byteCount := headerBytesCount
@@ -799,19 +797,19 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 
 	data := make([]byte, byteCount)
 
-	bbox := encodedFeature.Geometry.Bound()
+	bbox := encodedFeature.GetGeometry().Bound()
 
-	binary.LittleEndian.PutUint64(data[0:], encodedFeature.ID)
+	binary.LittleEndian.PutUint64(data[0:], encodedFeature.GetID())
 	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(bbox.Min.Lon())))
 	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(bbox.Min.Lat())))
 	binary.LittleEndian.PutUint32(data[16:], math.Float32bits(float32(bbox.Max.Lon())))
 	binary.LittleEndian.PutUint32(data[20:], math.Float32bits(float32(bbox.Max.Lat())))
 	binary.LittleEndian.PutUint32(data[24:], uint32(numKeys))
 	binary.LittleEndian.PutUint32(data[28:], uint32(len(encodedFeature.GetValues())))
-	binary.LittleEndian.PutUint16(data[32:], uint16(len(encodedFeature.NodeIds)))
-	binary.LittleEndian.PutUint16(data[34:], uint16(len(encodedFeature.WayIds)))
-	binary.LittleEndian.PutUint16(data[36:], uint16(len(encodedFeature.ChildRelationIds)))
-	binary.LittleEndian.PutUint16(data[38:], uint16(len(encodedFeature.ParentRelationIds)))
+	binary.LittleEndian.PutUint16(data[32:], uint16(len(encodedFeature.GetNodeIds())))
+	binary.LittleEndian.PutUint16(data[34:], uint16(len(encodedFeature.GetWayIds())))
+	binary.LittleEndian.PutUint16(data[36:], uint16(len(encodedFeature.GetChildRelationIds())))
+	binary.LittleEndian.PutUint16(data[38:], uint16(len(encodedFeature.GetParentRelationIds())))
 
 	pos := headerBytesCount
 
@@ -834,7 +832,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	/*
 		Write node-IDs
 	*/
-	for _, nodeId := range encodedFeature.NodeIds {
+	for _, nodeId := range encodedFeature.GetNodeIds() {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(nodeId))
 		pos += 8
 	}
@@ -842,7 +840,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	/*
 		Write way-IDs
 	*/
-	for _, wayId := range encodedFeature.WayIds {
+	for _, wayId := range encodedFeature.GetWayIds() {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(wayId))
 		pos += 8
 	}
@@ -850,7 +848,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	/*
 		Write child relation-IDs
 	*/
-	for _, relationId := range encodedFeature.ChildRelationIds {
+	for _, relationId := range encodedFeature.GetChildRelationIds() {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
 		pos += 8
 	}
@@ -858,7 +856,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	/*
 		Write parent relation-IDs
 	*/
-	for _, relationId := range encodedFeature.ParentRelationIds {
+	for _, relationId := range encodedFeature.GetParentRelationIds() {
 		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
 		pos += 8
 	}
@@ -866,7 +864,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature *feature.EncodedRelat
 	return g.writeData(encodedFeature, data, f)
 }
 
-func (g *GridIndexWriter) writeData(encodedFeature feature.EncodedFeature, data []byte, f io.Writer) error {
+func (g *GridIndexWriter) writeData(encodedFeature feature.Feature, data []byte, f io.Writer) error {
 	g.cacheFileMutex.Lock()
 	m := g.cacheFileMutexes[f]
 	g.cacheFileMutex.Unlock()

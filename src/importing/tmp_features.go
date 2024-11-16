@@ -420,7 +420,7 @@ func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys [
 }
 
 // TODO Create own tmp feature object that is only a wrapper for []byte. This makes deserialization faster. Of course such object should contain methods to obtain necessary data (ID, geometry, ...).
-func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan feature.EncodedFeature, extent common.CellExtent) error {
+func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan feature.Feature, extent common.CellExtent) error {
 	cellFile, err := getFileForExtent(r.BaseFolder, ownOsm.OsmObjNode.String(), extent)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to open tmp node-feature cell %s", cellFile.Name())
@@ -460,7 +460,7 @@ func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan featur
 	return nil
 }
 
-func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent common.CellExtent) {
+func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.Feature, reader *ownIo.IndexedReader, extent common.CellExtent) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
 
@@ -502,8 +502,8 @@ func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.E
 		/*
 			Create encoded feature from raw data
 		*/
-		encodedFeature := &feature.EncodedNodeFeature{
-			AbstractEncodedFeature: feature.AbstractEncodedFeature{
+		encodedFeature := &index.EncodedNodeFeature{
+			AbstractEncodedFeature: index.AbstractEncodedFeature{
 				ID:       osmId,
 				Geometry: &orb.Point{float64(lon), float64(lat)},
 				Keys:     encodedKeys,
@@ -515,7 +515,7 @@ func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.E
 	}
 }
 
-func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader, extent common.CellExtent) {
+func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.Feature, reader *ownIo.IndexedReader, extent common.CellExtent) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeWayData".
 
@@ -579,8 +579,8 @@ func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.En
 			lineString[i] = orb.Point{node.Lon, node.Lat}
 		}
 
-		encodedFeature := &feature.EncodedWayFeature{
-			AbstractEncodedFeature: feature.AbstractEncodedFeature{
+		encodedFeature := &index.EncodedWayFeature{
+			AbstractEncodedFeature: index.AbstractEncodedFeature{
 				ID:       osmId,
 				Keys:     encodedKeys,
 				Values:   encodedValues,
@@ -593,7 +593,7 @@ func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.En
 	}
 }
 
-func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan feature.EncodedFeature, reader *ownIo.IndexedReader) {
+func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan feature.Feature, reader *ownIo.IndexedReader) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeRelationData".
 
@@ -657,8 +657,8 @@ func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan featu
 		/*
 			Create encoded feature from raw data
 		*/
-		encodedFeature := &feature.EncodedRelationFeature{
-			AbstractEncodedFeature: feature.AbstractEncodedFeature{
+		encodedFeature := &index.EncodedRelationFeature{
+			AbstractEncodedFeature: index.AbstractEncodedFeature{
 				ID:     osmId,
 				Keys:   encodedKeys,
 				Values: encodedValues,

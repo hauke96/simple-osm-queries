@@ -5,6 +5,8 @@ import (
 	"soq/common"
 )
 
+// OsmDensityAggregator implements the OsmDataHandler to aggregate the data density per cell. It also determines the
+// total cell extent of the data.
 type OsmDensityAggregator struct {
 	CellToNodeCount     map[common.CellIndex]int
 	InputDataCellExtent *common.CellExtent

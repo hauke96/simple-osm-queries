@@ -17,14 +17,14 @@ func NewQuery(topLevelStatements []Statement) *Query {
 	return &Query{topLevelStatements: topLevelStatements}
 }
 
-func (q *Query) Execute(geomIndex index.GeometryIndex) ([]feature.EncodedFeature, error) {
+func (q *Query) Execute(geomIndex index.GeometryIndex) ([]feature.Feature, error) {
 	// TODO Refactor this, since this is just a quick and dirty way to make sub-statement access the geometry index.
 	geometryIndex = geomIndex
 
 	sigolo.Info("Start query")
 	queryStartTime := time.Now()
 
-	var result []feature.EncodedFeature
+	var result []feature.Feature
 
 	for _, statement := range q.topLevelStatements {
 		statementResult, err := statement.Execute(nil)

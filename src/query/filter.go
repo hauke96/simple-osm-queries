@@ -12,7 +12,7 @@ import (
 )
 
 type FilterExpression interface {
-	Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error)
+	Applies(feature feature.Feature, context feature.Feature) (bool, error)
 	Print(indent int)
 }
 
@@ -24,7 +24,7 @@ func NewNegatedFilterExpression(baseExpression FilterExpression) *NegatedFilterE
 	return &NegatedFilterExpression{baseExpression: baseExpression}
 }
 
-func (f NegatedFilterExpression) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
+func (f NegatedFilterExpression) Applies(feature feature.Feature, context feature.Feature) (bool, error) {
 	sigolo.Tracef("NegatedFilterExpression")
 	applies, err := f.baseExpression.Applies(feature, nil)
 	if err != nil {
@@ -56,7 +56,7 @@ func NewLogicalFilterExpression(statementA FilterExpression, statementB FilterEx
 	}
 }
 
-func (f LogicalFilterExpression) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
+func (f LogicalFilterExpression) Applies(feature feature.Feature, context feature.Feature) (bool, error) {
 	sigolo.Tracef("LogicalFilterExpression: Operator %d", f.operator)
 
 	if f.operator == LogicOpOr || f.operator == LogicOpAnd {
@@ -100,7 +100,7 @@ func NewTagFilterExpression(key int, value int, operator BinaryOperator) *TagFil
 	}
 }
 
-func (f TagFilterExpression) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
+func (f TagFilterExpression) Applies(feature feature.Feature, context feature.Feature) (bool, error) {
 	if sigolo.ShouldLogTrace() {
 		sigolo.Tracef("TagFilterExpression: %d%s%d", f.key, f.operator.string(), f.value)
 	}
@@ -147,7 +147,7 @@ func NewKeyFilterExpression(key int, shouldBeSet bool) *KeyFilterExpression {
 	}
 }
 
-func (f KeyFilterExpression) Applies(feature feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
+func (f KeyFilterExpression) Applies(feature feature.Feature, context feature.Feature) (bool, error) {
 	if sigolo.ShouldLogTrace() {
 		sigolo.Tracef("TagFilterExpression: HasKey(%d)=%v?", f.key, f.shouldBeSet)
 	}
@@ -179,7 +179,7 @@ func NewSubStatementFilterExpression(statement *Statement) *SubStatementFilterEx
 	}
 }
 
-func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFeature, context feature.EncodedFeature) (bool, error) {
+func (f *SubStatementFilterExpression) Applies(featureToCheck feature.Feature, context feature.Feature) (bool, error) {
 	if sigolo.ShouldLogTrace() {
 		sigolo.Tracef("SubStatementFilterExpression for object %d?", featureToCheck.GetID())
 	}
@@ -194,19 +194,19 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 	cells := map[common.CellIndex]common.CellIndex{} // Map instead of array to have quick lookups
 
 	switch contextFeature := context.(type) {
-	case *feature.EncodedNodeFeature:
+	case feature.NodeFeature:
 		cell := geometryIndex.GetCellIndexForCoordinate(contextFeature.GetLon(), contextFeature.GetLat())
 		cells[cell] = cell
-	case *feature.EncodedWayFeature:
-		for _, node := range contextFeature.Nodes {
+	case feature.WayFeature:
+		for _, node := range contextFeature.GetNodes() {
 			cell := geometryIndex.GetCellIndexForCoordinate(node.Lon, node.Lat)
 			if _, ok := cells[cell]; !ok {
 				cells[cell] = cell
 			}
 		}
-	case *feature.EncodedRelationFeature:
+	case feature.RelationFeature:
 		// TODO Use actual coordinates in geometry to determine the minimum amount of cells needed for this relation
-		bbox := contextFeature.AbstractEncodedFeature.Geometry.Bound()
+		bbox := contextFeature.GetGeometry().Bound()
 
 		minCell := geometryIndex.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
 		maxCell := geometryIndex.GetCellIndexForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
@@ -264,18 +264,18 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 
 	// Check whether at least one sub-feature of the context is within the list of IDs that fulfill the sub-statement.
 	switch contextFeature := context.(type) {
-	case *feature.EncodedNodeFeature:
+	case feature.NodeFeature:
 		switch f.statement.queryType {
 		case osm.OsmQueryNode:
 			return false, errors.Errorf("Invalid query type %s requested for node in sub-statement expression. This is a bug!", f.statement.queryType)
 		case osm.OsmQueryWay:
-			for _, wayId := range contextFeature.WayIds {
+			for _, wayId := range contextFeature.GetWayIds() {
 				if _, ok := f.idCache[uint64(wayId)]; ok {
 					return true, nil
 				}
 			}
 		case osm.OsmQueryRelation:
-			for _, relationId := range contextFeature.RelationIds {
+			for _, relationId := range contextFeature.GetRelationIds() {
 				if _, ok := f.idCache[uint64(relationId)]; ok {
 					return true, nil
 				}
@@ -283,10 +283,10 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 		case osm.OsmQueryChildRelation:
 			return false, errors.Errorf("Invalid query type %s requested for node in sub-statement expression. This is a bug!", f.statement.queryType)
 		}
-	case *feature.EncodedWayFeature:
+	case feature.WayFeature:
 		switch f.statement.queryType {
 		case osm.OsmQueryNode:
-			for _, node := range contextFeature.Nodes {
+			for _, node := range contextFeature.GetNodes() {
 				if _, ok := f.idCache[uint64(node.ID)]; ok {
 					return true, nil
 				}
@@ -294,7 +294,7 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 		case osm.OsmQueryWay:
 			return false, errors.Errorf("Invalid query type %s requested for way in sub-statement expression. This is a bug!", f.statement.queryType)
 		case osm.OsmQueryRelation:
-			for _, relationId := range contextFeature.RelationIds {
+			for _, relationId := range contextFeature.GetRelationIds() {
 				if _, ok := f.idCache[uint64(relationId)]; ok {
 					return true, nil
 				}
@@ -302,28 +302,28 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.EncodedFea
 		case osm.OsmQueryChildRelation:
 			return false, errors.Errorf("Invalid query type %s requested for way in sub-statement expression. This is a bug!", f.statement.queryType)
 		}
-	case *feature.EncodedRelationFeature:
+	case feature.RelationFeature:
 		switch f.statement.queryType {
 		case osm.OsmQueryNode:
-			for _, nodeId := range contextFeature.NodeIds {
+			for _, nodeId := range contextFeature.GetNodeIds() {
 				if _, ok := f.idCache[uint64(nodeId)]; ok {
 					return true, nil
 				}
 			}
 		case osm.OsmQueryWay:
-			for _, wayId := range contextFeature.WayIds {
+			for _, wayId := range contextFeature.GetWayIds() {
 				if _, ok := f.idCache[uint64(wayId)]; ok {
 					return true, nil
 				}
 			}
 		case osm.OsmQueryRelation:
-			for _, parentRelationId := range contextFeature.ParentRelationIds {
+			for _, parentRelationId := range contextFeature.GetParentRelationIds() {
 				if _, ok := f.idCache[uint64(parentRelationId)]; ok {
 					return true, nil
 				}
 			}
 		case osm.OsmQueryChildRelation:
-			for _, childRelationId := range contextFeature.ChildRelationIds {
+			for _, childRelationId := range contextFeature.GetChildRelationIds() {
 				if _, ok := f.idCache[uint64(childRelationId)]; ok {
 					return true, nil
 				}

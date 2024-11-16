@@ -126,8 +126,8 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	err := gridIndexWriter.writeNodeData(originalFeature, f)
 	common.AssertNil(t, err)
 
-	outputChannel := make(chan []feature.EncodedFeature)
-	var result []feature.EncodedFeature
+	outputChannel := make(chan []feature.Feature)
+	var result []feature.Feature
 
 	// Act
 	go func() {

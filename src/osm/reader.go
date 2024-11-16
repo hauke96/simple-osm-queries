@@ -10,7 +10,9 @@ import (
 	"time"
 )
 
-// TODO Is the io package the correct place? Maybe create a osm package and also move feature/osm.go there?
+// OsmDataHandler are structs that receive OSM data and may aggregate or process the data. They should not change the
+// received data! The handling functions are called in order: First the init function, then nodes, ways and relations
+// and finally the done function.
 type OsmDataHandler interface {
 	Name() string
 	Init() error
@@ -20,6 +22,7 @@ type OsmDataHandler interface {
 	Done() error
 }
 
+// OsmReader reads a given OSM PBF file and calls all given OsmDataHandler on the data.
 type OsmReader struct {
 	firstNodeHasBeenProcessed     bool
 	firstWayHasBeenProcessed      bool
