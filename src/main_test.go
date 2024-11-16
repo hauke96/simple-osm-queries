@@ -5,6 +5,6 @@ import (
 	"testing"
 )
 
-func _TestMainImport(t *testing.T) {
-	importing.Import("../test.osm.pbf", defaultCellSize, defaultCellSize, indexBaseFolder)
+func TestMainImport(t *testing.T) {
+	importing.Import("../hessen-latest-with-locations.osm.pbf", defaultCellSize, defaultCellSize, indexBaseFolder)
 }

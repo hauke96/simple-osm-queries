@@ -11,11 +11,91 @@ import (
 	"path"
 	"soq/util"
 	"strings"
-	"unicode"
 )
 
 const TagIndexFilename = "tag-index"
 const NotFound = -1
+
+type TagIndexCreator struct {
+	keyMap          []string         // [key-index] -> key-string
+	keyReverseMap   map[string]int   // Helper map: key-string -> key-index
+	valueMap        [][]string       // [key-index][value-index] -> value-string
+	valueReverseMap []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
+}
+
+func NewTagIndexCreator() *TagIndexCreator {
+	return &TagIndexCreator{
+		keyMap:          []string{},
+		keyReverseMap:   map[string]int{},
+		valueMap:        [][]string{},
+		valueReverseMap: []map[string]int{},
+	}
+}
+
+func (w *TagIndexCreator) Name() string {
+	return "TagIndexCreator"
+}
+
+func (t *TagIndexCreator) Init() error {
+	return nil
+}
+
+func (t *TagIndexCreator) HandleNode(node *osm.Node) error {
+	t.addTagsToIndex(node.Tags)
+	return nil
+}
+
+func (t *TagIndexCreator) HandleWay(way *osm.Way) error {
+	t.addTagsToIndex(way.Tags)
+	return nil
+}
+
+func (t *TagIndexCreator) HandleRelation(relation *osm.Relation) error {
+	t.addTagsToIndex(relation.Tags)
+	return nil
+}
+
+func (t *TagIndexCreator) Done() error {
+	// Make sure the values are sorted so that comparison operators work. We can change the order as we want, because
+	// OSM objects are not yet stored, this happens in a separate index.
+	sigolo.Debug("Sort values for each key")
+	for i, values := range t.valueMap {
+		t.valueMap[i] = util.Sort(values)
+	}
+
+	return nil
+}
+
+func (t *TagIndexCreator) CreateTagIndex() *TagIndex {
+	return NewTagIndex(t.keyMap, t.valueMap)
+}
+
+func (t *TagIndexCreator) addTagsToIndex(tags osm.Tags) {
+	// Add the keys and values to the maps for the index.
+	for _, tag := range tags {
+		// Search for the given key in the key map to get its index
+		keyIndex, keyAlreadyStored := t.keyReverseMap[tag.Key]
+
+		if keyAlreadyStored {
+			// Key already exists and so does its value map. Check if value already appeared and if not, add it.
+			_, containsValue := t.valueReverseMap[keyIndex][tag.Value]
+			if !containsValue {
+				// Value not yet seen -> Add to value-map
+				t.valueMap[keyIndex] = append(t.valueMap[keyIndex], tag.Value)
+				t.valueReverseMap[keyIndex][tag.Value] = len(t.valueMap) - 1
+			}
+		} else {
+			// Key appeared for the first time -> Create maps and add entry
+			t.keyMap = append(t.keyMap, tag.Key)
+			keyIndex = len(t.keyMap) - 1
+			t.keyReverseMap[tag.Key] = keyIndex
+
+			t.valueMap = append(t.valueMap, []string{tag.Value})
+			t.valueReverseMap = append(t.valueReverseMap, map[string]int{})
+			t.valueReverseMap[keyIndex][tag.Value] = 0
+		}
+	}
+}
 
 type TagIndex struct {
 	BaseFolder string
@@ -28,8 +108,7 @@ type TagIndex struct {
 	valueReverseMap []map[string]int // Helper map: value-string -> value-index in value[key-index]-array
 
 	// Contains the values for each keyIndex, or nil if the key is not set. The empty places will be removed below.
-	tempEncodedValues       []int
-	tempEncodedValuesLength int
+	tempEncodedValues []int
 }
 
 func LoadTagIndex(baseFolder string) (*TagIndex, error) {
@@ -85,23 +164,20 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 	}
 
 	index := &TagIndex{
-		BaseFolder:              path.Base(baseFolder),
-		keyMap:                  keyMap,
-		valueMap:                valueMap,
-		tempEncodedValues:       make([]int, len(keyMap)+8),
-		tempEncodedValuesLength: len(keyMap) + 8,
+		BaseFolder:        path.Base(baseFolder),
+		keyMap:            keyMap,
+		valueMap:          valueMap,
+		tempEncodedValues: make([]int, len(keyMap)+8),
 	}
-	//index.Print()
 
 	return index, nil
 }
 
 func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 	index := &TagIndex{
-		keyMap:                  keyMap,
-		valueMap:                valueMap,
-		tempEncodedValues:       make([]int, len(keyMap)+8),
-		tempEncodedValuesLength: len(keyMap) + 8,
+		keyMap:            keyMap,
+		valueMap:          valueMap,
+		tempEncodedValues: make([]int, len(keyMap)+8),
 	}
 
 	index.keyReverseMap = map[string]int{}
@@ -111,87 +187,6 @@ func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 	index.updateValueReverseMap()
 
 	return index
-}
-
-// ImportAndSave imports and saves all tags to the tag index on disk. For performance reasons, it also collects all
-// node and way IDs of relations within the input file. This can be used for later indices to correctly store relations.
-func (i *TagIndex) ImportAndSave(scanner osm.Scanner) error {
-	sigolo.Info("Start processing tags from input data")
-
-	var keyMap []string                  // [key-index] -> key-string
-	keyReverseMap := map[string]int{}    // Helper map: key-string -> key-index
-	var valueMap [][]string              // [key-index][value-index] -> value-string
-	var valueReverseMap []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
-
-	firstWayHasBeenProcessed := false
-	firstRelationHasBeenProcessed := false
-
-	sigolo.Debug("Start processing node tags (1/3)")
-	for scanner.Scan() {
-		var tags osm.Tags
-		switch osmObj := scanner.Object().(type) {
-		case *osm.Node:
-			tags = osmObj.Tags
-		case *osm.Way:
-			if !firstWayHasBeenProcessed {
-				sigolo.Debug("Start processing way tags (2/3)")
-				firstWayHasBeenProcessed = true
-			}
-			tags = osmObj.Tags
-		case *osm.Relation:
-			if !firstRelationHasBeenProcessed {
-				sigolo.Debug("Start processing relation tags (2/3)")
-				firstRelationHasBeenProcessed = true
-			}
-			tags = osmObj.Tags
-		}
-
-		// Add the keys and values to the maps for the index.
-		for _, tag := range tags {
-			// Search for the given key in the key map to get its index
-			keyIndex, keyAlreadyStored := keyReverseMap[tag.Key]
-
-			if keyAlreadyStored {
-				// Key already exists and so does its value map. Check if value already appeared and if not, add it.
-				_, containsValue := valueReverseMap[keyIndex][tag.Value]
-				if !containsValue {
-					// Value not yet seen -> Add to value-map
-					valueMap[keyIndex] = append(valueMap[keyIndex], tag.Value)
-					valueReverseMap[keyIndex][tag.Value] = len(valueMap) - 1
-				}
-			} else {
-				// Key appeared for the first time -> Create maps and add entry
-				keyMap = append(keyMap, tag.Key)
-				keyIndex = len(keyMap) - 1
-				keyReverseMap[tag.Key] = keyIndex
-
-				valueMap = append(valueMap, []string{tag.Value})
-				valueReverseMap = append(valueReverseMap, map[string]int{})
-				valueReverseMap[keyIndex][tag.Value] = 0
-			}
-		}
-	}
-
-	// Make sure the values are sorted so that comparison operators work. We can change the order as we want, because
-	// OSM objects are not yet stored, this happens in a separate index.
-	sigolo.Debug("Sort values for each key")
-	for i, values := range valueMap {
-		valueMap[i] = util.Sort(values)
-	}
-
-	// Update the newly sorted value reverse map. Otherwise the value indices are all mixed up
-	sigolo.Debug("Store results and reset tempEncodedValues")
-	i.keyMap = keyMap
-	i.keyReverseMap = keyReverseMap
-	i.valueMap = valueMap
-	i.updateValueReverseMap()
-	i.tempEncodedValues = make([]int, len(i.keyMap)+8)
-	for j := 0; j < len(i.tempEncodedValues); j++ {
-		i.tempEncodedValues[j] = -1
-	}
-	i.tempEncodedValuesLength = len(i.tempEncodedValues)
-
-	return i.SaveToFile(TagIndexFilename)
 }
 
 // GetKeyIndexFromKeyString returns the numerical index representation of the given key string and "NotFound" if the key doesn't exist.
@@ -360,30 +355,4 @@ func (i *TagIndex) updateValueReverseMap() {
 			i.valueReverseMap[keyIndex][value] = valueIndex
 		}
 	}
-}
-
-func isNumber(s string) bool {
-	containsDecimalPoint := false
-
-	s = strings.TrimSpace(s)
-	if len(s) == 0 {
-		return false
-	}
-
-	for i, c := range s {
-		if c == '-' && i != 0 {
-			// A dash is only allowed at the beginning
-			return false
-		} else if c == '.' {
-			if containsDecimalPoint {
-				// Decimal point already found -> invalid since two decimal points do not make sense
-				return false
-			}
-			containsDecimalPoint = true
-		} else if !unicode.IsDigit(c) {
-			return false
-		}
-	}
-
-	return true
 }

@@ -11,6 +11,7 @@ import (
 	"soq/parser"
 	"soq/web"
 	"strings"
+	"time"
 )
 
 const VERSION = "v0.1.0"
@@ -56,6 +57,8 @@ func main() {
 			"version": VERSION,
 		},
 	)
+
+	time.Sleep(10 * time.Second)
 
 	if strings.ToLower(cli.Logging) == "debug" {
 		sigolo.SetDefaultLogLevel(sigolo.LOG_DEBUG)

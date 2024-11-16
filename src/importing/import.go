@@ -1,19 +1,14 @@
 package importing
 
 import (
-	"bytes"
-	"context"
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb/geojson"
-	"github.com/paulmach/osm"
-	"github.com/paulmach/osm/osmpbf"
-	"github.com/paulmach/osm/osmxml"
 	"github.com/pkg/errors"
 	"os"
 	"path"
-	"path/filepath"
 	"soq/feature"
 	"soq/index"
+	ownIo "soq/io"
 	"strings"
 	"time"
 )
@@ -24,27 +19,57 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		os.Exit(1)
 	}
 
-	sigolo.Infof("Start import of file %s", inputFile)
+	baseFolder := path.Join(indexBaseFolder, index.GridIndexFolder)
+
+	sigolo.Infof("Start import of OSM data file %s", inputFile)
 	importStartTime := time.Now()
+
+	// TODO Idea: Determine node density during tag index creation. The write temp features into the cell-extents instead of one huge file. This prevents reading this huge file over and over again.
+
+	//
+	// 1. Create tag index
+	//
 	currentStepStartTime := time.Now()
 
-	// TODO Reading the whole file into RAM is problematic for larger datasets. Maybe reading the PBF file twice still works well?
-	inputFileData, err := os.ReadFile(inputFile)
+	tagIndexCreator := index.NewTagIndexCreator()
+
+	osmReader := ownIo.NewOsmReader()
+	err := osmReader.Read(inputFile, tagIndexCreator)
 	if err != nil {
-		return errors.Wrapf(err, "Unable to read input file %s", inputFile)
+		return errors.Wrapf(err, "Error importing OSM data")
+	}
+
+	tagIndex := tagIndexCreator.CreateTagIndex()
+	tagIndex.BaseFolder = baseFolder // TODO Set it here or pass it into some of the above functions?
+	err = tagIndex.SaveToFile(index.TagIndexFilename)
+	if err != nil {
+		return errors.Wrapf(err, "Error writing tag index file to %s", index.TagIndexFilename)
 	}
 
 	duration := time.Since(currentStepStartTime)
-	sigolo.Infof("Read input file in %s", duration)
+	sigolo.Infof("Imported OSM data into tag index in %s", duration)
 
-	tagIndex, err := createTagIndex(inputFile, inputFileData, indexBaseFolder)
-	sigolo.FatalCheck(err)
-
+	//
+	// 2. Write temp features
+	//
 	currentStepStartTime = time.Now()
-	baseFolder := path.Join(indexBaseFolder, index.GridIndexFolder)
-	scannerFactory := func() (osm.Scanner, error) {
-		return getOsmScannerFromData(inputFile, inputFileData)
+
+	rawFeatureRepo := index.NewRawFeaturesRepository(cellWidth, cellHeight, "import-temp-cell")
+	temporaryFeatureImporter := index.NewTemporaryFeatureImporter(rawFeatureRepo, tagIndex)
+
+	osmReader = ownIo.NewOsmReader()
+	err = osmReader.Read(inputFile, temporaryFeatureImporter)
+	if err != nil {
+		return errors.Wrapf(err, "Error importing OSM data")
 	}
+
+	duration = time.Since(currentStepStartTime)
+	sigolo.Infof("Imported OSM data into temp features in %s", duration)
+
+	//
+	// 3. Read temp features and write them into cells
+	//
+	currentStepStartTime = time.Now()
 
 	sigolo.Debugf("Remove the grid-index base folder %s", baseFolder)
 	err = os.RemoveAll(baseFolder)
@@ -52,11 +77,8 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
 	}
 
-	tempRawFeatureRepo := index.NewRawFeaturesRepository(tagIndex, cellWidth, cellHeight, "import-temp-cell")
-	cellToNodeCount, inputDataCellExtent, err := tempRawFeatureRepo.WriteOsmToRawEncodedFeatures(scannerFactory)
-	if err != nil {
-		return errors.Wrap(err, "Error writing temporary cell for raw features during import")
-	}
+	cellToNodeCount := temporaryFeatureImporter.CellToNodeCount
+	inputDataCellExtent := temporaryFeatureImporter.InputDataCellExtent
 
 	var subExtents []index.CellExtent
 
@@ -109,8 +131,8 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		sigolo.Debugf("Process sub-extent %v (%d / %d)", subExtent, i+1, len(subExtents))
 
 		tempRawFeatureChannel := make(chan feature.EncodedFeature, 1000)
-		go tempRawFeatureRepo.ReadFeatures(tempRawFeatureChannel, subExtent) // TODO error handling
-		err = index.ImportDataFile(tagIndex, tempRawFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
+		go rawFeatureRepo.ReadFeatures(tempRawFeatureChannel, subExtent) // TODO error handling
+		err = index.ImportDataFile(tempRawFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
 		if err != nil {
 			return err
 		}
@@ -121,7 +143,6 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 
 	duration = time.Since(currentStepStartTime)
 	sigolo.Infof("Created grid index in %s", duration)
-	currentStepStartTime = time.Now()
 
 	duration = time.Since(importStartTime)
 	sigolo.Infof("Finished import in %s", duration)
@@ -197,77 +218,4 @@ func getNextExtent(cellsToProcessedState map[index.CellIndex]bool, cellToNodeCou
 	}
 
 	return &biggestExtent
-}
-
-func createTagIndex(inputFile string, inputFileData []byte, indexBaseFolder string) (*index.TagIndex, error) {
-	startTime := time.Now()
-	sigolo.Debugf("Create tag index")
-
-	scanner, err := getOsmScannerFromData(inputFile, inputFileData)
-	if err != nil {
-		return nil, err
-	}
-
-	tagIndex := &index.TagIndex{
-		BaseFolder: indexBaseFolder,
-	}
-	err = tagIndex.ImportAndSave(scanner)
-	if err != nil {
-		return nil, err
-	}
-
-	err = scanner.Close()
-	if err != nil {
-		return nil, errors.Wrapf(err, "Unable to close OSM scanner")
-	}
-
-	duration := time.Since(startTime)
-	sigolo.Infof("Created tag index and additional data structures in %s", duration)
-
-	return tagIndex, nil
-}
-
-func getCellsWithData(inputFile string, inputFileData []byte, cellWidth float64, cellHeight float64) (map[index.CellIndex]index.CellIndex, index.CellExtent, error) {
-	startTime := time.Now()
-	sigolo.Debugf("Get cells that contain data")
-
-	cellsWithData := map[index.CellIndex]index.CellIndex{}
-	var inputDataCellExtent index.CellExtent
-	doneCollectingCellsWithData := false
-
-	scanner, err := getOsmScannerFromData(inputFile, inputFileData)
-	if err != nil {
-		return nil, index.CellExtent{}, err
-	}
-
-	for scanner.Scan() && !doneCollectingCellsWithData {
-		switch osmObj := scanner.Object().(type) {
-		case *osm.Node:
-			cell := index.CellIndex{int(osmObj.Lon / cellWidth), int(osmObj.Lat / cellHeight)}
-			cellsWithData[cell] = cell
-			inputDataCellExtent = inputDataCellExtent.Expand(cell)
-		case *osm.Way:
-			doneCollectingCellsWithData = true
-		}
-	}
-
-	err = scanner.Close()
-	if err != nil {
-		return nil, index.CellExtent{}, errors.Wrapf(err, "Unable to close OSM scanner")
-	}
-
-	duration := time.Since(startTime)
-	sigolo.Infof("Done determining %d cells with data in %s", len(cellsWithData), duration)
-
-	return cellsWithData, inputDataCellExtent, nil
-}
-
-func getOsmScannerFromData(inputFile string, inputFileData []byte) (osm.Scanner, error) {
-	if strings.HasSuffix(inputFile, ".osm") {
-		return osmxml.New(context.Background(), bytes.NewReader(inputFileData)), nil
-	} else if strings.HasSuffix(inputFile, ".pbf") {
-		scanner := osmpbf.New(context.Background(), bytes.NewReader(inputFileData), 1)
-		return scanner, nil
-	}
-	return nil, errors.Errorf("Unsupported OSM file type '%s'", filepath.Ext(inputFile))
 }

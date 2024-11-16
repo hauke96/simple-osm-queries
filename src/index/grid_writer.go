@@ -34,10 +34,9 @@ type GridIndexWriter struct {
 	gridIndexReader *GridIndexReader
 }
 
-type scannerFactoryFunc func() (osm.Scanner, error)
-
-func ImportDataFile(tagIndex *TagIndex, tempRawFeatureChannel chan feature.EncodedFeature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent CellExtent) error {
-	gridIndexWriter := NewGridIndexWriter(tagIndex, cellWidth, cellHeight, baseFolder)
+// TODO rename this function
+func ImportDataFile(tempRawFeatureChannel chan feature.EncodedFeature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent CellExtent) error {
+	gridIndexWriter := NewGridIndexWriter(cellWidth, cellHeight, baseFolder)
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
@@ -51,9 +50,8 @@ func ImportDataFile(tagIndex *TagIndex, tempRawFeatureChannel chan feature.Encod
 	return nil
 }
 
-func NewGridIndexWriter(tagIndex *TagIndex, cellWidth float64, cellHeight float64, baseFolder string) *GridIndexWriter {
+func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string) *GridIndexWriter {
 	baseGridIndex := baseGridIndex{
-		TagIndex:   tagIndex,
 		CellWidth:  cellWidth,
 		CellHeight: cellHeight,
 		BaseFolder: baseFolder,

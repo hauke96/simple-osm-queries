@@ -15,14 +15,138 @@ import (
 	"time"
 )
 
+type TemporaryFeatureImporter struct {
+	repository             *RawFeaturesRepository
+	tagIndex               *TagIndex
+	tagIndexTempValueArray []int
+	importStartTime        time.Time
+	nodeWriter             *bufio.Writer
+	wayWriter              *bufio.Writer
+	relationWriter         *bufio.Writer
+	CellToNodeCount        map[CellIndex]int
+	InputDataCellExtent    *CellExtent
+}
+
+func NewTemporaryFeatureImporter(repository *RawFeaturesRepository, tagIndex *TagIndex) *TemporaryFeatureImporter {
+	return &TemporaryFeatureImporter{
+		repository:             repository,
+		tagIndex:               tagIndex,
+		tagIndexTempValueArray: tagIndex.newTempEncodedValueArray(),
+		CellToNodeCount:        map[CellIndex]int{},
+	}
+}
+
+func (i *TemporaryFeatureImporter) Name() string {
+	return "TemporaryFeatureImporter"
+}
+
+func (i *TemporaryFeatureImporter) Init() error {
+	sigolo.Info("Start converting OSM data to raw encoded features")
+	i.importStartTime = time.Now()
+
+	err := i.repository.Clear()
+	if err != nil {
+		return err
+	}
+
+	nodeWriter, err := i.repository.getFileWriter(feature.OsmObjNode.String())
+	if err != nil {
+		return err
+	}
+	i.nodeWriter = nodeWriter
+
+	wayWriter, err := i.repository.getFileWriter(feature.OsmObjWay.String())
+	if err != nil {
+		return err
+	}
+	i.wayWriter = wayWriter
+
+	relationWriter, err := i.repository.getFileWriter(feature.OsmObjRelation.String())
+	if err != nil {
+		return err
+	}
+	i.relationWriter = relationWriter
+
+	return nil
+}
+
+func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
+	cell := i.repository.GetCellIndexForCoordinate(node.Lon, node.Lat)
+	if _, ok := i.CellToNodeCount[cell]; !ok {
+		i.CellToNodeCount[cell] = 1
+	} else {
+		i.CellToNodeCount[cell] = i.CellToNodeCount[cell] + 1
+	}
+
+	if i.InputDataCellExtent == nil {
+		i.InputDataCellExtent = &CellExtent{cell, cell}
+	} else {
+		newExtent := i.InputDataCellExtent.Expand(cell)
+		i.InputDataCellExtent = &newExtent
+	}
+
+	encodedKeys, encodedValues := i.tagIndex.encodeTags(node.Tags, i.tagIndexTempValueArray)
+	point := node.Point()
+	return i.repository.writeNodeData(node.ID, encodedKeys, encodedValues, &point, i.nodeWriter)
+}
+
+func (i *TemporaryFeatureImporter) HandleWay(way *osm.Way) error {
+	encodedKeys, encodedValues := i.tagIndex.encodeTags(way.Tags, i.tagIndexTempValueArray)
+	return i.repository.writeWayData(way.ID, encodedKeys, encodedValues, way.Nodes, i.wayWriter)
+}
+
+func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error {
+	var nodeIds []osm.NodeID
+	var wayIds []osm.WayID
+	var childRelationIds []osm.RelationID
+
+	for _, member := range relation.Members {
+		switch member.Type {
+		case osm.TypeNode:
+			nodeId := osm.NodeID(member.Ref)
+			nodeIds = append(nodeIds, nodeId)
+		case osm.TypeWay:
+			wayId := osm.WayID(member.Ref)
+			wayIds = append(wayIds, wayId)
+		case osm.TypeRelation:
+			relId := osm.RelationID(member.Ref)
+			childRelationIds = append(childRelationIds, relId)
+		}
+	}
+
+	encodedKeys, encodedValues := i.tagIndex.encodeTags(relation.Tags, i.tagIndexTempValueArray)
+	return i.repository.writeRelationData(relation.ID, encodedKeys, encodedValues, nodeIds, wayIds, childRelationIds, i.relationWriter)
+}
+
+func (i *TemporaryFeatureImporter) Done() error {
+	importDuration := time.Since(i.importStartTime)
+	sigolo.Infof("Created raw encoded features from OSM data in %s", importDuration)
+
+	err := i.nodeWriter.Flush()
+	if err != nil {
+		return errors.Wrap(err, "Error closing node writer")
+	}
+
+	err = i.wayWriter.Flush()
+	if err != nil {
+		return errors.Wrap(err, "Error closing way writer")
+	}
+
+	err = i.relationWriter.Flush()
+	if err != nil {
+		return errors.Wrap(err, "Error closing relation writer")
+	}
+
+	return nil
+}
+
 type RawFeaturesRepository struct {
 	baseGridIndex
 }
 
-func NewRawFeaturesRepository(tagIndex *TagIndex, cellWidth float64, cellHeight float64, baseFolder string) *RawFeaturesRepository {
+func NewRawFeaturesRepository(cellWidth float64, cellHeight float64, baseFolder string) *RawFeaturesRepository {
 	gridIndexWriter := &RawFeaturesRepository{
 		baseGridIndex: baseGridIndex{
-			TagIndex:   tagIndex,
 			CellWidth:  cellWidth,
 			CellHeight: cellHeight,
 			BaseFolder: baseFolder,
@@ -31,128 +155,14 @@ func NewRawFeaturesRepository(tagIndex *TagIndex, cellWidth float64, cellHeight 
 	return gridIndexWriter
 }
 
-// WriteOsmToRawEncodedFeatures Reads the input PBF file and converts all OSM objects into temporary raw encoded
-// features and writes them to a single cell file. The returned cell map contains all cells that contain nodes.
-func (r *RawFeaturesRepository) WriteOsmToRawEncodedFeatures(scannerFactory scannerFactoryFunc) (map[CellIndex]int, *CellExtent, error) {
-	sigolo.Info("Start converting OSM data to raw encoded features")
-	importStartTime := time.Now()
-
+// Clear removes all files belonging to this repository.
+func (r *RawFeaturesRepository) Clear() error {
 	err := os.RemoveAll(r.BaseFolder)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "Error deleting directory for temporary raw features %s", r.BaseFolder)
+		return errors.Wrapf(err, "Error deleting directory for temporary raw features %s", r.BaseFolder)
 	}
 
-	scanner, err := scannerFactory()
-	if err != nil {
-		return nil, nil, err
-	}
-	defer scanner.Close()
-
-	firstRelationHasBeenProcessed := false
-	firstWayHasBeenProcessed := false
-
-	tempEncodedValues := r.TagIndex.newTempEncodedValueArray()
-
-	nodeWriter, err := r.getFileWriter(feature.OsmObjNode.String())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	wayWriter, err := r.getFileWriter(feature.OsmObjWay.String())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	relationWriter, err := r.getFileWriter(feature.OsmObjRelation.String())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	cellToNodeCount := map[CellIndex]int{}
-	var inputDataCellExtent *CellExtent
-
-	sigolo.Debug("Process nodes (1/3)")
-	for scanner.Scan() {
-		obj := scanner.Object()
-
-		switch osmObj := obj.(type) {
-		case *osm.Node:
-			cell := r.GetCellIndexForCoordinate(osmObj.Lon, osmObj.Lat)
-			if _, ok := cellToNodeCount[cell]; !ok {
-				cellToNodeCount[cell] = 1
-			} else {
-				cellToNodeCount[cell] = cellToNodeCount[cell] + 1
-			}
-
-			if inputDataCellExtent == nil {
-				inputDataCellExtent = &CellExtent{cell, cell}
-			} else {
-				newExtent := inputDataCellExtent.Expand(cell)
-				inputDataCellExtent = &newExtent
-			}
-
-			encodedKeys, encodedValues := r.TagIndex.encodeTags(osmObj.Tags, tempEncodedValues)
-			point := osmObj.Point()
-			err = r.writeNodeData(osmObj.ID, encodedKeys, encodedValues, &point, nodeWriter)
-			sigolo.FatalCheck(err)
-		case *osm.Way:
-			if !firstWayHasBeenProcessed {
-				sigolo.Debug("Start processing ways (2/3)")
-				firstWayHasBeenProcessed = true
-			}
-
-			encodedKeys, encodedValues := r.TagIndex.encodeTags(osmObj.Tags, tempEncodedValues)
-			err = r.writeWayData(osmObj.ID, encodedKeys, encodedValues, osmObj.Nodes, wayWriter)
-			sigolo.FatalCheck(err)
-		case *osm.Relation:
-			if !firstRelationHasBeenProcessed {
-				sigolo.Debug("Start processing relations (3/3)")
-				firstRelationHasBeenProcessed = true
-			}
-
-			var nodeIds []osm.NodeID
-			var wayIds []osm.WayID
-			var childRelationIds []osm.RelationID
-
-			for _, member := range osmObj.Members {
-				switch member.Type {
-				case osm.TypeNode:
-					nodeId := osm.NodeID(member.Ref)
-					nodeIds = append(nodeIds, nodeId)
-				case osm.TypeWay:
-					wayId := osm.WayID(member.Ref)
-					wayIds = append(wayIds, wayId)
-				case osm.TypeRelation:
-					relId := osm.RelationID(member.Ref)
-					childRelationIds = append(childRelationIds, relId)
-				}
-			}
-
-			encodedKeys, encodedValues := r.TagIndex.encodeTags(osmObj.Tags, tempEncodedValues)
-			err = r.writeRelationData(osmObj.ID, encodedKeys, encodedValues, nodeIds, wayIds, childRelationIds, relationWriter)
-			sigolo.FatalCheck(err)
-		}
-	}
-
-	importDuration := time.Since(importStartTime)
-	sigolo.Infof("Created raw encoded features from OSM data in %s", importDuration)
-
-	err = nodeWriter.Flush()
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "Error closing node writer")
-	}
-
-	err = wayWriter.Flush()
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "Error closing way writer")
-	}
-
-	err = relationWriter.Flush()
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "Error closing relation writer")
-	}
-
-	return cellToNodeCount, inputDataCellExtent, nil
+	return nil
 }
 
 func (r *RawFeaturesRepository) getFileWriter(objectType string) (*bufio.Writer, error) {

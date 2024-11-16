@@ -255,11 +255,8 @@ func TestParser_parseNextExpression_simpleTagFilter(t *testing.T) {
 			{kind: TokenKindOperator, lexeme: "=", startPosition: 1},
 			{kind: TokenKindKeyword, lexeme: "b", startPosition: 2},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"foo", "a"},
-			[][]string{{"bar"}, {"blubb", "b"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"foo", "a"}, [][]string{{"bar"}, {"blubb", "b"}}),
 	}
 
 	// Act
@@ -289,11 +286,8 @@ func TestParser_parseNextExpression_simpleInnerStatement(t *testing.T) {
 			{kind: TokenKindKeyword, lexeme: "b", startPosition: 12},
 			{kind: TokenKindClosingBraces, lexeme: "}", startPosition: 13},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"a"},
-			[][]string{{"b"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"a"}, [][]string{{"b"}}),
 	}
 
 	// Act
@@ -324,11 +318,8 @@ func TestParser_parseNextExpression_simpleKeyFilter(t *testing.T) {
 			{kind: TokenKindOperator, lexeme: "=", startPosition: 1},
 			{kind: TokenKindWildcard, lexeme: "*", startPosition: 2},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"foo", "a"},
-			[][]string{{"bar"}, {"blubb", "b"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"foo", "a"}, [][]string{{"bar"}, {"blubb", "b"}}),
 	}
 
 	// Act
@@ -352,11 +343,8 @@ func TestParser_parseNextExpression_invalidTagFilter(t *testing.T) {
 			{kind: TokenKindOperator, lexeme: "=", startPosition: 1},
 			{kind: TokenKindOperator, lexeme: "<", startPosition: 2},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"foo", "a"},
-			[][]string{{"bar"}, {"blubb", "b"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"foo", "a"}, [][]string{{"bar"}, {"blubb", "b"}}),
 	}
 
 	// Act
@@ -378,11 +366,8 @@ func TestParser_parseNextExpression_negatedTagFilter(t *testing.T) {
 			{kind: TokenKindKeyword, lexeme: "b", startPosition: 4},
 			{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 5},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"foo", "a"},
-			[][]string{{"bar"}, {"blubb", "b"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"foo", "a"}, [][]string{{"bar"}, {"blubb", "b"}}),
 	}
 
 	// Act
@@ -413,11 +398,8 @@ func TestParser_parseNextExpression_invalidNegatedTagFilter(t *testing.T) {
 			{kind: TokenKindOperator, lexeme: "=", startPosition: 2},
 			{kind: TokenKindKeyword, lexeme: "b", startPosition: 3},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"foo", "a"},
-			[][]string{{"bar"}, {"blubb", "b"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"foo", "a"}, [][]string{{"bar"}, {"blubb", "b"}}),
 	}
 
 	// Act
@@ -438,11 +420,8 @@ func TestParser_parseNextExpression_invalidExpressionInsideNegatedTagFilter(t *t
 			{kind: TokenKindKeyword, lexeme: "b", startPosition: 3},
 			{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 4},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"foo", "a"},
-			[][]string{{"bar"}, {"blubb", "b"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"foo", "a"}, [][]string{{"bar"}, {"blubb", "b"}}),
 	}
 
 	// Act
@@ -463,11 +442,8 @@ func TestParser_parseNextExpression_expressionInsideParentheses(t *testing.T) {
 			{kind: TokenKindKeyword, lexeme: "b", startPosition: 3},
 			{kind: TokenKindClosingParenthesis, lexeme: ")", startPosition: 4},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"foo", "a"},
-			[][]string{{"bar"}, {"blubb", "b"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"foo", "a"}, [][]string{{"bar"}, {"blubb", "b"}}),
 	}
 
 	// Act
@@ -494,11 +470,8 @@ func TestParser_parseNextExpression_expressionInsideParenthesesMissinClose(t *te
 			{kind: TokenKindKeyword, lexeme: "b", startPosition: 3},
 			{kind: TokenKindKeyword, lexeme: "foo", startPosition: 4},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"foo", "a"},
-			[][]string{{"bar"}, {"blubb", "b"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"foo", "a"}, [][]string{{"bar"}, {"blubb", "b"}}),
 	}
 
 	// Act
@@ -517,11 +490,8 @@ func TestParser_parseNextExpression_determineNextSmallerValue_greaterThanOperato
 			{kind: TokenKindOperator, lexeme: ">=", startPosition: 5},
 			{kind: TokenKindNumber, lexeme: "2.5", startPosition: 7},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"width"},
-			[][]string{{"2", "2.2", "2.5test", "3"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"width"}, [][]string{{"2", "2.2", "2.5test", "3"}}),
 	}
 
 	// Act
@@ -546,11 +516,8 @@ func TestParser_parseNextExpression_determineNextSmallerValue_lowerOperatorOnHug
 			{kind: TokenKindOperator, lexeme: "<", startPosition: 5},
 			{kind: TokenKindNumber, lexeme: "100", startPosition: 7},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"width"},
-			[][]string{{"2", "2.2", "3", "50test"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"width"}, [][]string{{"2", "2.2", "3", "50test"}}),
 	}
 
 	// Act
@@ -575,11 +542,8 @@ func TestParser_parseNextExpression_determineNextSmallerValue_equalOperator(t *t
 			{kind: TokenKindOperator, lexeme: "=", startPosition: 5},
 			{kind: TokenKindNumber, lexeme: "2.5", startPosition: 6},
 		},
-		index: -1, // Because of "moveToNextToken()" call in parser function
-		tagIndex: index.NewTagIndex(
-			[]string{"width"},
-			[][]string{{"2", "2.2", "3"}},
-		),
+		index:    -1, // Because of "moveToNextToken()" call in parser function
+		tagIndex: index.NewTagIndex([]string{"width"}, [][]string{{"2", "2.2", "3"}}),
 	}
 
 	// Act
