@@ -251,15 +251,15 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 	return valueMap[value]
 }
 
-// newTempEncodedValueArray creates a new int array, which is used as temporary storage during the encodeTags function.
+// NewTempEncodedValueArray creates a new int array, which is used as temporary storage during the EncodeTags function.
 // Creating this array manually is a performance enhancement, since it can be reused.
-func (i *TagIndex) newTempEncodedValueArray() []int {
+func (i *TagIndex) NewTempEncodedValueArray() []int {
 	return make([]int, len(i.keyMap)+8)
 }
 
-// encodeTags returns the encoded keys and values. The tempEncodedValues array can be reused to enhance performance
+// EncodeTags returns the encoded keys and values. The tempEncodedValues array can be reused to enhance performance
 // by not allocating a new array for each call of this function.
-func (i *TagIndex) encodeTags(tags osm.Tags, tempEncodedValues []int) ([]byte, []int) {
+func (i *TagIndex) EncodeTags(tags osm.Tags, tempEncodedValues []int) ([]byte, []int) {
 	numberOfTags := len(tags)
 	if numberOfTags == 0 {
 		return []byte{}, []int{}

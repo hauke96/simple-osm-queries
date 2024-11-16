@@ -16,7 +16,7 @@ import (
 func TestGridIndex_writeNodeData(t *testing.T) {
 	// Arrange
 	gridIndex := &GridIndexWriter{
-		baseGridIndex: baseGridIndex{
+		BaseGridIndex: BaseGridIndex{
 			TagIndex:   nil,
 			CellWidth:  10,
 			CellHeight: 10,
@@ -78,7 +78,7 @@ func TestGridIndex_writeNodeData(t *testing.T) {
 func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 	// Arrange
 	gridIndexWriter := &GridIndexWriter{
-		baseGridIndex: baseGridIndex{
+		BaseGridIndex: BaseGridIndex{
 			TagIndex: &TagIndex{
 				BaseFolder: "",
 				keyMap:     []string{"k1", "k2", "k3"},
@@ -102,7 +102,7 @@ func TestGridIndex_readFeaturesFromCellData(t *testing.T) {
 		cacheFileMutex:   &sync.Mutex{},
 	}
 	gridIndexReader := &GridIndexReader{
-		baseGridIndex: baseGridIndex{
+		BaseGridIndex: BaseGridIndex{
 			TagIndex:   nil,
 			CellWidth:  10,
 			CellHeight: 10,

@@ -17,7 +17,7 @@ import (
 )
 
 type GridIndexReader struct {
-	baseGridIndex
+	BaseGridIndex
 
 	checkFeatureValidity bool
 	cellCache            featureCache
@@ -25,7 +25,7 @@ type GridIndexReader struct {
 
 func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, checkFeatureValidity bool, tagIndex *TagIndex) *GridIndexReader {
 	return &GridIndexReader{
-		baseGridIndex: baseGridIndex{
+		BaseGridIndex: BaseGridIndex{
 			TagIndex:   tagIndex,
 			CellWidth:  cellWidth,
 			CellHeight: cellHeight,

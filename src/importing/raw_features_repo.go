@@ -1,4 +1,4 @@
-package index
+package importing
 
 import (
 	"bufio"
@@ -13,13 +13,14 @@ import (
 	"os"
 	"soq/common"
 	"soq/feature"
+	"soq/index"
 	ownIo "soq/io"
 	ownOsm "soq/osm"
 )
 
 type TemporaryFeatureImporter struct {
 	repository             *RawFeaturesRepository
-	tagIndex               *TagIndex
+	tagIndex               *index.TagIndex
 	tagIndexTempValueArray []int
 	nodeWriter             map[common.CellExtent]*bufio.Writer
 	wayWriter              map[common.CellExtent]*bufio.Writer
@@ -29,11 +30,11 @@ type TemporaryFeatureImporter struct {
 	cellHeight             float64
 }
 
-func NewTemporaryFeatureImporter(repository *RawFeaturesRepository, tagIndex *TagIndex, cellExtents []common.CellExtent, cellWidth float64, cellHeight float64) *TemporaryFeatureImporter {
+func NewTemporaryFeatureImporter(repository *RawFeaturesRepository, tagIndex *index.TagIndex, cellExtents []common.CellExtent, cellWidth float64, cellHeight float64) *TemporaryFeatureImporter {
 	return &TemporaryFeatureImporter{
 		repository:             repository,
 		tagIndex:               tagIndex,
-		tagIndexTempValueArray: tagIndex.newTempEncodedValueArray(),
+		tagIndexTempValueArray: tagIndex.NewTempEncodedValueArray(),
 		nodeWriter:             map[common.CellExtent]*bufio.Writer{},
 		wayWriter:              map[common.CellExtent]*bufio.Writer{},
 		cellExtents:            cellExtents,
@@ -88,13 +89,13 @@ func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
 		return errors.Errorf("Could not find cell extent and writer for node %d", node.ID)
 	}
 
-	encodedKeys, encodedValues := i.tagIndex.encodeTags(node.Tags, i.tagIndexTempValueArray)
+	encodedKeys, encodedValues := i.tagIndex.EncodeTags(node.Tags, i.tagIndexTempValueArray)
 	point := node.Point()
 	return i.repository.writeNodeData(node.ID, encodedKeys, encodedValues, &point, writer)
 }
 
 func (i *TemporaryFeatureImporter) HandleWay(way *osm.Way) error {
-	encodedKeys, encodedValues := i.tagIndex.encodeTags(way.Tags, i.tagIndexTempValueArray)
+	encodedKeys, encodedValues := i.tagIndex.EncodeTags(way.Tags, i.tagIndexTempValueArray)
 	processedExtents := map[common.CellExtent]common.CellExtent{}
 
 	for _, node := range way.Nodes {
@@ -134,7 +135,7 @@ func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error 
 		}
 	}
 
-	encodedKeys, encodedValues := i.tagIndex.encodeTags(relation.Tags, i.tagIndexTempValueArray)
+	encodedKeys, encodedValues := i.tagIndex.EncodeTags(relation.Tags, i.tagIndexTempValueArray)
 	return i.repository.writeRelationData(relation.ID, encodedKeys, encodedValues, nodeIds, wayIds, childRelationIds, i.relationWriter)
 }
 
@@ -162,12 +163,12 @@ func (i *TemporaryFeatureImporter) Done() error {
 }
 
 type RawFeaturesRepository struct {
-	baseGridIndex
+	index.BaseGridIndex
 }
 
 func NewRawFeaturesRepository(cellWidth float64, cellHeight float64, baseFolder string) *RawFeaturesRepository {
 	gridIndexWriter := &RawFeaturesRepository{
-		baseGridIndex: baseGridIndex{
+		BaseGridIndex: index.BaseGridIndex{
 			CellWidth:  cellWidth,
 			CellHeight: cellHeight,
 			BaseFolder: baseFolder,

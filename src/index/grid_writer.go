@@ -20,7 +20,7 @@ import (
 )
 
 type GridIndexWriter struct {
-	baseGridIndex
+	BaseGridIndex
 
 	cacheFileHandles            map[int64]*[3]*os.File      // Key is a aggregation of the cells x and y coordinate. The array index is based on the object type.
 	cacheFileWriters            map[int64]*[3]*bufio.Writer // Key is a aggregation of the cells x and y coordinate The array index is based on the object type.
@@ -53,13 +53,13 @@ func ImportDataFile(tempRawFeatureChannel chan feature.EncodedFeature, baseFolde
 }
 
 func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string) *GridIndexWriter {
-	baseGridIndex := baseGridIndex{
+	baseGridIndex := BaseGridIndex{
 		CellWidth:  cellWidth,
 		CellHeight: cellHeight,
 		BaseFolder: baseFolder,
 	}
 	gridIndexWriter := &GridIndexWriter{
-		baseGridIndex:               baseGridIndex,
+		BaseGridIndex:               baseGridIndex,
 		cacheFileHandles:            map[int64]*[3]*os.File{},
 		cacheFileWriters:            map[int64]*[3]*bufio.Writer{},
 		cacheFileMutexes:            map[io.Writer]*sync.Mutex{},
@@ -69,7 +69,7 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 		cacheRawEncodedRelations:    map[common.CellIndex][]*feature.EncodedRelationFeature{},
 		cacheRawEncodedFeatureMutex: &sync.Mutex{},
 		gridIndexReader: &GridIndexReader{
-			baseGridIndex:        baseGridIndex,
+			BaseGridIndex:        baseGridIndex,
 			checkFeatureValidity: false,
 		},
 	}

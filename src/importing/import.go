@@ -107,8 +107,8 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	//
 	currentStepStartTime = time.Now()
 
-	rawFeatureRepo := index.NewRawFeaturesRepository(cellWidth, cellHeight, "import-temp-cell")
-	temporaryFeatureImporter := index.NewTemporaryFeatureImporter(rawFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
+	rawFeatureRepo := NewRawFeaturesRepository(cellWidth, cellHeight, "import-temp-cell")
+	temporaryFeatureImporter := NewTemporaryFeatureImporter(rawFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
 
 	osmReader = osm.NewOsmReader()
 	err = osmReader.Read(inputFile, temporaryFeatureImporter)
