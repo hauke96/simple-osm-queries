@@ -102,7 +102,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		// 10_000_000 ~ 13 GB RAM / 6 min. / 7 sub-extents
 		// 20_000_000 ~ 17 GB RAM / 9 min. / 3 sub-extents
 		// TODO Make this parameter configurable
-		extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 5_000_000)
+		extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 10_000_000)
 		if extent == nil {
 			break
 		}
