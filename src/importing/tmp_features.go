@@ -96,18 +96,16 @@ func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
 
 func (i *TemporaryFeatureImporter) HandleWay(way *osm.Way) error {
 	encodedKeys, encodedValues := i.tagIndex.EncodeTags(way.Tags, i.tagIndexTempValueArray)
-	processedExtents := map[common.CellExtent]common.CellExtent{}
+	data := i.repository.getWayData(way.ID, encodedKeys, encodedValues, way.Nodes)
 
-	for _, node := range way.Nodes {
-		for _, cellExtent := range i.cellExtents {
-			_, extentHasBeenProcessed := processedExtents[cellExtent]
-			if !extentHasBeenProcessed && cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
+	for _, cellExtent := range i.cellExtents {
+		for _, node := range way.Nodes {
+			if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
 				writer := i.wayWriter[cellExtent]
-				err := i.repository.writeWayData(way.ID, encodedKeys, encodedValues, way.Nodes, writer)
+				_, err := writer.Write(data)
 				if err != nil {
 					return err
 				}
-				processedExtents[cellExtent] = cellExtent
 				break
 			}
 		}
@@ -249,7 +247,7 @@ func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []byte, v
 	return err
 }
 
-func (r *TemporaryFeatureRepository) writeWayData(id osm.WayID, keys []byte, values []int, nodes osm.WayNodes, f io.Writer) error {
+func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, values []int, nodes osm.WayNodes) []byte {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -323,8 +321,7 @@ func (r *TemporaryFeatureRepository) writeWayData(id osm.WayID, keys []byte, val
 		pos += 16
 	}
 
-	_, err := f.Write(data)
-	return err
+	return data
 }
 
 func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys []byte, values []int, nodeIds []osm.NodeID, wayIds []osm.WayID, childRelationIds []osm.RelationID, f io.Writer) error {

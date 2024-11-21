@@ -42,12 +42,12 @@ func ImportDataFile(tempRawFeatureChannel chan feature.Feature, baseFolder strin
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
-	nodeCells, err := gridIndexWriter.WriteOsmToRawEncodedFeatures(tempRawFeatureChannel, cellExtent)
+	err := gridIndexWriter.WriteOsmToRawEncodedFeatures(tempRawFeatureChannel, cellExtent)
 	if err != nil {
 		return err
 	}
 
-	gridIndexWriter.addAdditionalIdsToObjectsInCells(nodeCells)
+	gridIndexWriter.addAdditionalIdsToObjectsInCells(cellExtent.GetCellIndices())
 
 	return nil
 }
@@ -78,13 +78,9 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 
 // WriteOsmToRawEncodedFeatures Reads the input feature channel and converts all OSM objects into raw encoded features and
 // writes them into their respective cells. The returned cell map contains all cells that contain nodes.
-func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.Feature, cellExtent common.CellExtent) (map[common.CellIndex]common.CellIndex, error) {
+func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.Feature, cellExtent common.CellExtent) error {
 	sigolo.Info("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
-
-	// TODO Fill these maps during the first call of this method and store these maps in the GridIndexWriter. All subsequent runs don't need to create, fill and destroy these maps again. This may increase memory usage (has to be determined) but might decrease stress on GC.
-
-	nodeCells := map[common.CellIndex]common.CellIndex{}
 
 	// We assume relations, like all other object types, to be sorted in a way that when a relation with child relations
 	// appears, all child relation members have been visited before. Therefore, this map then contains all bounds of the
@@ -111,8 +107,6 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 
 			err := g.writeOsmObjectToCellCache(cell, rawFeature)
 			sigolo.FatalCheck(err)
-
-			nodeCells[cell] = cell
 		case feature.WayFeature:
 			if !firstWayHasBeenProcessed {
 				sigolo.Debug("Start processing ways (2/3)")
@@ -136,15 +130,9 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			bbox := rawFeature.GetGeometry().Bound()
 			wayToBound[id] = &bbox
 
-			savedCells := map[common.CellIndex]bool{}
-			for _, node := range rawFeature.GetNodes() {
-				cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
-
-				if _, cellAlreadySaved := savedCells[cell]; !cellAlreadySaved && cellExtent.Contains(cell) {
-					err := g.writeOsmObjectToCellCache(cell, rawFeature)
-					sigolo.FatalCheck(err)
-					savedCells[cell] = true
-				}
+			for _, cell := range wayCells {
+				err := g.writeOsmObjectToCellCache(cell, rawFeature)
+				sigolo.FatalCheck(err)
 			}
 		case feature.RelationFeature:
 			if !firstRelationHasBeenProcessed {
@@ -253,7 +241,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 
 	g.closeOpenFileHandles()
 
-	return nodeCells, nil
+	return nil
 }
 
 func (g *GridIndexWriter) closeOpenFileHandles() {
@@ -281,7 +269,7 @@ func (g *GridIndexWriter) closeOpenFileHandles() {
 	g.cacheFileMutex.Unlock()
 }
 
-func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells map[common.CellIndex]common.CellIndex) {
+func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIndex) {
 	numberOfCells := len(cells)
 	sigolo.Infof("Start adding way and relation IDs to raw encoded nodes in %d cells", numberOfCells)
 
@@ -297,7 +285,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells map[common.Cell
 		go g.addAdditionalIdsToObjectsInCell(cellQueue, cellSync)
 	}
 
-	for cell := range cells {
+	for _, cell := range cells {
 		sigolo.Tracef("Add cell %v to queue (%d/%d)", cell, currentCell, numberOfCells)
 		currentCell++
 
@@ -368,13 +356,6 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan commo
 func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmObjectType, objectTypeToRelationMapping map[uint64][]osm.RelationID, cell common.CellIndex) error {
 	var err error
 
-	nodeToWays := map[uint64][]osm.WayID{}
-	for _, way := range g.cacheRawEncodedWays[cell] {
-		for _, nodeId := range way.GetNodes().NodeIDs() {
-			nodeToWays[uint64(nodeId)] = append(nodeToWays[uint64(nodeId)], osm.WayID(way.GetID()))
-		}
-	}
-
 	//cellFolderName := path.Join(g.BaseFolder, objectType.String(), strconv.Itoa(cell.X()))
 	//cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
 
@@ -408,6 +389,13 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 
 	switch objectType {
 	case ownOsm.OsmObjNode:
+		nodeToWays := map[uint64][]osm.WayID{}
+		for _, way := range g.cacheRawEncodedWays[cell] {
+			for _, nodeId := range way.GetNodes().NodeIDs() {
+				nodeToWays[uint64(nodeId)] = append(nodeToWays[uint64(nodeId)], osm.WayID(way.GetID()))
+			}
+		}
+
 		for _, encFeature := range g.cacheRawEncodedNodes[cell] {
 			if wayIds, ok := nodeToWays[encFeature.GetID()]; ok {
 				encFeature.SetWayIds(wayIds)
