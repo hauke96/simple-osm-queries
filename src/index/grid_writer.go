@@ -239,7 +239,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 	importDuration := time.Since(importStartTime)
 	sigolo.Infof("Created raw encoded features from OSM data in %s", importDuration)
 
-	g.closeOpenFileHandles()
+	//g.closeOpenFileHandles()
 
 	return nil
 }
@@ -275,47 +275,12 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIn
 
 	importStartTime := time.Now()
 
-	currentCell := 1
-
-	numThreads := 1 // TODO would otherwise cause "concurrent map read and map write" error for maybe objectTypeToRelationMapping in addAdditionalIdsToObjectsOfType
-	cellQueue := make(chan common.CellIndex, numThreads*2)
-	cellSync := &sync.WaitGroup{}
-	for i := 0; i < numThreads; i++ {
-		cellSync.Add(1)
-		go g.addAdditionalIdsToObjectsInCell(cellQueue, cellSync)
-	}
+	nodeToRelations := make(map[uint64][]osm.RelationID)
+	waysToRelations := make(map[uint64][]osm.RelationID)
+	relationsToParentRelations := make(map[uint64][]osm.RelationID)
 
 	for _, cell := range cells {
-		sigolo.Tracef("Add cell %v to queue (%d/%d)", cell, currentCell, numberOfCells)
-		currentCell++
-
-		cellQueue <- cell
-	}
-
-	close(cellQueue)
-	cellSync.Wait()
-
-	importDuration := time.Since(importStartTime)
-	sigolo.Infof("Done adding way IDs to raw encoded nodes in %s", importDuration)
-
-	g.closeOpenFileHandles()
-}
-
-func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan common.CellIndex, waitGroup *sync.WaitGroup) {
-	defer waitGroup.Done()
-
-	for cell := range cellChannel {
 		sigolo.Tracef("[Cell %v] Collect relationships between nodes, ways and relations", cell)
-
-		//nodeToRelations, waysToRelations, relationsToParentRelations, err := g.gridIndexReader.readObjectsToRelationMappingFromCellData(cell.X(), cell.Y())
-		//if err != nil {
-		//	sigolo.Errorf("Error reading objects to relations mapping: %+v", err)
-		//	// TODO return error
-		//}
-
-		nodeToRelations := make(map[uint64][]osm.RelationID)
-		waysToRelations := make(map[uint64][]osm.RelationID)
-		relationsToParentRelations := make(map[uint64][]osm.RelationID)
 
 		for _, relation := range g.cacheRawEncodedRelations[cell] {
 			for _, nodeId := range relation.GetNodeIds() {
@@ -328,6 +293,10 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan commo
 				relationsToParentRelations[uint64(relId)] = append(nodeToRelations[uint64(relId)], osm.RelationID(relation.GetID()))
 			}
 		}
+	}
+
+	for _, cell := range cells {
+		sigolo.Tracef("[Cell %v] Adding additional IDs and writing encoded features to disk", cell)
 
 		err := g.addAdditionalIdsToObjectsOfType(ownOsm.OsmObjNode, nodeToRelations, cell)
 		if err != nil {
@@ -346,7 +315,26 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCell(cellChannel chan commo
 			sigolo.Errorf("Error adding additional IDs to relations: %+v", err)
 			// TODO return error
 		}
+
+		cellPositionKey := g.getMapKeyForCell(cell.X(), cell.Y())
+		g.cacheFileMutex.Lock()
+		if _, ok := g.cacheFileWriters[cellPositionKey]; ok {
+			for i := 0; i < 3; i++ {
+				if g.cacheFileWriters[cellPositionKey][i] != nil {
+					// TODO error handling
+					g.cacheFileWriters[cellPositionKey][i].Flush()
+					g.cacheFileHandles[cellPositionKey][i].Close()
+					delete(g.cacheFileMutexes, g.cacheFileWriters[cellPositionKey][i])
+				}
+			}
+			delete(g.cacheFileWriters, cellPositionKey)
+			delete(g.cacheFileHandles, cellPositionKey)
+		}
+		g.cacheFileMutex.Unlock()
 	}
+
+	importDuration := time.Since(importStartTime)
+	sigolo.Infof("Done adding way IDs to raw encoded nodes in %s", importDuration)
 }
 
 // addAdditionalIdsToObjectsOfType adds the reverse IDs to the given object type. For example nodes themselves do not
