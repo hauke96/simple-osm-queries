@@ -45,7 +45,7 @@ func (r *OsmReader) Read(filename string, handlers ...OsmDataHandler) error {
 
 	scanner := osmpbf.New(context.Background(), reader, 1)
 
-	sigolo.Infof("Start processing OSM data file %s", filename)
+	sigolo.Debugf("Start processing OSM data file %s", filename)
 	importStartTime := time.Now()
 
 	for _, handler := range handlers {
@@ -92,6 +92,7 @@ func (r *OsmReader) Read(filename string, handlers ...OsmDataHandler) error {
 		}
 	}
 
+	sigolo.Infof("Finished Processing data, start post-processing")
 	for _, handler := range handlers {
 		err = handler.Done()
 		if err != nil {

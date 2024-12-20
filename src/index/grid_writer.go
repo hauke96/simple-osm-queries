@@ -91,7 +91,7 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 // WriteOsmToRawEncodedFeatures Reads the input feature channel and converts all OSM objects into raw encoded features and
 // writes them into their respective cells. The returned cell map contains all cells that contain nodes.
 func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.Feature, cellExtent common.CellExtent) error {
-	sigolo.Info("Start converting OSM data to raw encoded features")
+	sigolo.Debug("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 
 	// We assume relations, like all other object types, to be sorted in a way that when a relation with child relations
@@ -249,7 +249,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 	}
 
 	importDuration := time.Since(importStartTime)
-	sigolo.Infof("Created raw encoded features from OSM data in %s", importDuration)
+	sigolo.Debugf("Created raw encoded features from OSM data in %s", importDuration)
 
 	//g.closeOpenFileHandles()
 
@@ -283,7 +283,7 @@ func (g *GridIndexWriter) closeOpenFileHandles() {
 
 func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIndex) {
 	numberOfCells := len(cells)
-	sigolo.Infof("Start adding way and relation IDs to raw encoded nodes in %d cells", numberOfCells)
+	sigolo.Debugf("Start adding way and relation IDs to raw encoded nodes in %d cells", numberOfCells)
 
 	importStartTime := time.Now()
 
@@ -346,7 +346,7 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIn
 	}
 
 	importDuration := time.Since(importStartTime)
-	sigolo.Infof("Done adding way IDs to raw encoded nodes in %s", importDuration)
+	sigolo.Debugf("Done adding way IDs to raw encoded nodes in %s", importDuration)
 }
 
 // addAdditionalIdsToObjectsOfType adds the reverse IDs to the given object type. For example nodes themselves do not

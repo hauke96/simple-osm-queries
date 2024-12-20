@@ -309,10 +309,12 @@ func (i *TagIndex) SaveToFile(filename string) error {
 	sigolo.FatalCheck(err)
 
 	defer func() {
+		sigolo.Tracef("Flush tag-index file %s to disk", filepath)
 		err = f.Close()
 		sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for tag-index store %s", filepath))
 	}()
 
+	sigolo.Debugf("Write tag-index to %s", filepath)
 	return i.WriteAsString(f)
 }
 
