@@ -191,7 +191,7 @@ func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []byte, v
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
 		Names: | osmId | lon | lat | num. keys | num. values |   encodedKeys   |   encodedValues   |
-		Bytes: |   8   |  4  |  4  |     4     |      4      | <num. keys> / 8 | <num. values> * 3 |
+		Bytes: |   8   |  4  |  4  |     2     |      2      | <num. keys> / 8 | <num. values> * 3 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
@@ -212,7 +212,7 @@ func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []byte, v
 	encodedKeyBytes := numKeys           // Is already a byte-array -> no division by 8 needed
 	encodedValueBytes := len(values) * 3 // Int array and int = 4 bytes
 
-	headerBytesCount := 8 + 4 + 4 + 4 + 4 // = 24
+	headerBytesCount := 8 + 4 + 4 + 2 + 2 // = 20
 	byteCount := headerBytesCount
 	byteCount += encodedKeyBytes
 	byteCount += encodedValueBytes
@@ -222,8 +222,8 @@ func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []byte, v
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
 	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(point.Lon())))
 	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(point.Lat())))
-	binary.LittleEndian.PutUint32(data[16:], uint32(numKeys))
-	binary.LittleEndian.PutUint32(data[20:], uint32(len(values)))
+	binary.LittleEndian.PutUint16(data[16:], uint16(numKeys))
+	binary.LittleEndian.PutUint16(data[18:], uint16(len(values)))
 
 	pos := headerBytesCount
 
@@ -253,7 +253,7 @@ func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, value
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
 		Names: | osmId | num. keys | num. values | num. nodes |   encodedKeys   |   encodedValues   |       nodes       |
-		Bytes: |   8   |     4     |      4      |      2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 |
+		Bytes: |   8   |     2     |      2      |      2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
@@ -277,7 +277,7 @@ func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, value
 	numEncodedValueBytes := len(values) * 3 // Int array and int = 4 bytes
 	nodeIdBytes := len(nodes) * 16          // Each ID is a 64-bit int + 2*4 bytes for lat/lon
 
-	headerByteCount := 8 + 4 + 4 + 2
+	headerByteCount := 8 + 2 + 2 + 2 // = 14
 	byteCount := headerByteCount
 	byteCount += numEncodedKeyBytes
 	byteCount += numEncodedValueBytes
@@ -289,9 +289,9 @@ func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, value
 		Write header
 	*/
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
-	binary.LittleEndian.PutUint32(data[8:], uint32(numEncodedKeyBytes))
-	binary.LittleEndian.PutUint32(data[12:], uint32(len(values)))
-	binary.LittleEndian.PutUint16(data[16:], uint16(len(nodes)))
+	binary.LittleEndian.PutUint16(data[8:], uint16(numEncodedKeyBytes))
+	binary.LittleEndian.PutUint16(data[10:], uint16(len(values)))
+	binary.LittleEndian.PutUint16(data[12:], uint16(len(nodes)))
 
 	pos := headerByteCount
 
@@ -330,7 +330,7 @@ func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys [
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
 		Names: | osmId | num. keys | num. values | num. nodes | num. ways | num. child rels |   encodedKeys   |   encodedValues   |     node IDs     |     way IDs     |    child rel. IDs     |
-		Bytes: |   8   |     4     |      4      |      2     |     2     |        2        | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 8 | <num. ways> * 8 | <num. child rels> * 8 |
+		Bytes: |   8   |     2     |      2      |      2     |     2     |        2        | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 8 | <num. ways> * 8 | <num. child rels> * 8 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
@@ -353,7 +353,7 @@ func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys [
 	wayIdBytes := len(wayIds) * 8                     // IDs are all 64-bit integers
 	childRelationIdBytes := len(childRelationIds) * 8 // IDs are all 64-bit integers
 
-	headerBytesCount := 8 + 4 + 4 + 2 + 2 + 2 // = 22
+	headerBytesCount := 8 + 2 + 2 + 2 + 2 + 2
 	byteCount := headerBytesCount
 	byteCount += encodedKeyBytes
 	byteCount += encodedValueBytes
@@ -364,11 +364,11 @@ func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys [
 	data := make([]byte, byteCount)
 
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
-	binary.LittleEndian.PutUint32(data[8:], uint32(numKeys))
-	binary.LittleEndian.PutUint32(data[12:], uint32(len(values)))
-	binary.LittleEndian.PutUint16(data[16:], uint16(len(nodeIds)))
-	binary.LittleEndian.PutUint16(data[18:], uint16(len(wayIds)))
-	binary.LittleEndian.PutUint16(data[20:], uint16(len(childRelationIds)))
+	binary.LittleEndian.PutUint16(data[8:], uint16(numKeys))
+	binary.LittleEndian.PutUint16(data[10:], uint16(len(values)))
+	binary.LittleEndian.PutUint16(data[12:], uint16(len(nodeIds)))
+	binary.LittleEndian.PutUint16(data[14:], uint16(len(wayIds)))
+	binary.LittleEndian.PutUint16(data[16:], uint16(len(childRelationIds)))
 
 	pos := headerBytesCount
 
@@ -467,10 +467,10 @@ func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.F
 		osmId := reader.Uint64(pos + 0)
 		lon := reader.Float32(pos + 8)
 		lat := reader.Float32(pos + 12)
-		numEncodedKeyBytes := reader.IntFromUint32(pos + 16)
-		numValues := reader.IntFromUint32(pos + 20)
+		numEncodedKeyBytes := reader.IntFromUint16(pos + 16)
+		numValues := reader.IntFromUint16(pos + 18)
 
-		headerBytesCount := 8 + 4 + 4 + 4 + 4 // = 24
+		headerBytesCount := 8 + 4 + 4 + 2 + 2 // = 20
 
 		pos += int64(headerBytesCount)
 
@@ -520,11 +520,11 @@ func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.Fe
 			Read header fields
 		*/
 		osmId := reader.Uint64(pos + 0)
-		numEncodedKeyBytes := reader.IntFromUint32(pos + 8)
-		numValues := reader.IntFromUint32(pos + 12)
-		numNodes := reader.IntFromUint16(pos + 16)
+		numEncodedKeyBytes := reader.IntFromUint16(pos + 8)
+		numValues := reader.IntFromUint16(pos + 10)
+		numNodes := reader.IntFromUint16(pos + 12)
 
-		headerBytesCount := 8 + 4 + 4 + 2
+		headerBytesCount := 8 + 2 + 2 + 2 // = 14
 
 		pos += int64(headerBytesCount)
 
@@ -598,13 +598,13 @@ func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan featu
 			Read header fields
 		*/
 		osmId := reader.Uint64(pos + 0)
-		numEncodedKeyBytes := reader.IntFromUint32(pos + 8)
-		numValues := reader.IntFromUint32(pos + 12)
-		numNodeIds := reader.IntFromUint16(pos + 16)
-		numWayIds := reader.IntFromUint16(pos + 18)
-		numChildRelationIds := reader.IntFromUint16(pos + 20)
+		numEncodedKeyBytes := reader.IntFromUint16(pos + 8)
+		numValues := reader.IntFromUint16(pos + 10)
+		numNodeIds := reader.IntFromUint16(pos + 12)
+		numWayIds := reader.IntFromUint16(pos + 14)
+		numChildRelationIds := reader.IntFromUint16(pos + 16)
 
-		headerBytesCount := 8 + 4 + 4 + 2 + 2 + 2 // = 22
+		headerBytesCount := 8 + 2 + 2 + 2 + 2 + 2 // = 18
 
 		pos += int64(headerBytesCount)
 

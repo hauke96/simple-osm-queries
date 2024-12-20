@@ -259,12 +259,12 @@ func (g *GridIndexReader) readNodesFromCellData(output chan []feature.Feature, d
 		osmId := binary.LittleEndian.Uint64(data[pos+0:])
 		lon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+8:]))
 		lat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+16:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+20:]))
-		numWayIds := int(binary.LittleEndian.Uint16(data[pos+24:]))
-		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+26:]))
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+16:]))
+		numValues := int(binary.LittleEndian.Uint16(data[pos+18:]))
+		numWayIds := int(binary.LittleEndian.Uint16(data[pos+20:]))
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+22:]))
 
-		headerBytesCount := 8 + 4 + 4 + 4 + 4 + 2 + 2 // = 28
+		headerBytesCount := 8 + 4 + 4 + 2 + 2 + 2 + 2 // = 24
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, lon=%f, lat=%f, numKeys=%d, numValues=%d", pos, osmId, lon, lat, numEncodedKeyBytes, numValues)
 
@@ -347,12 +347,12 @@ func (g *GridIndexReader) readWaysFromCellData(output chan []feature.Feature, da
 			Read header fields
 		*/
 		osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+8:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+12:]))
-		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
-		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+18:]))
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+8:]))
+		numValues := int(binary.LittleEndian.Uint16(data[pos+10:]))
+		numNodes := int(binary.LittleEndian.Uint16(data[pos+12:]))
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+14:]))
 
-		headerBytesCount := 8 + 4 + 4 + 2 + 2
+		headerBytesCount := 8 + 2 + 2 + 2 + 2
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
 
@@ -449,19 +449,19 @@ func (g *GridIndexReader) readRelationsFromCellData(output chan []feature.Featur
 		minLat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
 		maxLon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+16:]))
 		maxLat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+20:]))
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+24:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+28:]))
-		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+32:]))
-		numWayIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
-		numChildRelationIds := int(binary.LittleEndian.Uint16(data[pos+36:]))
-		numParentRelationIds := int(binary.LittleEndian.Uint16(data[pos+38:]))
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+24:]))
+		numValues := int(binary.LittleEndian.Uint16(data[pos+26:]))
+		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+28:]))
+		numWayIds := int(binary.LittleEndian.Uint16(data[pos+30:]))
+		numChildRelationIds := int(binary.LittleEndian.Uint16(data[pos+32:]))
+		numParentRelationIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
 
 		bbox := orb.Bound{
 			Min: orb.Point{float64(minLon), float64(minLat)},
 			Max: orb.Point{float64(maxLon), float64(maxLat)},
 		}
 
-		headerBytesCount := 8 + 16 + 4 + 4 + 2 + 2 + 2 + 2 // = 40
+		headerBytesCount := 8 + 16 + 2 + 2 + 2 + 2 + 2 + 2 // = 36
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, bbox=%v, numKeys=%d, numValues=%d", pos, osmId, bbox, numEncodedKeyBytes, numValues)
 

@@ -567,7 +567,7 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature feature.NodeFeature, f io
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
 		Names: | osmId | lon | lat | num. keys | num. values | num. ways | num. rels |   encodedKeys   |   encodedValues   |     way IDs     |   relation IDs  |
-		Bytes: |   8   |  4  |  4  |     4     |      4      |     2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. ways> * 8 | <num. rels> * 8 |
+		Bytes: |   8   |  4  |  4  |     2     |      2      |     2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. ways> * 8 | <num. rels> * 8 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
@@ -590,7 +590,7 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature feature.NodeFeature, f io
 	wayIdBytes := len(encodedFeature.GetWayIds()) * 8           // IDs are all 64-bit integers
 	relationIdBytes := len(encodedFeature.GetRelationIds()) * 8 // IDs are all 64-bit integers
 
-	headerBytesCount := 8 + 4 + 4 + 4 + 4 + 2 + 2 // = 28
+	headerBytesCount := 8 + 4 + 4 + 2 + 2 + 2 + 2 // = 24
 	byteCount := headerBytesCount
 	byteCount += encodedKeyBytes
 	byteCount += encodedValueBytes
@@ -602,10 +602,10 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature feature.NodeFeature, f io
 	binary.LittleEndian.PutUint64(data[0:], encodedFeature.GetID())
 	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(encodedFeature.GetLon())))
 	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(encodedFeature.GetLat())))
-	binary.LittleEndian.PutUint32(data[16:], uint32(numKeys))
-	binary.LittleEndian.PutUint32(data[20:], uint32(len(encodedFeature.GetValues())))
-	binary.LittleEndian.PutUint16(data[24:], uint16(len(encodedFeature.GetWayIds())))
-	binary.LittleEndian.PutUint16(data[26:], uint16(len(encodedFeature.GetRelationIds())))
+	binary.LittleEndian.PutUint16(data[16:], uint16(numKeys))
+	binary.LittleEndian.PutUint16(data[18:], uint16(len(encodedFeature.GetValues())))
+	binary.LittleEndian.PutUint16(data[20:], uint16(len(encodedFeature.GetWayIds())))
+	binary.LittleEndian.PutUint16(data[22:], uint16(len(encodedFeature.GetRelationIds())))
 
 	pos := headerBytesCount
 
@@ -650,7 +650,7 @@ func (g *GridIndexWriter) writeWayData(encodedFeature feature.WayFeature, f io.W
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
 		Names: | osmId | num. keys | num. values | num. nodes | num. rels |   encodedKeys   |   encodedValues   |       nodes       |       rels      |
-		Bytes: |   8   |     4     |      4      |      2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 | <num. rels> * 8 |
+		Bytes: |   8   |     2     |      2      |      2     |     2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 | <num. rels> * 8 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
@@ -675,7 +675,7 @@ func (g *GridIndexWriter) writeWayData(encodedFeature feature.WayFeature, f io.W
 	nodeIdBytes := len(encodedFeature.GetNodes()) * 16          // Each ID is a 64-bit int + 2*4 bytes for lat/lon
 	relationIdBytes := len(encodedFeature.GetRelationIds()) * 8 // Each ID is a 64-bit int
 
-	headerByteCount := 8 + 4 + 4 + 2 + 2
+	headerByteCount := 8 + 2 + 2 + 2 + 2
 	byteCount := headerByteCount
 	byteCount += numEncodedKeyBytes
 	byteCount += numEncodedValueBytes
@@ -688,10 +688,10 @@ func (g *GridIndexWriter) writeWayData(encodedFeature feature.WayFeature, f io.W
 		Write header
 	*/
 	binary.LittleEndian.PutUint64(data[0:], encodedFeature.GetID())
-	binary.LittleEndian.PutUint32(data[8:], uint32(numEncodedKeyBytes))
-	binary.LittleEndian.PutUint32(data[12:], uint32(len(encodedFeature.GetValues())))
-	binary.LittleEndian.PutUint16(data[16:], uint16(len(encodedFeature.GetNodes())))
-	binary.LittleEndian.PutUint16(data[18:], uint16(len(encodedFeature.GetRelationIds())))
+	binary.LittleEndian.PutUint16(data[8:], uint16(numEncodedKeyBytes))
+	binary.LittleEndian.PutUint16(data[10:], uint16(len(encodedFeature.GetValues())))
+	binary.LittleEndian.PutUint16(data[12:], uint16(len(encodedFeature.GetNodes())))
+	binary.LittleEndian.PutUint16(data[14:], uint16(len(encodedFeature.GetRelationIds())))
 
 	pos := headerByteCount
 
@@ -738,7 +738,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature feature.RelationFeatu
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
 		Names: | osmId | bbox | num. keys | num. values | num. nodes | num. ways | num. child rels | num. parent rels |   encodedKeys   |   encodedValues   |     node IDs     |     way IDs     |    child rel. IDs     |    parent rel. IDs     |
-		Bytes: |   8   |  16  |     4     |      4      |      2     |     2     |        2        |         2        | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 8 | <num. ways> * 8 | <num. child rels> * 8 | <num. parent rels> * 8 |
+		Bytes: |   8   |  16  |     2     |      2      |      2     |     2     |        2        |         2        | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 8 | <num. ways> * 8 | <num. child rels> * 8 | <num. parent rels> * 8 |
 
 		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
 		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
@@ -762,7 +762,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature feature.RelationFeatu
 	childRelationIdBytes := len(encodedFeature.GetChildRelationIds()) * 8   // IDs are all 64-bit integers
 	parentRelationIdBytes := len(encodedFeature.GetParentRelationIds()) * 8 // IDs are all 64-bit integers
 
-	headerBytesCount := 8 + 16 + 4 + 4 + 2 + 2 + 2 + 2 // = 40
+	headerBytesCount := 8 + 16 + 2 + 2 + 2 + 2 + 2 + 2 // = 36
 	byteCount := headerBytesCount
 	byteCount += encodedKeyBytes
 	byteCount += encodedValueBytes
@@ -780,12 +780,12 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature feature.RelationFeatu
 	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(bbox.Min.Lat())))
 	binary.LittleEndian.PutUint32(data[16:], math.Float32bits(float32(bbox.Max.Lon())))
 	binary.LittleEndian.PutUint32(data[20:], math.Float32bits(float32(bbox.Max.Lat())))
-	binary.LittleEndian.PutUint32(data[24:], uint32(numKeys))
-	binary.LittleEndian.PutUint32(data[28:], uint32(len(encodedFeature.GetValues())))
-	binary.LittleEndian.PutUint16(data[32:], uint16(len(encodedFeature.GetNodeIds())))
-	binary.LittleEndian.PutUint16(data[34:], uint16(len(encodedFeature.GetWayIds())))
-	binary.LittleEndian.PutUint16(data[36:], uint16(len(encodedFeature.GetChildRelationIds())))
-	binary.LittleEndian.PutUint16(data[38:], uint16(len(encodedFeature.GetParentRelationIds())))
+	binary.LittleEndian.PutUint16(data[24:], uint16(numKeys))
+	binary.LittleEndian.PutUint16(data[26:], uint16(len(encodedFeature.GetValues())))
+	binary.LittleEndian.PutUint16(data[28:], uint16(len(encodedFeature.GetNodeIds())))
+	binary.LittleEndian.PutUint16(data[30:], uint16(len(encodedFeature.GetWayIds())))
+	binary.LittleEndian.PutUint16(data[32:], uint16(len(encodedFeature.GetChildRelationIds())))
+	binary.LittleEndian.PutUint16(data[34:], uint16(len(encodedFeature.GetParentRelationIds())))
 
 	pos := headerBytesCount
 
