@@ -18,6 +18,18 @@ import (
 	ownOsm "soq/osm"
 )
 
+// Slice that contains the data of the feature that should be written to disk. These slice is reused to reduce garbage
+// collection. This is a simple solutions and cannot safely be used for concurrent writes!
+var data = make([]byte, 1000)
+
+func ensureDataSliceSize(byteCount int) {
+	for cap(data) < byteCount {
+		newSize := cap(data) * 2
+		sigolo.Debugf("Resize data slice from %d to %d", cap(data), newSize)
+		data = make([]byte, newSize)
+	}
+}
+
 type TemporaryFeatureImporter struct {
 	repository             *TemporaryFeatureRepository
 	tagIndex               *index.TagIndex
@@ -217,7 +229,7 @@ func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []byte, v
 	byteCount += encodedKeyBytes
 	byteCount += encodedValueBytes
 
-	data := make([]byte, byteCount)
+	ensureDataSliceSize(byteCount)
 
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
 	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(point.Lon())))
@@ -283,7 +295,7 @@ func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, value
 	byteCount += numEncodedValueBytes
 	byteCount += nodeIdBytes
 
-	data := make([]byte, byteCount)
+	ensureDataSliceSize(byteCount)
 
 	/*
 		Write header
@@ -361,7 +373,7 @@ func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys [
 	byteCount += wayIdBytes
 	byteCount += childRelationIdBytes
 
-	data := make([]byte, byteCount)
+	ensureDataSliceSize(byteCount)
 
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
 	binary.LittleEndian.PutUint16(data[8:], uint16(numKeys))

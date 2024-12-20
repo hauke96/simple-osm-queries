@@ -19,6 +19,18 @@ import (
 	"time"
 )
 
+// Slice that contains the data of the feature that should be written to disk. These slice is reused to reduce garbage
+// collection. This is a simple solutions and cannot safely be used for concurrent writes!
+var data = make([]byte, 1000)
+
+func ensureDataSliceSize(byteCount int) {
+	for cap(data) < byteCount {
+		newSize := cap(data) * 2
+		sigolo.Debugf("Resize data slice from %d to %d", cap(data), newSize)
+		data = make([]byte, newSize)
+	}
+}
+
 type GridIndexWriter struct {
 	BaseGridIndex
 
@@ -597,7 +609,7 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature feature.NodeFeature, f io
 	byteCount += wayIdBytes
 	byteCount += relationIdBytes
 
-	data := make([]byte, byteCount)
+	ensureDataSliceSize(byteCount)
 
 	binary.LittleEndian.PutUint64(data[0:], encodedFeature.GetID())
 	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(encodedFeature.GetLon())))
@@ -682,7 +694,7 @@ func (g *GridIndexWriter) writeWayData(encodedFeature feature.WayFeature, f io.W
 	byteCount += nodeIdBytes
 	byteCount += relationIdBytes
 
-	data := make([]byte, byteCount)
+	ensureDataSliceSize(byteCount)
 
 	/*
 		Write header
@@ -771,7 +783,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature feature.RelationFeatu
 	byteCount += childRelationIdBytes
 	byteCount += parentRelationIdBytes
 
-	data := make([]byte, byteCount)
+	ensureDataSliceSize(byteCount)
 
 	bbox := encodedFeature.GetGeometry().Bound()
 
