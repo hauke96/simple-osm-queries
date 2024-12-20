@@ -34,14 +34,13 @@ func ensureDataSliceSize(byteCount int) {
 type GridIndexWriter struct {
 	BaseGridIndex
 
-	cacheFileHandles            map[int64]*[3]*os.File      // Key is a aggregation of the cells x and y coordinate. The array index is based on the object type.
-	cacheFileWriters            map[int64]*[3]*bufio.Writer // Key is a aggregation of the cells x and y coordinate The array index is based on the object type.
-	cacheFileMutexes            map[io.Writer]*sync.Mutex
-	cacheFileMutex              *sync.Mutex
-	cacheRawEncodedNodes        map[common.CellIndex][]feature.NodeFeature
-	cacheRawEncodedWays         map[common.CellIndex][]feature.WayFeature
-	cacheRawEncodedRelations    map[common.CellIndex][]feature.RelationFeature
-	cacheRawEncodedFeatureMutex *sync.Mutex
+	cacheFileWriterFiles     map[io.Writer]*os.File
+	cacheFileWriters         map[int64]*[3]io.Writer // Key is a aggregation of the cells x and y coordinate. The array index is based on the object type. Value be a pointer to not create unnecessary files.
+	cacheFileMutexes         map[io.Writer]*sync.Mutex
+	cacheFileMutex           *sync.Mutex
+	cacheRawEncodedNodes     map[common.CellIndex][]feature.NodeFeature
+	cacheRawEncodedWays      map[common.CellIndex][]feature.WayFeature
+	cacheRawEncodedRelations map[common.CellIndex][]feature.RelationFeature
 
 	// During writing, some of the half-written data must be read again. This requires some functionality of the
 	// GridIndexReader during importing data and writing a new index.
@@ -71,15 +70,14 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 		BaseFolder: baseFolder,
 	}
 	gridIndexWriter := &GridIndexWriter{
-		BaseGridIndex:               baseGridIndex,
-		cacheFileHandles:            map[int64]*[3]*os.File{},
-		cacheFileWriters:            map[int64]*[3]*bufio.Writer{},
-		cacheFileMutexes:            map[io.Writer]*sync.Mutex{},
-		cacheFileMutex:              &sync.Mutex{},
-		cacheRawEncodedNodes:        map[common.CellIndex][]feature.NodeFeature{},
-		cacheRawEncodedWays:         map[common.CellIndex][]feature.WayFeature{},
-		cacheRawEncodedRelations:    map[common.CellIndex][]feature.RelationFeature{},
-		cacheRawEncodedFeatureMutex: &sync.Mutex{},
+		BaseGridIndex:            baseGridIndex,
+		cacheFileWriterFiles:     map[io.Writer]*os.File{},
+		cacheFileWriters:         map[int64]*[3]io.Writer{},
+		cacheFileMutexes:         map[io.Writer]*sync.Mutex{},
+		cacheFileMutex:           &sync.Mutex{},
+		cacheRawEncodedNodes:     map[common.CellIndex][]feature.NodeFeature{},
+		cacheRawEncodedWays:      map[common.CellIndex][]feature.WayFeature{},
+		cacheRawEncodedRelations: map[common.CellIndex][]feature.RelationFeature{},
 		gridIndexReader: &GridIndexReader{
 			BaseGridIndex:        baseGridIndex,
 			checkFeatureValidity: false,
@@ -115,7 +113,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			cell := g.GetCellIndexForCoordinate(rawFeature.GetLon(), rawFeature.GetLat())
 
 			id := osm.NodeID(rawFeature.GetID())
-			nodeToPoint[id] = &orb.Point{rawFeature.GetLon(), rawFeature.GetLat()}
+			nodeToPoint[id] = rawFeature.GetGeometry().(*orb.Point)
 
 			err := g.writeOsmObjectToCellCache(cell, rawFeature)
 			sigolo.FatalCheck(err)
@@ -251,34 +249,7 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 	importDuration := time.Since(importStartTime)
 	sigolo.Debugf("Created raw encoded features from OSM data in %s", importDuration)
 
-	//g.closeOpenFileHandles()
-
 	return nil
-}
-
-func (g *GridIndexWriter) closeOpenFileHandles() {
-	var err error
-	g.cacheFileMutex.Lock()
-	sigolo.Debugf("Close remaining open file handles")
-	for mapKey, fileHandles := range g.cacheFileHandles {
-		for writerIndex, writer := range g.cacheFileWriters[mapKey] {
-			if writer != nil {
-				err = writer.Flush()
-				sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file writer for grid-index store %s", fileHandles[writerIndex].Name()))
-			}
-		}
-
-		for _, fileHandle := range fileHandles {
-			if fileHandle != nil {
-				err = fileHandle.Close()
-				sigolo.FatalCheck(errors.Wrapf(err, "Unable to close file handle for grid-index store %s", fileHandle.Name()))
-			}
-		}
-	}
-	g.cacheFileHandles = map[int64]*[3]*os.File{}
-	g.cacheFileWriters = map[int64]*[3]*bufio.Writer{}
-	g.cacheFileMutexes = map[io.Writer]*sync.Mutex{}
-	g.cacheFileMutex.Unlock()
 }
 
 func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIndex) {
@@ -329,20 +300,13 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIn
 		}
 
 		cellPositionKey := g.getMapKeyForCell(cell.X(), cell.Y())
-		g.cacheFileMutex.Lock()
-		if _, ok := g.cacheFileWriters[cellPositionKey]; ok {
-			for i := 0; i < 3; i++ {
-				if g.cacheFileWriters[cellPositionKey][i] != nil {
-					// TODO error handling
-					g.cacheFileWriters[cellPositionKey][i].Flush()
-					g.cacheFileHandles[cellPositionKey][i].Close()
-					delete(g.cacheFileMutexes, g.cacheFileWriters[cellPositionKey][i])
-				}
+		if writers, ok := g.cacheFileWriters[cellPositionKey]; ok {
+			for _, writer := range writers {
+				g.cacheFileWriterFiles[writer].Close()
+				delete(g.cacheFileWriterFiles, writer)
 			}
 			delete(g.cacheFileWriters, cellPositionKey)
-			delete(g.cacheFileHandles, cellPositionKey)
 		}
-		g.cacheFileMutex.Unlock()
 	}
 
 	importDuration := time.Since(importStartTime)
@@ -390,7 +354,8 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 	switch objectType {
 	case ownOsm.OsmObjNode:
 		nodeToWays := map[uint64][]osm.WayID{}
-		for _, way := range g.cacheRawEncodedWays[cell] {
+		ways := g.cacheRawEncodedWays[cell]
+		for _, way := range ways {
 			for _, nodeId := range way.GetNodes().NodeIDs() {
 				nodeToWays[uint64(nodeId)] = append(nodeToWays[uint64(nodeId)], osm.WayID(way.GetID()))
 			}
@@ -473,7 +438,6 @@ func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeat
 }
 
 func (g *GridIndexWriter) writeOsmObjectToCellCache(cell common.CellIndex, encodedFeature feature.Feature) error {
-	g.cacheRawEncodedFeatureMutex.Lock()
 	switch featureObj := encodedFeature.(type) {
 	case feature.NodeFeature:
 		g.cacheRawEncodedNodes[cell] = append(g.cacheRawEncodedNodes[cell], featureObj)
@@ -482,7 +446,6 @@ func (g *GridIndexWriter) writeOsmObjectToCellCache(cell common.CellIndex, encod
 	case feature.RelationFeature:
 		g.cacheRawEncodedRelations[cell] = append(g.cacheRawEncodedRelations[cell], featureObj)
 	}
-	g.cacheRawEncodedFeatureMutex.Unlock()
 
 	return nil
 }
@@ -512,7 +475,7 @@ func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType ownOsm.Os
 	if _, err := os.Stat(cellFileName); err == nil {
 		// Cell file does exist -> open it
 		sigolo.Tracef("Cell file %s already exist but is not cached, I'll open it", cellFileName)
-		file, err = os.OpenFile(cellFileName, os.O_RDWR, 0666)
+		file, err = os.OpenFile(cellFileName, os.O_WRONLY, 0644)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
 		}
@@ -539,16 +502,13 @@ func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType ownOsm.Os
 	}
 
 	if !hasWriterForCell {
-		g.cacheFileWriters[cellPositionKey] = &[3]*bufio.Writer{}
-		g.cacheFileHandles[cellPositionKey] = &[3]*os.File{}
+		g.cacheFileWriters[cellPositionKey] = &[3]io.Writer{}
 		writers = g.cacheFileWriters[cellPositionKey]
 	}
 
 	writer := bufio.NewWriter(file)
 	writers[writersIndex] = writer
-
-	openFileHandleForThisCell := g.cacheFileHandles[cellPositionKey]
-	openFileHandleForThisCell[writersIndex] = file
+	g.cacheFileWriterFiles[writer] = file
 
 	g.cacheFileMutexes[writer] = &sync.Mutex{}
 
@@ -653,7 +613,7 @@ func (g *GridIndexWriter) writeNodeData(encodedFeature feature.NodeFeature, f io
 		pos += 8
 	}
 
-	return g.writeData(encodedFeature, data, f)
+	return g.writeData(encodedFeature, data[0:byteCount], f)
 }
 
 func (g *GridIndexWriter) writeWayData(encodedFeature feature.WayFeature, f io.Writer) error {
@@ -741,7 +701,7 @@ func (g *GridIndexWriter) writeWayData(encodedFeature feature.WayFeature, f io.W
 		pos += 8
 	}
 
-	return g.writeData(encodedFeature, data, f)
+	return g.writeData(encodedFeature, data[0:byteCount], f)
 }
 
 func (g *GridIndexWriter) writeRelationData(encodedFeature feature.RelationFeature, f io.Writer) error {
@@ -849,7 +809,7 @@ func (g *GridIndexWriter) writeRelationData(encodedFeature feature.RelationFeatu
 		pos += 8
 	}
 
-	return g.writeData(encodedFeature, data, f)
+	return g.writeData(encodedFeature, data[0:byteCount], f)
 }
 
 func (g *GridIndexWriter) writeData(encodedFeature feature.Feature, data []byte, f io.Writer) error {

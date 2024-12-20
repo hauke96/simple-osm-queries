@@ -38,7 +38,7 @@ func NewOsmReader() *OsmReader {
 }
 
 func (r *OsmReader) Read(filename string, handlers ...OsmDataHandler) error {
-	reader, err := os.Open(filename)
+	reader, err := os.OpenFile(filename, os.O_RDONLY, 0644)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to open OSM input file file %s", filename)
 	}

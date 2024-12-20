@@ -34,9 +34,12 @@ type TemporaryFeatureImporter struct {
 	repository             *TemporaryFeatureRepository
 	tagIndex               *index.TagIndex
 	tagIndexTempValueArray []int
-	nodeWriter             map[common.CellExtent]*bufio.Writer
-	wayWriter              map[common.CellExtent]*bufio.Writer
-	relationWriter         *bufio.Writer
+	nodeWriter             map[common.CellExtent]io.Writer
+	nodeFiles              map[common.CellExtent]*os.File
+	wayWriter              map[common.CellExtent]io.Writer
+	wayFiles               map[common.CellExtent]*os.File
+	relationWriter         io.Writer
+	relationFile           *os.File
 	cellExtents            []common.CellExtent
 	cellWidth              float64
 	cellHeight             float64
@@ -47,8 +50,10 @@ func NewTemporaryFeatureImporter(repository *TemporaryFeatureRepository, tagInde
 		repository:             repository,
 		tagIndex:               tagIndex,
 		tagIndexTempValueArray: tagIndex.NewTempEncodedValueArray(),
-		nodeWriter:             map[common.CellExtent]*bufio.Writer{},
-		wayWriter:              map[common.CellExtent]*bufio.Writer{},
+		nodeWriter:             map[common.CellExtent]io.Writer{},
+		nodeFiles:              map[common.CellExtent]*os.File{},
+		wayWriter:              map[common.CellExtent]io.Writer{},
+		wayFiles:               map[common.CellExtent]*os.File{},
 		cellExtents:            cellExtents,
 		cellWidth:              cellWidth,
 		cellHeight:             cellHeight,
@@ -66,31 +71,34 @@ func (i *TemporaryFeatureImporter) Init() error {
 	}
 
 	for _, cellExtent := range i.cellExtents {
-		nodeWriter, err := getFileWriterForExtent(i.repository.BaseFolder, ownOsm.OsmObjNode.String(), cellExtent)
+		file, nodeWriter, err := getFileWriterForExtent(i.repository.BaseFolder, ownOsm.OsmObjNode.String(), cellExtent)
 		if err != nil {
 			return err
 		}
 		i.nodeWriter[cellExtent] = nodeWriter
+		i.nodeFiles[cellExtent] = file
 
-		wayWriter, err := getFileWriterForExtent(i.repository.BaseFolder, ownOsm.OsmObjWay.String(), cellExtent)
+		file, wayWriter, err := getFileWriterForExtent(i.repository.BaseFolder, ownOsm.OsmObjWay.String(), cellExtent)
 		if err != nil {
 			return err
 		}
 		i.wayWriter[cellExtent] = wayWriter
+		i.wayFiles[cellExtent] = file
 	}
 
 	cellFileName := fmt.Sprintf("%s/%s.tmpcell", i.repository.BaseFolder, ownOsm.OsmObjRelation.String())
-	relationWriter, err := getFileWriter(i.repository.BaseFolder, cellFileName)
+	file, relationWriter, err := getFileWriter(i.repository.BaseFolder, cellFileName)
 	if err != nil {
 		return err
 	}
 	i.relationWriter = relationWriter
+	i.relationFile = file
 
 	return nil
 }
 
 func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
-	var writer *bufio.Writer
+	var writer io.Writer
 	for _, cellExtent := range i.cellExtents {
 		if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
 			writer = i.nodeWriter[cellExtent]
@@ -150,23 +158,24 @@ func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error 
 }
 
 func (i *TemporaryFeatureImporter) Done() error {
-	for _, nodeWriter := range i.nodeWriter {
-		err := nodeWriter.Flush()
+	var err error
+	for _, file := range i.nodeFiles {
+		err = file.Close()
 		if err != nil {
-			return errors.Wrap(err, "Error closing node writer")
+			return errors.Wrapf(err, "Error closing node file %s", file.Name())
 		}
 	}
 
-	for _, wayWriter := range i.wayWriter {
-		err := wayWriter.Flush()
+	for _, file := range i.wayFiles {
+		err = file.Close()
 		if err != nil {
-			return errors.Wrap(err, "Error closing way writer")
+			return errors.Wrapf(err, "Error closing way file %s", file.Name())
 		}
 	}
 
-	err := i.relationWriter.Flush()
+	err = i.relationFile.Close()
 	if err != nil {
-		return errors.Wrap(err, "Error closing relation writer")
+		return errors.Wrapf(err, "Error closing relation file %s", i.relationFile.Name())
 	}
 
 	return nil
@@ -255,7 +264,7 @@ func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []byte, v
 		pos += 3
 	}
 
-	_, err := f.Write(data)
+	_, err := f.Write(data[0:byteCount])
 	return err
 }
 
@@ -333,7 +342,7 @@ func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, value
 		pos += 16
 	}
 
-	return data
+	return data[0:byteCount]
 }
 
 func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys []byte, values []int, nodeIds []osm.NodeID, wayIds []osm.WayID, childRelationIds []osm.RelationID, f io.Writer) error {
@@ -424,7 +433,7 @@ func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys [
 		pos += 8
 	}
 
-	_, err := f.Write(data)
+	_, err := f.Write(data[0:byteCount])
 	return err
 }
 
@@ -453,7 +462,7 @@ func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan featur
 	}
 
 	cellFileName := fmt.Sprintf("%s/%s.tmpcell", r.BaseFolder, ownOsm.OsmObjRelation.String())
-	cellFile, err = os.OpenFile(cellFileName, os.O_RDONLY, 0666)
+	cellFile, err = os.OpenFile(cellFileName, os.O_RDONLY, 0644)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to open tmp relation-feature cell %s", cellFile.Name())
 	}
@@ -683,10 +692,10 @@ func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan featu
 
 func getFileForExtent(cellFolderName string, filename string, cellExtent common.CellExtent) (*os.File, error) {
 	cellFileName := getFilenameForExtent(cellFolderName, filename, cellExtent)
-	return os.OpenFile(cellFileName, os.O_RDONLY, 0666)
+	return os.OpenFile(cellFileName, os.O_RDONLY, 0644)
 }
 
-func getFileWriterForExtent(cellFolderName string, filename string, cellExtent common.CellExtent) (*bufio.Writer, error) {
+func getFileWriterForExtent(cellFolderName string, filename string, cellExtent common.CellExtent) (*os.File, io.Writer, error) {
 	cellFileName := getFilenameForExtent(cellFolderName, filename, cellExtent)
 	return getFileWriter(cellFolderName, cellFileName)
 }
@@ -695,22 +704,22 @@ func getFilenameForExtent(cellFolderName string, filename string, cellExtent com
 	return fmt.Sprintf("%s/%s_%d-%d_%d-%d.tmpcell", cellFolderName, filename, cellExtent.LowerLeftCell().X(), cellExtent.LowerLeftCell().Y(), cellExtent.UpperRightCell().X(), cellExtent.UpperRightCell().Y())
 }
 
-func getFileWriter(cellFolderName string, cellFileName string) (*bufio.Writer, error) {
-	file, err := openFile(cellFolderName, cellFileName)
+func getFileWriter(cellFolderName string, cellFileName string) (*os.File, io.Writer, error) {
+	file, err := openFile(cellFolderName, cellFileName, os.O_WRONLY)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return bufio.NewWriter(file), nil
+	return file, bufio.NewWriter(file), nil
 }
 
-func openFile(cellFolderName string, cellFileName string) (*os.File, error) {
+func openFile(cellFolderName string, cellFileName string, fileFlag int) (*os.File, error) {
 	var file *os.File
 
 	if _, err := os.Stat(cellFileName); err == nil {
 		// Cell file does exist -> open it
 		sigolo.Tracef("Cell file %s already exist but is not cached, I'll open it", cellFileName)
-		file, err = os.OpenFile(cellFileName, os.O_RDWR, 0666)
+		file, err = os.OpenFile(cellFileName, fileFlag, 0644)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to open cell file %s", cellFileName)
 		}
