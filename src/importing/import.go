@@ -30,6 +30,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	//
 	// 1. Create tag index
 	//
+	sigolo.Info("Create tag-index")
 	currentStepStartTime := time.Now()
 
 	tagIndexCreator := index.NewTagIndexCreator()
@@ -56,6 +57,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	//
 	// 2. Determine sub-extents for temporary features
 	//
+	sigolo.Info("Determine sub-extents for temporary features")
 	cellToNodeCount := osmDensityAggregator.CellToNodeCount
 	inputDataCellExtent := osmDensityAggregator.InputDataCellExtent
 
@@ -87,6 +89,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		}
 		subExtents = append(subExtents, *extent)
 	}
+	sigolo.Debugf("Found %d sub-extents", len(subExtents))
 
 	// TODO Make the GeoJSON creation configurable
 	featureCollection := geojson.NewFeatureCollection()
@@ -107,6 +110,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	//
 	// 3. Write temp features
 	//
+	sigolo.Info("Write temporary features")
 	currentStepStartTime = time.Now()
 
 	tmpFeatureRepo := NewTemporaryFeatureRepository(cellWidth, cellHeight, "import-temp-cell")
@@ -124,6 +128,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	//
 	// 4. Read temp features and write them into cells
 	//
+	sigolo.Info("Read temp features and write them as normal features into cells")
 	currentStepStartTime = time.Now()
 
 	sigolo.Debugf("Remove the grid-index base folder %s", baseFolder)
