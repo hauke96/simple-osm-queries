@@ -5,6 +5,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/hauke96/sigolo/v2"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"soq/importing"
 	"soq/index"
@@ -57,8 +58,6 @@ func main() {
 		},
 	)
 
-	//time.Sleep(10 * time.Second)
-
 	if strings.ToLower(cli.Logging) == "debug" {
 		sigolo.SetDefaultLogLevel(sigolo.LOG_DEBUG)
 	} else if strings.ToLower(cli.Logging) == "trace" {
@@ -77,6 +76,7 @@ func main() {
 		f, err := os.Create("profiling.prof")
 		sigolo.FatalCheck(err)
 
+		runtime.SetCPUProfileRate(1000)
 		err = pprof.StartCPUProfile(f)
 		sigolo.FatalCheck(err)
 		defer pprof.StopCPUProfile()
