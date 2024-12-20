@@ -582,15 +582,15 @@ func (g *GridIndexReader) readNodeToWayMappingFromCellData(cellX int, cellY int)
 			Read general information of the feature
 		*/
 		osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+8:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+12:]))
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+8:]))
+		numValues := int(binary.LittleEndian.Uint16(data[pos+10:]))
 		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
-		numNodes := int(binary.LittleEndian.Uint16(data[pos+16:]))
+		numNodes := int(binary.LittleEndian.Uint16(data[pos+12:]))
 		nodeBytes := numNodes * 16
-		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+18:]))
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+14:]))
 		relationIdBytes := numRelationIds * 8
 
-		headerBytesCount := 8 + 4 + 4 + 2 + 2
+		headerBytesCount := 8 + 2 + 2 + 2 + 2
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
 
@@ -648,16 +648,16 @@ func (g *GridIndexReader) readObjectsToRelationMappingFromCellData(cellX int, ce
 			Read general information of the feature
 		*/
 		relationId := osm.RelationID(binary.LittleEndian.Uint64(data[pos+0:]))
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint32(data[pos+24:]))
-		numValues := int(binary.LittleEndian.Uint32(data[pos+28:]))
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+24:]))
+		numValues := int(binary.LittleEndian.Uint16(data[pos+16:]))
 		encodedValuesBytes := numValues * 3 // Multiplication since each value is an int with 3 bytes
-		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+32:]))
-		numWayIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
-		numChildRelationIds := int(binary.LittleEndian.Uint16(data[pos+36:]))
-		numParentRelationIds := int(binary.LittleEndian.Uint16(data[pos+38:]))
+		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+28:]))
+		numWayIds := int(binary.LittleEndian.Uint16(data[pos+30:]))
+		numChildRelationIds := int(binary.LittleEndian.Uint16(data[pos+32:]))
+		numParentRelationIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
 		parentRelationBytes := numParentRelationIds * 8
 
-		headerBytesCount := 8 + 16 + 4 + 4 + 2 + 2 + 2 + 2 // = 40
+		headerBytesCount := 8 + 16 + 2 + 2 + 2 + 2 + 2 + 2 // = 36
 
 		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, relationId, numEncodedKeyBytes, numValues)
 
