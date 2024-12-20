@@ -41,12 +41,14 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		return errors.Wrapf(err, "Error importing OSM data")
 	}
 
+	sigolo.Debugf("Create and save tag-index")
 	tagIndex := tagIndexCreator.CreateTagIndex()
-	tagIndex.BaseFolder = baseFolder // TODO Set it here or pass it into some of the above functions?
+	tagIndex.BaseFolder = indexBaseFolder // TODO Set it here or pass it into some of the above functions?
 	err = tagIndex.SaveToFile(index.TagIndexFilename)
 	if err != nil {
 		return errors.Wrapf(err, "Error writing tag index file to %s", index.TagIndexFilename)
 	}
+	sigolo.Debugf("Tag-index creation done and stored to disk")
 
 	duration := time.Since(currentStepStartTime)
 	sigolo.Infof("Imported OSM data into tag index in %s", duration)
