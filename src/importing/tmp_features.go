@@ -109,13 +109,13 @@ func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
 		return errors.Errorf("Could not find cell extent and writer for node %d", node.ID)
 	}
 
-	encodedKeys, encodedValues := i.tagIndex.EncodeTags(node.Tags, i.tagIndexTempValueArray)
+	encodedKeys, encodedValues := i.tagIndex.EncodeTags(node.Tags)
 	point := node.Point()
 	return i.repository.writeNodeData(node.ID, encodedKeys, encodedValues, &point, writer)
 }
 
 func (i *TemporaryFeatureImporter) HandleWay(way *osm.Way) error {
-	encodedKeys, encodedValues := i.tagIndex.EncodeTags(way.Tags, i.tagIndexTempValueArray)
+	encodedKeys, encodedValues := i.tagIndex.EncodeTags(way.Tags)
 	data := i.repository.getWayData(way.ID, encodedKeys, encodedValues, way.Nodes)
 
 	for _, cellExtent := range i.cellExtents {
@@ -153,7 +153,7 @@ func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error 
 		}
 	}
 
-	encodedKeys, encodedValues := i.tagIndex.EncodeTags(relation.Tags, i.tagIndexTempValueArray)
+	encodedKeys, encodedValues := i.tagIndex.EncodeTags(relation.Tags)
 	return i.repository.writeRelationData(relation.ID, encodedKeys, encodedValues, nodeIds, wayIds, childRelationIds, i.relationWriter)
 }
 
@@ -206,102 +206,78 @@ func (r *TemporaryFeatureRepository) Clear() error {
 	return nil
 }
 
-func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []byte, values []int, point *orb.Point, f io.Writer) error {
+func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []int, values []int, point *orb.Point, f io.Writer) error {
 	/*
 		Entry format:
-		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
-		Names: | osmId | lon | lat | num. keys | num. values |   encodedKeys   |   encodedValues   |
-		Bytes: |   8   |  4  |  4  |     2     |      2      | <num. keys> / 8 | <num. values> * 3 |
+		Names: | osmId | lon | lat | num. tags |          encodedTags          |
+		Bytes: |   8   |  4  |  4  |     2     | key (32 bit) | value (32 bit) |
 
-		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
-		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
-		is an int-array, therefore, we need the multiplication with 4.
+		Tags are stored as a list of "num. tags" many key-value-pairs.
 	*/
+
+	if len(keys) != len(values) {
+		return errors.Errorf("Number of keys and values for node %d different: keys %d, values %d", id, len(keys), len(values))
+	}
+	numberOfTags := len(keys)
 
 	// The number of key-bins to store is determined by the bin with the highest index that is not empty (i.e. all 0s).
 	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
 	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
 	// by a factor of ten!
-	numKeys := 0
-	for i := 0; i < len(keys); i++ {
-		if keys[i] != 0 {
-			numKeys = i + 1
-		}
-	}
-
-	encodedKeyBytes := numKeys           // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(values) * 3 // Int array and int = 4 bytes
-
-	headerBytesCount := 8 + 4 + 4 + 2 + 2 // = 20
+	headerBytesCount := 8 + 4 + 4 + 2 // = 18
 	byteCount := headerBytesCount
-	byteCount += encodedKeyBytes
-	byteCount += encodedValueBytes
+	byteCount += len(keys) * 4
+	byteCount += len(values) * 4
 
 	ensureDataSliceSize(byteCount)
 
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
 	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(point.Lon())))
 	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(point.Lat())))
-	binary.LittleEndian.PutUint16(data[16:], uint16(numKeys))
-	binary.LittleEndian.PutUint16(data[18:], uint16(len(values)))
+	binary.LittleEndian.PutUint16(data[16:], uint16(numberOfTags))
 
 	pos := headerBytesCount
 
 	/*
-		Write keys
+		Write tags
 	*/
-	copy(data[pos:], keys[0:numKeys])
-	pos += numKeys
-
-	/*
-		Write values
-	*/
-	for _, v := range values {
-		data[pos] = byte(v)
-		data[pos+1] = byte(v >> 8)
-		data[pos+2] = byte(v >> 16)
-		pos += 3
+	for i := 0; i < numberOfTags; i++ {
+		binary.LittleEndian.PutUint32(data[pos:], uint32(keys[i]))
+		pos += 4
+		binary.LittleEndian.PutUint32(data[pos:], uint32(values[i]))
+		pos += 4
 	}
 
 	_, err := f.Write(data[0:byteCount])
 	return err
 }
 
-func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, values []int, nodes osm.WayNodes) []byte {
+func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []int, values []int, nodes osm.WayNodes) []byte {
 	/*
 		Entry format:
-		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
-		Names: | osmId | num. keys | num. values | num. nodes |   encodedKeys   |   encodedValues   |       nodes       |
-		Bytes: |   8   |     2     |      2      |      2     | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 16 |
+		Names: | osmId | num. keys | num. tags |          encodedTags          |       nodes       |
+		Bytes: |   8   |     2     |      2    | key (32 bit) | value (32 bit) | <num. nodes> * 16 |
 
-		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
-		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
-		is an int-array, therefore, we need the multiplication with 4.
+		Tags are stored as a list of "num. tags" many key-value-pairs.
 
 		The nodes section contains all nodes, not only the ones within this cell. This enables geometric checks, even
 		in cases where no way-node is within this cell. The nodes are stores in the following way:
 		<id (64-bit)><lon (32-bit)><lat (23-bit)>
 	*/
-	// The number of key-bins to store is determined by the bin with the highest index that is not empty (i.e. all 0s).
-	// If only the first bin contains some 1s (i.e. keys that are set on the feature) and the next 100 bins are empty,
-	// then there's no reason to store those empty bins. This reduced the cell-file size for hamburg-latest (45 MB PBF)
-	// by a factor of ten!
-	numEncodedKeyBytes := 0
-	for i := 0; i < len(keys); i++ {
-		if keys[i] != 0 {
-			numEncodedKeyBytes = i + 1
-		}
+
+	if len(keys) != len(values) {
+		return nil
 	}
+	numberOfTags := len(keys)
 
-	numEncodedValueBytes := len(values) * 3 // Int array and int = 4 bytes
-	nodeIdBytes := len(nodes) * 16          // Each ID is a 64-bit int + 2*4 bytes for lat/lon
+	nodeIdBytes := len(nodes) * 16 // Each ID is a 64-bit int + 2*4 bytes for lat/lon
 
-	headerByteCount := 8 + 2 + 2 + 2 // = 14
+	headerByteCount := 8 + 2 + 2 // = 12
 	byteCount := headerByteCount
-	byteCount += numEncodedKeyBytes
-	byteCount += numEncodedValueBytes
+	byteCount += numberOfTags * 4
+	byteCount += numberOfTags * 4
 	byteCount += nodeIdBytes
 
 	ensureDataSliceSize(byteCount)
@@ -310,26 +286,19 @@ func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, value
 		Write header
 	*/
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
-	binary.LittleEndian.PutUint16(data[8:], uint16(numEncodedKeyBytes))
-	binary.LittleEndian.PutUint16(data[10:], uint16(len(values)))
-	binary.LittleEndian.PutUint16(data[12:], uint16(len(nodes)))
+	binary.LittleEndian.PutUint16(data[8:], uint16(numberOfTags))
+	binary.LittleEndian.PutUint16(data[10:], uint16(len(nodes)))
 
 	pos := headerByteCount
 
 	/*
-		Write keys
+		Write tags
 	*/
-	copy(data[pos:], keys[0:numEncodedKeyBytes])
-	pos += numEncodedKeyBytes
-
-	/*
-		Write value
-	*/
-	for _, v := range values {
-		data[pos] = byte(v)
-		data[pos+1] = byte(v >> 8)
-		data[pos+2] = byte(v >> 16)
-		pos += 3
+	for i := 0; i < numberOfTags; i++ {
+		binary.LittleEndian.PutUint32(data[pos:], uint32(keys[i]))
+		pos += 4
+		binary.LittleEndian.PutUint32(data[pos:], uint32(values[i]))
+		pos += 4
 	}
 
 	/*
@@ -345,39 +314,32 @@ func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, value
 	return data[0:byteCount]
 }
 
-func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys []byte, values []int, nodeIds []osm.NodeID, wayIds []osm.WayID, childRelationIds []osm.RelationID, f io.Writer) error {
+func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys []int, values []int, nodeIds []osm.NodeID, wayIds []osm.WayID, childRelationIds []osm.RelationID, f io.Writer) error {
 	/*
 		Entry format:
-		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
 
-		Names: | osmId | num. keys | num. values | num. nodes | num. ways | num. child rels |   encodedKeys   |   encodedValues   |     node IDs     |     way IDs     |    child rel. IDs     |
-		Bytes: |   8   |     2     |      2      |      2     |     2     |        2        | <num. keys> / 8 | <num. values> * 3 | <num. nodes> * 8 | <num. ways> * 8 | <num. child rels> * 8 |
+		Names: | osmId | num. keys | num. tags |  num. ways | num. child rels |          encodedTags          |     node IDs      |     way IDs     |    child rel. IDs     |
+		Bytes: |   8   |     2     |      2    |      2     |        2        | key (32 bit) | value (32 bit) |  <num. nodes> * 8 | <num. ways> * 8 | <num. child rels> * 8 |
 
-		The encodedKeys is a bit-string (each key 1 bit), that why the division by 8 happens. The stored value is the
-		number of bytes in the keys array of the feature (i.e. "len(encodedFeature.GetKeys())"). The encodedValue part, however,
-		is an int-array, therefore, we need the multiplication with 4.
+		Tags are stored as a list of "num. tags" many key-value-pairs.
 
 		The "bbox" field are 4 32-bit floats for the min-lon, min-lat, max-lon and max-lat values.
 
 		// TODO store real geometry. Including geometry of sub-relations?
 	*/
-	numKeys := 0
-	for i := 0; i < len(keys); i++ {
-		if keys[i] != 0 {
-			numKeys = i + 1
-		}
+	if len(keys) != len(values) {
+		return errors.Errorf("Number of keys and values for node %d different: keys %d, values %d", id, len(keys), len(values))
 	}
+	numberOfTags := len(keys)
 
-	encodedKeyBytes := numKeys                        // Is already a byte-array -> no division by 8 needed
-	encodedValueBytes := len(values) * 3              // Int array and int = 4 bytes
 	nodeIdBytes := len(nodeIds) * 8                   // IDs are all 64-bit integers
 	wayIdBytes := len(wayIds) * 8                     // IDs are all 64-bit integers
 	childRelationIdBytes := len(childRelationIds) * 8 // IDs are all 64-bit integers
 
 	headerBytesCount := 8 + 2 + 2 + 2 + 2 + 2
 	byteCount := headerBytesCount
-	byteCount += encodedKeyBytes
-	byteCount += encodedValueBytes
+	byteCount += numberOfTags * 4
+	byteCount += numberOfTags * 4
 	byteCount += nodeIdBytes
 	byteCount += wayIdBytes
 	byteCount += childRelationIdBytes
@@ -385,28 +347,21 @@ func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys [
 	ensureDataSliceSize(byteCount)
 
 	binary.LittleEndian.PutUint64(data[0:], uint64(id))
-	binary.LittleEndian.PutUint16(data[8:], uint16(numKeys))
-	binary.LittleEndian.PutUint16(data[10:], uint16(len(values)))
-	binary.LittleEndian.PutUint16(data[12:], uint16(len(nodeIds)))
-	binary.LittleEndian.PutUint16(data[14:], uint16(len(wayIds)))
-	binary.LittleEndian.PutUint16(data[16:], uint16(len(childRelationIds)))
+	binary.LittleEndian.PutUint16(data[8:], uint16(numberOfTags))
+	binary.LittleEndian.PutUint16(data[10:], uint16(len(nodeIds)))
+	binary.LittleEndian.PutUint16(data[12:], uint16(len(wayIds)))
+	binary.LittleEndian.PutUint16(data[14:], uint16(len(childRelationIds)))
 
 	pos := headerBytesCount
 
 	/*
-		Write keys
+		Write tags
 	*/
-	copy(data[pos:], keys[0:numKeys])
-	pos += numKeys
-
-	/*
-		Write values
-	*/
-	for _, v := range values {
-		data[pos] = byte(v)
-		data[pos+1] = byte(v >> 8)
-		data[pos+2] = byte(v >> 16)
-		pos += 3
+	for i := 0; i < numberOfTags; i++ {
+		binary.LittleEndian.PutUint32(data[pos:], uint32(keys[i]))
+		pos += 4
+		binary.LittleEndian.PutUint32(data[pos:], uint32(values[i]))
+		pos += 4
 	}
 
 	/*
@@ -488,33 +443,29 @@ func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.F
 		osmId := reader.Uint64(pos + 0)
 		lon := reader.Float32(pos + 8)
 		lat := reader.Float32(pos + 12)
-		numEncodedKeyBytes := reader.IntFromUint16(pos + 16)
-		numValues := reader.IntFromUint16(pos + 18)
+		numberOfTags := reader.IntFromUint16(pos + 16)
 
-		headerBytesCount := 8 + 4 + 4 + 2 + 2 // = 20
+		headerBytesCount := 8 + 4 + 4 + 2 // = 18
 
 		pos += int64(headerBytesCount)
 
 		if !extent.ContainsLonLat(float64(lon), float64(lat), r.CellWidth, r.CellHeight) {
-			pos += int64(numEncodedKeyBytes)
-			pos += int64(numValues * 3)
+			pos += int64(numberOfTags * 4) // keys
+			pos += int64(numberOfTags * 4) // values
 			continue
 		}
 
 		/*
-			Read keys
+			Read tags
 		*/
-		encodedKeys := make([]byte, numEncodedKeyBytes)
-		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], reader.Read(pos, len(encodedKeys)))
-		pos += int64(numEncodedKeyBytes)
+		encodedKeys := make([]int, numberOfTags)
+		encodedValues := make([]int, numberOfTags)
 
-		/*
-			Read values
-		*/
-		for i := 0; i < numValues; i++ {
-			encodedValues[i] = reader.IntFromUint24(pos)
-			pos += 3
+		for i := 0; i < numberOfTags; i++ {
+			encodedKeys[i] = reader.IntFromUint32(pos)
+			pos += 4
+			encodedValues[i] = reader.IntFromUint32(pos)
+			pos += 4
 		}
 
 		/*
@@ -541,28 +492,24 @@ func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.Fe
 			Read header fields
 		*/
 		osmId := reader.Uint64(pos + 0)
-		numEncodedKeyBytes := reader.IntFromUint16(pos + 8)
-		numValues := reader.IntFromUint16(pos + 10)
-		numNodes := reader.IntFromUint16(pos + 12)
+		numberOfTags := reader.IntFromUint16(pos + 8)
+		numNodes := reader.IntFromUint16(pos + 10)
 
-		headerBytesCount := 8 + 2 + 2 + 2 // = 14
+		headerBytesCount := 8 + 2 + 2 // = 12
 
 		pos += int64(headerBytesCount)
 
 		/*
-			Read keys
+			Read tags
 		*/
-		encodedKeys := make([]byte, numEncodedKeyBytes)
-		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], reader.Read(pos, len(encodedKeys)))
-		pos += int64(numEncodedKeyBytes)
+		encodedKeys := make([]int, numberOfTags)
+		encodedValues := make([]int, numberOfTags)
 
-		/*
-			Read values
-		*/
-		for i := 0; i < numValues; i++ {
-			encodedValues[i] = reader.IntFromUint24(pos)
-			pos += 3
+		for i := 0; i < numberOfTags; i++ {
+			encodedKeys[i] = reader.IntFromUint32(pos)
+			pos += 4
+			encodedValues[i] = reader.IntFromUint32(pos)
+			pos += 4
 		}
 
 		/*
@@ -619,30 +566,26 @@ func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan featu
 			Read header fields
 		*/
 		osmId := reader.Uint64(pos + 0)
-		numEncodedKeyBytes := reader.IntFromUint16(pos + 8)
-		numValues := reader.IntFromUint16(pos + 10)
-		numNodeIds := reader.IntFromUint16(pos + 12)
-		numWayIds := reader.IntFromUint16(pos + 14)
-		numChildRelationIds := reader.IntFromUint16(pos + 16)
+		numberOfTags := reader.IntFromUint16(pos + 8)
+		numNodeIds := reader.IntFromUint16(pos + 10)
+		numWayIds := reader.IntFromUint16(pos + 12)
+		numChildRelationIds := reader.IntFromUint16(pos + 14)
 
-		headerBytesCount := 8 + 2 + 2 + 2 + 2 + 2 // = 18
+		headerBytesCount := 8 + 2 + 2 + 2 + 2 // = 16
 
 		pos += int64(headerBytesCount)
 
 		/*
-			Read keys
+			Read tags
 		*/
-		encodedKeys := make([]byte, numEncodedKeyBytes)
-		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], reader.Read(pos, len(encodedKeys)))
-		pos += int64(numEncodedKeyBytes)
+		encodedKeys := make([]int, numberOfTags)
+		encodedValues := make([]int, numberOfTags)
 
-		/*
-			Read values
-		*/
-		for i := 0; i < numValues; i++ {
-			encodedValues[i] = reader.IntFromUint24(pos)
-			pos += 3
+		for i := 0; i < numberOfTags; i++ {
+			encodedKeys[i] = reader.IntFromUint32(pos)
+			pos += 4
+			encodedValues[i] = reader.IntFromUint32(pos)
+			pos += 4
 		}
 
 		/*

@@ -9,7 +9,7 @@ type Feature interface {
 	// TODO Refactor these functions, only keep those that are needed
 	GetID() uint64
 	GetGeometry() orb.Geometry
-	GetKeys() []byte
+	GetKeys() []int
 	GetValues() []int
 
 	HasKey(keyIndex int) bool
