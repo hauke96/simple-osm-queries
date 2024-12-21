@@ -45,3 +45,32 @@ func TestSort_onlyStrings(t *testing.T) {
 	// Assert
 	AssertEqual(t, []string{"a", "b", "bar", "foo"}, output)
 }
+
+func TestSort_alphanumeric(t *testing.T) {
+	// Arrange
+	input := []string{
+		"Reitplatz 1",
+		"Portal 1",
+		"RE1: Büchen => Hamburg",
+		"S1: Airport (Flughafen)/Poppenbüttel <=> Wedel",
+		"S1: Poppenbüttel => Wedel",
+		"Reitroute P1 Haake",
+		"S1: Wedel => Airport (Flughafen)",
+		"RE1: Rostock => Hamburg",
+	}
+
+	// Act
+	output := Sort(input)
+
+	// Assert
+	AssertEqual(t, []string{
+		"Portal 1",
+		"RE1: Büchen => Hamburg",
+		"RE1: Rostock => Hamburg",
+		"Reitplatz 1",
+		"Reitroute P1 Haake",
+		"S1: Airport (Flughafen)/Poppenbüttel <=> Wedel",
+		"S1: Poppenbüttel => Wedel",
+		"S1: Wedel => Airport (Flughafen)",
+	}, output)
+}
