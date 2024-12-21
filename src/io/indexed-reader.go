@@ -34,11 +34,16 @@ func (r *IndexedReader) read(at int64, length int) ([]byte, error) {
 	bufferEnd := r.offsetInFile + r.bufferLength
 	// If requested data is (partially) outside buffer -> refetch data
 	if at+int64(length) >= bufferEnd || at > bufferEnd {
+		// Reset buffer to not contain outdated data
+		for i := 0; i < len(r.buffer); i++ {
+			r.buffer[i] = 0
+		}
+
 		// Actually read data from
 		readBytes, err := r.file.ReadAt(r.buffer, at)
 
 		// Handle errors. EOF-errors are okay, since this only means that the buffer is not full due to an end of the
-		// input, which is not an actual error.
+		//input, which is not an actual error.
 		if err != nil && err != io.EOF {
 			return nil, errors.Wrapf(err, "Error fetching data from reader starting at index %d", at)
 		}
@@ -52,8 +57,7 @@ func (r *IndexedReader) read(at int64, length int) ([]byte, error) {
 		r.bufferLength = int64(readBytes)
 	}
 
-	startInBuffer := at - r.offsetInFile
-	return r.buffer[startInBuffer : startInBuffer+int64(length)], nil
+	return r.buffer[at-r.offsetInFile : at+int64(length)-r.offsetInFile], nil
 }
 
 func (r *IndexedReader) Read(at int64, length int) []byte {
