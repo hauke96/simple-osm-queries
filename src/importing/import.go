@@ -2,7 +2,6 @@ package importing
 
 import (
 	"github.com/hauke96/sigolo/v2"
-	"github.com/paulmach/orb/geojson"
 	"github.com/pkg/errors"
 	"os"
 	"path"
@@ -34,10 +33,13 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	currentStepStartTime := time.Now()
 
 	tagIndexCreator := index.NewTagIndexCreator()
-	osmDensityAggregator := osm.NewOsmDensityAggregator(cellWidth, cellHeight)
+	//osmDensityAggregator := osm.NewOsmDensityAggregator(cellWidth, cellHeight)
+
+	tmpFeatureRepo := NewTemporaryFeatureRepository(cellWidth, cellHeight, "import-temp-cell")
+	temporaryFeatureImporter := NewTemporaryFeatureImporter(tmpFeatureRepo, tagIndexCreator, cellWidth, cellHeight)
 
 	osmReader := osm.NewOsmReader()
-	err := osmReader.Read(inputFile, tagIndexCreator, osmDensityAggregator)
+	err := osmReader.Read(inputFile, tagIndexCreator, temporaryFeatureImporter)
 	if err != nil {
 		return errors.Wrapf(err, "Error importing OSM data")
 	}
@@ -57,73 +59,70 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	//
 	// 2. Determine sub-extents for temporary features
 	//
-	sigolo.Info("Determine sub-extents for temporary features")
-	cellToNodeCount := osmDensityAggregator.CellToNodeCount
-	inputDataCellExtent := osmDensityAggregator.InputDataCellExtent
-
-	var subExtents []common.CellExtent
-
-	cellsToProcessedState := map[common.CellIndex]bool{}
-	for _, cell := range inputDataCellExtent.GetCellIndices() {
-		cellsToProcessedState[cell] = false
-	}
-
-	for {
-		// Import (2024-11-15) for different file sizes:
-		// Hamburg (47 MB): TODO
-		// Niedersachsen (675 MB): 4-5m, 4 GB RAM, 2.9 GB temp cell files, 3.8 GB Index
-		// Germany (4.2 GB): 4h30m, 16 GB RAM, 32 GB temp cell files, 40 GB Index
-
-		// Experience for a ~500 MB PBF file (2024-11-01):
-		//  1_000_000 ~  6 GB RAM / 16 min. / 53 sub-extents
-		//  2_000_000 ~  6 GB RAM / 11 min. / 30 sub-extents
-		//  5_000_000 ~ 10 GB RAM / 6 min. / 15 sub-extents
-		//  6_000_000 ~ 11 GB RAM / 6 min. / 10 sub-extents
-		//  7_500_000 ~ 14 GB RAM / 9 min. / 9 sub-extents
-		// 10_000_000 ~ 13 GB RAM / 6 min. / 7 sub-extents
-		// 20_000_000 ~ 17 GB RAM / 9 min. / 3 sub-extents
-		// TODO Make this parameter configurable
-		extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 10_000_000)
-		if extent == nil {
-			break
-		}
-		subExtents = append(subExtents, *extent)
-	}
-	sigolo.Debugf("Found %d sub-extents", len(subExtents))
-
-	// TODO Make the GeoJSON creation configurable
-	featureCollection := geojson.NewFeatureCollection()
-	for _, subExtent := range subExtents {
-		geoJsonFeature := geojson.NewFeature(subExtent.ToPolygon(cellWidth, cellHeight))
-		featureCollection.Features = append(featureCollection.Features, geoJsonFeature)
-	}
-	geojsonBytes, err := featureCollection.MarshalJSON()
-	if err != nil {
-		sigolo.Warnf("Error marshalling sub-extents to GeoJSON: %+v", err)
-	} else {
-		err = os.WriteFile("./sub-extents.geojson", geojsonBytes, 0644)
-		if err != nil {
-			sigolo.Warnf("Error writing sub-extent GeoJSON file: %+v", err)
-		}
-	}
+	//sigolo.Info("Determine sub-extents for temporary features")
+	//cellToNodeCount := osmDensityAggregator.CellToNodeCount
+	//inputDataCellExtent := osmDensityAggregator.InputDataCellExtent
+	//
+	//var subExtents []common.CellExtent
+	//
+	//cellsToProcessedState := map[common.CellIndex]bool{}
+	//for _, cell := range inputDataCellExtent.GetCellIndices() {
+	//	cellsToProcessedState[cell] = false
+	//}
+	//
+	//for {
+	//	// Import (2024-11-15) for different file sizes:
+	//	// Hamburg (47 MB): TODO
+	//	// Niedersachsen (675 MB): 4-5m, 4 GB RAM, 2.9 GB temp cell files, 3.8 GB Index
+	//	// Germany (4.2 GB): 4h30m, 16 GB RAM, 32 GB temp cell files, 40 GB Index
+	//
+	//	// Experience for a ~500 MB PBF file (2024-11-01):
+	//	//  1_000_000 ~  6 GB RAM / 16 min. / 53 sub-extents
+	//	//  2_000_000 ~  6 GB RAM / 11 min. / 30 sub-extents
+	//	//  5_000_000 ~ 10 GB RAM / 6 min. / 15 sub-extents
+	//	//  6_000_000 ~ 11 GB RAM / 6 min. / 10 sub-extents
+	//	//  7_500_000 ~ 14 GB RAM / 9 min. / 9 sub-extents
+	//	// 10_000_000 ~ 13 GB RAM / 6 min. / 7 sub-extents
+	//	// 20_000_000 ~ 17 GB RAM / 9 min. / 3 sub-extents
+	//	// TODO Make this parameter configurable
+	//	extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 10_000_000)
+	//	if extent == nil {
+	//		break
+	//	}
+	//	subExtents = append(subExtents, *extent)
+	//}
+	//sigolo.Debugf("Found %d sub-extents", len(subExtents))
+	//
+	//// TODO Make the GeoJSON creation configurable
+	//featureCollection := geojson.NewFeatureCollection()
+	//for _, subExtent := range subExtents {
+	//	geoJsonFeature := geojson.NewFeature(subExtent.ToPolygon(cellWidth, cellHeight))
+	//	featureCollection.Features = append(featureCollection.Features, geoJsonFeature)
+	//}
+	//geojsonBytes, err := featureCollection.MarshalJSON()
+	//if err != nil {
+	//	sigolo.Warnf("Error marshalling sub-extents to GeoJSON: %+v", err)
+	//} else {
+	//	err = os.WriteFile("./sub-extents.geojson", geojsonBytes, 0644)
+	//	if err != nil {
+	//		sigolo.Warnf("Error writing sub-extent GeoJSON file: %+v", err)
+	//	}
+	//}
 
 	//
 	// 3. Write temp features
 	//
-	sigolo.Info("Write temporary features")
-	currentStepStartTime = time.Now()
-
-	tmpFeatureRepo := NewTemporaryFeatureRepository(cellWidth, cellHeight, "import-temp-cell")
-	temporaryFeatureImporter := NewTemporaryFeatureImporter(tmpFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
-
-	osmReader = osm.NewOsmReader()
-	err = osmReader.Read(inputFile, temporaryFeatureImporter)
-	if err != nil {
-		return errors.Wrapf(err, "Error importing OSM data")
-	}
-
-	duration = time.Since(currentStepStartTime)
-	sigolo.Infof("Imported OSM data into temp features in %s", duration)
+	//sigolo.Info("Write temporary features")
+	//currentStepStartTime = time.Now()
+	//
+	//osmReader = osm.NewOsmReader()
+	//err = osmReader.Read(inputFile, temporaryFeatureImporter)
+	//if err != nil {
+	//	return errors.Wrapf(err, "Error importing OSM data")
+	//}
+	//
+	//duration = time.Since(currentStepStartTime)
+	//sigolo.Infof("Imported OSM data into temp features in %s", duration)
 
 	//
 	// 4. Read temp features and write them into cells
@@ -137,13 +136,14 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
 	}
 
+	subExtents := temporaryFeatureImporter.GetCellExtents()
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
 	for i, subExtent := range subExtents {
 		currentSubExtentStartTime := time.Now()
 		sigolo.Debugf("=== Process sub-extent %v (%d / %d) ===", subExtent, i+1, len(subExtents))
 
 		tmpFeatureChannel := make(chan feature.Feature, 1000)
-		go tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent) // TODO error handling
+		go tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent, tagIndexCreator) // TODO error handling
 		err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
 		if err != nil {
 			return err

@@ -8,6 +8,13 @@ func GetCellIndexForCoordinate(x float64, y float64, cellWidth float64, cellHeig
 	return CellIndex{int(x / cellWidth), int(y / cellHeight)}
 }
 
+func GetCellExtentForCoordinate(x float64, y float64, cellWidth float64, cellHeight float64, cellWidthOfExtent int) CellExtent {
+	return CellExtent{
+		CellIndex{int(x/cellWidth) / cellWidthOfExtent * cellWidthOfExtent, int(y/cellHeight) / cellWidthOfExtent * cellWidthOfExtent},
+		CellIndex{int(x/cellWidth)/cellWidthOfExtent*cellWidthOfExtent + cellWidthOfExtent, int(y/cellHeight)/cellWidthOfExtent*cellWidthOfExtent + cellWidthOfExtent},
+	}
+}
+
 func (c CellIndex) X() int { return c[0] }
 
 func (c CellIndex) Y() int { return c[1] }

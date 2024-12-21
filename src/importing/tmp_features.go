@@ -32,7 +32,7 @@ func ensureDataSliceSize(byteCount int) {
 
 type TemporaryFeatureImporter struct {
 	repository             *TemporaryFeatureRepository
-	tagIndex               *index.TagIndex
+	tagIndex               *index.TagIndexCreator
 	tagIndexTempValueArray []int
 	nodeWriter             map[common.CellExtent]*bufio.Writer
 	nodeFiles              map[common.CellExtent]*os.File
@@ -45,19 +45,22 @@ type TemporaryFeatureImporter struct {
 	cellHeight             float64
 }
 
-func NewTemporaryFeatureImporter(repository *TemporaryFeatureRepository, tagIndex *index.TagIndex, cellExtents []common.CellExtent, cellWidth float64, cellHeight float64) *TemporaryFeatureImporter {
+func NewTemporaryFeatureImporter(repository *TemporaryFeatureRepository, tagIndex *index.TagIndexCreator, cellWidth float64, cellHeight float64) *TemporaryFeatureImporter {
 	return &TemporaryFeatureImporter{
-		repository:             repository,
-		tagIndex:               tagIndex,
-		tagIndexTempValueArray: tagIndex.NewTempEncodedValueArray(),
-		nodeWriter:             map[common.CellExtent]*bufio.Writer{},
-		nodeFiles:              map[common.CellExtent]*os.File{},
-		wayWriter:              map[common.CellExtent]*bufio.Writer{},
-		wayFiles:               map[common.CellExtent]*os.File{},
-		cellExtents:            cellExtents,
-		cellWidth:              cellWidth,
-		cellHeight:             cellHeight,
+		repository:  repository,
+		tagIndex:    tagIndex,
+		nodeWriter:  map[common.CellExtent]*bufio.Writer{},
+		nodeFiles:   map[common.CellExtent]*os.File{},
+		wayWriter:   map[common.CellExtent]*bufio.Writer{},
+		wayFiles:    map[common.CellExtent]*os.File{},
+		cellExtents: []common.CellExtent{},
+		cellWidth:   cellWidth,
+		cellHeight:  cellHeight,
 	}
+}
+
+func (i *TemporaryFeatureImporter) GetCellExtents() []common.CellExtent {
+	return i.cellExtents
 }
 
 func (i *TemporaryFeatureImporter) Name() string {
@@ -70,21 +73,12 @@ func (i *TemporaryFeatureImporter) Init() error {
 		return err
 	}
 
-	for _, cellExtent := range i.cellExtents {
-		file, nodeWriter, err := getFileWriterForExtent(i.repository.BaseFolder, ownOsm.OsmObjNode.String(), cellExtent)
-		if err != nil {
-			return err
-		}
-		i.nodeWriter[cellExtent] = nodeWriter
-		i.nodeFiles[cellExtent] = file
-
-		file, wayWriter, err := getFileWriterForExtent(i.repository.BaseFolder, ownOsm.OsmObjWay.String(), cellExtent)
-		if err != nil {
-			return err
-		}
-		i.wayWriter[cellExtent] = wayWriter
-		i.wayFiles[cellExtent] = file
-	}
+	//for _, cellExtent := range i.cellExtents {
+	//	err = i.createFileandWriterForExtent(cellExtent)
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
 
 	cellFileName := fmt.Sprintf("%s/%s.tmpcell", i.repository.BaseFolder, ownOsm.OsmObjRelation.String())
 	file, relationWriter, err := getFileWriter(i.repository.BaseFolder, cellFileName)
@@ -98,15 +92,9 @@ func (i *TemporaryFeatureImporter) Init() error {
 }
 
 func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
-	var writer io.Writer
-	for _, cellExtent := range i.cellExtents {
-		if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
-			writer = i.nodeWriter[cellExtent]
-			break
-		}
-	}
-	if writer == nil {
-		return errors.Errorf("Could not find cell extent and writer for node %d", node.ID)
+	writer, err := i.getWriterForCoordinate(node.Lon, node.Lat, ownOsm.OsmObjNode)
+	if err != nil {
+		return err
 	}
 
 	encodedKeys, encodedValues := i.tagIndex.EncodeTags(node.Tags)
@@ -116,18 +104,17 @@ func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
 
 func (i *TemporaryFeatureImporter) HandleWay(way *osm.Way) error {
 	encodedKeys, encodedValues := i.tagIndex.EncodeTags(way.Tags)
-	data := i.repository.getWayData(way.ID, encodedKeys, encodedValues, way.Nodes)
+	wayData := i.repository.getWayData(way.ID, encodedKeys, encodedValues, way.Nodes)
 
-	for _, cellExtent := range i.cellExtents {
-		for _, node := range way.Nodes {
-			if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
-				writer := i.wayWriter[cellExtent]
-				_, err := writer.Write(data)
-				if err != nil {
-					return err
-				}
-				break
-			}
+	for _, node := range way.Nodes {
+		writer, err := i.getWriterForCoordinate(node.Lon, node.Lat, ownOsm.OsmObjWay)
+		if err != nil {
+			return err
+		}
+
+		_, err = writer.Write(wayData)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -155,6 +142,45 @@ func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error 
 
 	encodedKeys, encodedValues := i.tagIndex.EncodeTags(relation.Tags)
 	return i.repository.writeRelationData(relation.ID, encodedKeys, encodedValues, nodeIds, wayIds, childRelationIds, i.relationWriter)
+}
+
+func (i *TemporaryFeatureImporter) getWriterForCoordinate(lon float64, lat float64, objectType ownOsm.OsmObjectType) (io.Writer, error) {
+	extentOfNode := common.GetCellExtentForCoordinate(lon, lat, i.cellWidth, i.cellHeight, 5)
+	found := false
+	for _, extent := range i.cellExtents {
+		if extentOfNode == extent {
+			found = true
+		}
+	}
+	if !found {
+		i.cellExtents = append(i.cellExtents, extentOfNode)
+	}
+
+	var writer io.Writer
+	if objectType == ownOsm.OsmObjNode {
+		writer = i.nodeWriter[extentOfNode]
+	} else if objectType == ownOsm.OsmObjWay {
+		writer = i.wayWriter[extentOfNode]
+	}
+
+	if writer == nil {
+		file, newWriter, err := getFileWriterForExtent(i.repository.BaseFolder, objectType.String(), extentOfNode)
+		if err != nil {
+			return nil, err
+		}
+
+		if objectType == ownOsm.OsmObjNode {
+			i.nodeWriter[extentOfNode] = newWriter
+			i.nodeFiles[extentOfNode] = file
+		} else if objectType == ownOsm.OsmObjWay {
+			i.wayWriter[extentOfNode] = newWriter
+			i.wayFiles[extentOfNode] = file
+		}
+
+		writer = newWriter
+	}
+
+	return writer, nil
 }
 
 func (i *TemporaryFeatureImporter) Done() error {
@@ -243,8 +269,8 @@ func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []int, va
 	// by a factor of ten!
 	headerBytesCount := 8 + 4 + 4 + 2 // = 18
 	byteCount := headerBytesCount
-	byteCount += len(keys) * 4
-	byteCount += len(values) * 4
+	byteCount += numberOfTags * 4
+	byteCount += numberOfTags * 4
 
 	ensureDataSliceSize(byteCount)
 
@@ -352,7 +378,7 @@ func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys [
 	wayIdBytes := len(wayIds) * 8                     // IDs are all 64-bit integers
 	childRelationIdBytes := len(childRelationIds) * 8 // IDs are all 64-bit integers
 
-	headerBytesCount := 8 + 2 + 2 + 2 + 2 + 2
+	headerBytesCount := 8 + 2 + 2 + 2 + 2
 	byteCount := headerBytesCount
 	byteCount += numberOfTags * 4
 	byteCount += numberOfTags * 4
@@ -409,13 +435,13 @@ func (r *TemporaryFeatureRepository) writeRelationData(id osm.RelationID, keys [
 }
 
 // TODO Create own tmp feature object that is only a wrapper for []byte. This makes deserialization faster. Of course such object should contain methods to obtain necessary data (ID, geometry, ...).
-func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan feature.Feature, extent common.CellExtent) error {
+func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan feature.Feature, extent common.CellExtent, tagIndexCreator *index.TagIndexCreator) error {
 	cellFile, err := getFileForExtent(r.BaseFolder, ownOsm.OsmObjNode.String(), extent)
 	if err != nil {
 		return errors.Wrapf(err, "Unable to open tmp node-feature cell %s", cellFile.Name())
 	}
 	cellReader := ownIo.NewIndexReader(cellFile)
-	r.readNodesFromCellData(readFeatureChannel, cellReader, extent)
+	r.readNodesFromCellData(readFeatureChannel, cellReader, extent, tagIndexCreator)
 	err = cellFile.Close()
 	if err != nil {
 		return errors.Wrapf(err, "Unable to close tmp node-feature cell %s", cellFile.Name())
@@ -426,7 +452,7 @@ func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan featur
 		return errors.Wrapf(err, "Unable to open tmp way-feature cell %s", cellFile.Name())
 	}
 	cellReader = ownIo.NewIndexReader(cellFile)
-	r.readWaysFromCellData(readFeatureChannel, cellReader, extent)
+	r.readWaysFromCellData(readFeatureChannel, cellReader, extent, tagIndexCreator)
 	err = cellFile.Close()
 	if err != nil {
 		return errors.Wrapf(err, "Unable to close tmp way-feature cell %s", cellFile.Name())
@@ -438,7 +464,7 @@ func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan featur
 		return errors.Wrapf(err, "Unable to open tmp relation-feature cell %s", cellFile.Name())
 	}
 	cellReader = ownIo.NewIndexReader(cellFile)
-	r.readRelationsFromCellData(readFeatureChannel, cellReader)
+	r.readRelationsFromCellData(readFeatureChannel, cellReader, tagIndexCreator)
 	err = cellFile.Close()
 	if err != nil {
 		return errors.Wrapf(err, "Unable to close tmp relation-feature cell %s", cellFile.Name())
@@ -449,7 +475,7 @@ func (r *TemporaryFeatureRepository) ReadFeatures(readFeatureChannel chan featur
 	return nil
 }
 
-func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.Feature, reader *ownIo.IndexedReader, extent common.CellExtent) {
+func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.Feature, reader *ownIo.IndexedReader, extent common.CellExtent, tagIndexCreator *index.TagIndexCreator) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
 
@@ -480,7 +506,7 @@ func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.F
 		for i := 0; i < numberOfTags; i++ {
 			encodedKeys[i] = reader.IntFromUint32(pos)
 			pos += 4
-			encodedValues[i] = reader.IntFromUint32(pos)
+			encodedValues[i] = tagIndexCreator.MapToSortedValueIndex(encodedKeys[i], reader.IntFromUint32(pos))
 			pos += 4
 		}
 
@@ -500,7 +526,7 @@ func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.F
 	}
 }
 
-func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.Feature, reader *ownIo.IndexedReader, extent common.CellExtent) {
+func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.Feature, reader *ownIo.IndexedReader, extent common.CellExtent, tagIndexCreator *index.TagIndexCreator) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeWayData".
 
@@ -524,7 +550,7 @@ func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.Fe
 		for i := 0; i < numberOfTags; i++ {
 			encodedKeys[i] = reader.IntFromUint32(pos)
 			pos += 4
-			encodedValues[i] = reader.IntFromUint32(pos)
+			encodedValues[i] = tagIndexCreator.MapToSortedValueIndex(encodedKeys[i], reader.IntFromUint32(pos))
 			pos += 4
 		}
 
@@ -574,7 +600,7 @@ func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.Fe
 	}
 }
 
-func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan feature.Feature, reader *ownIo.IndexedReader) {
+func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan feature.Feature, reader *ownIo.IndexedReader, tagIndexCreator *index.TagIndexCreator) {
 	for pos := int64(0); reader.Has(pos); {
 		// See format details (bit position, field sizes, etc.) in function "writeRelationData".
 
@@ -600,7 +626,7 @@ func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan featu
 		for i := 0; i < numberOfTags; i++ {
 			encodedKeys[i] = reader.IntFromUint32(pos)
 			pos += 4
-			encodedValues[i] = reader.IntFromUint32(pos)
+			encodedValues[i] = tagIndexCreator.MapToSortedValueIndex(encodedKeys[i], reader.IntFromUint32(pos))
 			pos += 4
 		}
 

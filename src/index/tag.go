@@ -17,22 +17,24 @@ const TagIndexFilename = "tag-index"
 const NotFound = -1
 
 type TagIndexCreator struct {
-	keyMap          []string         // [key-index] -> key-string
-	keyReverseMap   map[string]int   // Helper map: key-string -> key-index
-	valueMap        [][]string       // [key-index][value-index] -> value-string
-	valueReverseMap []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
+	keyMap           []string         // [key-index] -> key-string
+	keyReverseMap    map[string]int   // Helper map: key-string -> key-index
+	valueMap         [][]string       // [key-index][value-index] -> value-string
+	valueReverseMap  []map[string]int // Helper array from keyIndex to a map from value-string to value-index (the index in the valueMap[key-index]-array)
+	valueSortMapping [][]int          // [key-index][old-value-index] -> Mapping of old value-index (before sorting) to new value-index (after sorting)
 }
 
 func NewTagIndexCreator() *TagIndexCreator {
 	return &TagIndexCreator{
-		keyMap:          []string{},
-		keyReverseMap:   map[string]int{},
-		valueMap:        [][]string{},
-		valueReverseMap: []map[string]int{},
+		keyMap:           []string{},
+		keyReverseMap:    map[string]int{},
+		valueMap:         [][]string{},
+		valueReverseMap:  []map[string]int{},
+		valueSortMapping: [][]int{},
 	}
 }
 
-func (w *TagIndexCreator) Name() string {
+func (t *TagIndexCreator) Name() string {
 	return "TagIndexCreator"
 }
 
@@ -59,11 +61,44 @@ func (t *TagIndexCreator) Done() error {
 	// Make sure the values are sorted so that comparison operators work. We can change the order as we want, because
 	// OSM objects are not yet stored, this happens in a separate index.
 	sigolo.Debug("Sort values for each key")
-	for i, values := range t.valueMap {
-		t.valueMap[i] = common.Sort(values)
+	t.valueSortMapping = make([][]int, len(t.valueMap))
+	for keyIndex, unsortedValues := range t.valueMap {
+		t.valueMap[keyIndex] = common.Sort(unsortedValues)
+		t.valueSortMapping[keyIndex] = make([]int, len(unsortedValues))
+
+		indexMap := make(map[string]int)
+		for i, sortedValue := range t.valueMap[keyIndex] {
+			indexMap[sortedValue] = i
+		}
+
+		for oldValueIndex, unsortedValue := range unsortedValues {
+			t.valueSortMapping[keyIndex][oldValueIndex] = indexMap[unsortedValue]
+			t.valueReverseMap[keyIndex][unsortedValue] = indexMap[unsortedValue]
+		}
 	}
 
 	return nil
+}
+
+// EncodeTags returns the encoded keys and values. The tempEncodedValues array can be reused to enhance performance
+// by not allocating a new array for each call of this function.
+func (t *TagIndexCreator) EncodeTags(tags osm.Tags) ([]int, []int) {
+	numberOfTags := len(tags)
+	if numberOfTags == 0 {
+		return []int{}, []int{}
+	}
+
+	encodedKeys := make([]int, numberOfTags)
+	encodedValues := make([]int, numberOfTags)
+	for pos := 0; pos < numberOfTags; pos++ {
+		keyIndex := t.keyReverseMap[tags[pos].Key]
+		valueIndex := t.valueReverseMap[keyIndex][tags[pos].Value]
+
+		encodedKeys[pos] = keyIndex
+		encodedValues[pos] = valueIndex
+	}
+
+	return encodedKeys, encodedValues
 }
 
 func (t *TagIndexCreator) CreateTagIndex() *TagIndex {
@@ -82,7 +117,7 @@ func (t *TagIndexCreator) addTagsToIndex(tags osm.Tags) {
 			if !containsValue {
 				// Value not yet seen -> Add to value-map
 				t.valueMap[keyIndex] = append(t.valueMap[keyIndex], tag.Value)
-				t.valueReverseMap[keyIndex][tag.Value] = len(t.valueMap) - 1
+				t.valueReverseMap[keyIndex][tag.Value] = len(t.valueMap[keyIndex]) - 1
 			}
 		} else {
 			// Key appeared for the first time -> Create maps and add entry
@@ -95,6 +130,10 @@ func (t *TagIndexCreator) addTagsToIndex(tags osm.Tags) {
 			t.valueReverseMap[keyIndex][tag.Value] = 0
 		}
 	}
+}
+
+func (t *TagIndexCreator) MapToSortedValueIndex(keyIndex int, unsortedValueIndex int) int {
+	return t.valueSortMapping[keyIndex][unsortedValueIndex]
 }
 
 type TagIndex struct {
@@ -244,33 +283,6 @@ func (i *TagIndex) GetValueForKey(key int, value int) string {
 		return ""
 	}
 	return valueMap[value]
-}
-
-// NewTempEncodedValueArray creates a new int array, which is used as temporary storage during the EncodeTags function.
-// Creating this array manually is a performance enhancement, since it can be reused.
-func (i *TagIndex) NewTempEncodedValueArray() []int {
-	return make([]int, len(i.keyMap)+8)
-}
-
-// EncodeTags returns the encoded keys and values. The tempEncodedValues array can be reused to enhance performance
-// by not allocating a new array for each call of this function.
-func (i *TagIndex) EncodeTags(tags osm.Tags) ([]int, []int) {
-	numberOfTags := len(tags)
-	if numberOfTags == 0 {
-		return []int{}, []int{}
-	}
-
-	encodedKeys := make([]int, numberOfTags)
-	encodedValues := make([]int, numberOfTags)
-	for pos := 0; pos < numberOfTags; pos++ {
-		keyIndex := i.keyReverseMap[tags[pos].Key]
-		valueIndex := i.valueReverseMap[keyIndex][tags[pos].Value]
-
-		encodedKeys[pos] = keyIndex
-		encodedValues[pos] = valueIndex
-	}
-
-	return encodedKeys, encodedValues
 }
 
 func (i *TagIndex) SaveToFile(filename string) error {
