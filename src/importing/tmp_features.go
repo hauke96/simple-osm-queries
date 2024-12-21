@@ -106,16 +106,24 @@ func (i *TemporaryFeatureImporter) HandleWay(way *osm.Way) error {
 	encodedKeys, encodedValues := i.tagIndex.EncodeTags(way.Tags)
 	wayData := i.repository.getWayData(way.ID, encodedKeys, encodedValues, way.Nodes)
 
+	usedWriters := make(map[io.Writer]bool)
+
 	for _, node := range way.Nodes {
 		writer, err := i.getWriterForCoordinate(node.Lon, node.Lat, ownOsm.OsmObjWay)
 		if err != nil {
 			return err
 		}
 
+		if usedWriters[writer] {
+			continue
+		}
+
 		_, err = writer.Write(wayData)
 		if err != nil {
 			return err
 		}
+
+		usedWriters[writer] = true
 	}
 
 	return nil
