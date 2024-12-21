@@ -47,8 +47,7 @@ type GridIndexWriter struct {
 	gridIndexReader *GridIndexReader
 }
 
-// TODO rename this function
-func ImportDataFile(tempRawFeatureChannel chan feature.Feature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent) error {
+func ImportTempFeatures(tempRawFeatureChannel chan feature.Feature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent) error {
 	gridIndexWriter := NewGridIndexWriter(cellWidth, cellHeight, baseFolder)
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
