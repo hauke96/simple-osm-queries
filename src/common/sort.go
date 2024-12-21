@@ -81,6 +81,8 @@ func extractNumberPrefix(s string) string {
 	for _, r := range []rune(s) {
 		if r == '-' || r == '.' || unicode.IsDigit(r) {
 			prefix = append(prefix, r)
+		} else {
+			break
 		}
 	}
 
