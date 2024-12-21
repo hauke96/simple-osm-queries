@@ -106,9 +106,6 @@ type TagIndex struct {
 	// index from disk).
 	keyReverseMap   map[string]int   // Helper map: key-string -> key-index
 	valueReverseMap []map[string]int // Helper map: value-string -> value-index in value[key-index]-array
-
-	// Contains the values for each keyIndex, or nil if the key is not set. The empty places will be removed below.
-	tempEncodedValues []int
 }
 
 func LoadTagIndex(baseFolder string) (*TagIndex, error) {
@@ -164,10 +161,9 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 	}
 
 	index := &TagIndex{
-		BaseFolder:        path.Base(baseFolder),
-		keyMap:            keyMap,
-		valueMap:          valueMap,
-		tempEncodedValues: make([]int, len(keyMap)+8),
+		BaseFolder: path.Base(baseFolder),
+		keyMap:     keyMap,
+		valueMap:   valueMap,
 	}
 
 	return index, nil
@@ -175,9 +171,8 @@ func LoadTagIndex(baseFolder string) (*TagIndex, error) {
 
 func NewTagIndex(keyMap []string, valueMap [][]string) *TagIndex {
 	index := &TagIndex{
-		keyMap:            keyMap,
-		valueMap:          valueMap,
-		tempEncodedValues: make([]int, len(keyMap)+8),
+		keyMap:   keyMap,
+		valueMap: valueMap,
 	}
 
 	index.keyReverseMap = map[string]int{}
@@ -259,35 +254,20 @@ func (i *TagIndex) NewTempEncodedValueArray() []int {
 
 // EncodeTags returns the encoded keys and values. The tempEncodedValues array can be reused to enhance performance
 // by not allocating a new array for each call of this function.
-func (i *TagIndex) EncodeTags(tags osm.Tags, tempEncodedValues []int) ([]byte, []int) {
+func (i *TagIndex) EncodeTags(tags osm.Tags) ([]int, []int) {
 	numberOfTags := len(tags)
 	if numberOfTags == 0 {
-		return []byte{}, []int{}
+		return []int{}, []int{}
 	}
 
-	encodedKeys := make([]byte, len(i.keyMap)/8+1)
+	encodedKeys := make([]int, numberOfTags)
+	encodedValues := make([]int, numberOfTags)
 	for pos := 0; pos < numberOfTags; pos++ {
 		keyIndex := i.keyReverseMap[tags[pos].Key]
 		valueIndex := i.valueReverseMap[keyIndex][tags[pos].Value]
 
-		// Set 1 for the given key because it's set
-		bin := keyIndex / 8      // Element of the array
-		idxInBin := keyIndex % 8 // Bit position within the byte
-		encodedKeys[bin] |= 1 << idxInBin
-		tempEncodedValues[keyIndex] = valueIndex + 1 // +1 to make 0 the "no value set"-value
-	}
-
-	// Now we know all keys that are set and can determine the order of the values for the array.
-	encodedValues := make([]int, numberOfTags)
-	encodedValuesCounter := 0
-	for pos := 0; encodedValuesCounter < numberOfTags; pos++ {
-		valueAtPos := tempEncodedValues[pos]
-		if valueAtPos != 0 {
-			// Key at "pos" is set -> store its value
-			encodedValues[encodedValuesCounter] = valueAtPos - 1 // compensate the "+1" from above
-			encodedValuesCounter++
-			tempEncodedValues[pos] = 0
-		}
+		encodedKeys[pos] = keyIndex
+		encodedValues[pos] = valueIndex
 	}
 
 	return encodedKeys, encodedValues

@@ -259,31 +259,27 @@ func (g *GridIndexReader) readNodesFromCellData(output chan []feature.Feature, d
 		osmId := binary.LittleEndian.Uint64(data[pos+0:])
 		lon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+8:]))
 		lat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+16:]))
-		numValues := int(binary.LittleEndian.Uint16(data[pos+18:]))
-		numWayIds := int(binary.LittleEndian.Uint16(data[pos+20:]))
-		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+22:]))
+		numberOfTags := int(binary.LittleEndian.Uint16(data[pos+16:]))
+		numWayIds := int(binary.LittleEndian.Uint16(data[pos+18:]))
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+20:]))
 
-		headerBytesCount := 8 + 4 + 4 + 2 + 2 + 2 + 2 // = 24
+		headerBytesCount := 8 + 4 + 4 + 2 + 2 + 2 // = 22
 
-		sigolo.Tracef("Read feature pos=%d, id=%d, lon=%f, lat=%f, numKeys=%d, numValues=%d", pos, osmId, lon, lat, numEncodedKeyBytes, numValues)
+		sigolo.Tracef("Read feature pos=%d, id=%d, lon=%f, lat=%f, numberOfTags=%d", pos, osmId, lon, lat, numberOfTags)
 
 		pos += headerBytesCount
 
 		/*
-			Read keys
+			Read tags
 		*/
-		encodedKeys := make([]byte, numEncodedKeyBytes)
-		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos:])
-		pos += numEncodedKeyBytes
+		encodedKeys := make([]int, numberOfTags)
+		encodedValues := make([]int, numberOfTags)
 
-		/*
-			Read values
-		*/
-		for i := 0; i < numValues; i++ {
-			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
-			pos += 3
+		for i := 0; i < numberOfTags; i++ {
+			encodedKeys[i] = int(binary.LittleEndian.Uint32(data[pos:]))
+			pos += 4
+			encodedValues[i] = int(binary.LittleEndian.Uint32(data[pos:]))
+			pos += 4
 		}
 
 		/*
@@ -347,31 +343,27 @@ func (g *GridIndexReader) readWaysFromCellData(output chan []feature.Feature, da
 			Read header fields
 		*/
 		osmId := binary.LittleEndian.Uint64(data[pos+0:])
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+8:]))
-		numValues := int(binary.LittleEndian.Uint16(data[pos+10:]))
-		numNodes := int(binary.LittleEndian.Uint16(data[pos+12:]))
-		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+14:]))
+		numberOfTags := int(binary.LittleEndian.Uint16(data[pos+8:]))
+		numNodes := int(binary.LittleEndian.Uint16(data[pos+10:]))
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+12:]))
 
-		headerBytesCount := 8 + 2 + 2 + 2 + 2
+		headerBytesCount := 8 + 2 + 2 + 2
 
-		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
+		sigolo.Tracef("Read feature pos=%d, id=%d, numberOfTags=%d", pos, osmId, numberOfTags)
 
 		pos += headerBytesCount
 
 		/*
-			Read keys
+			Read tags
 		*/
-		encodedKeys := make([]byte, numEncodedKeyBytes)
-		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos:])
-		pos += numEncodedKeyBytes
+		encodedKeys := make([]int, numberOfTags)
+		encodedValues := make([]int, numberOfTags)
 
-		/*
-			Read values
-		*/
-		for i := 0; i < numValues; i++ {
-			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
-			pos += 3
+		for i := 0; i < numberOfTags; i++ {
+			encodedKeys[i] = int(binary.LittleEndian.Uint32(data[pos:]))
+			pos += 4
+			encodedValues[i] = int(binary.LittleEndian.Uint32(data[pos:]))
+			pos += 4
 		}
 
 		/*
@@ -449,38 +441,34 @@ func (g *GridIndexReader) readRelationsFromCellData(output chan []feature.Featur
 		minLat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
 		maxLon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+16:]))
 		maxLat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+20:]))
-		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+24:]))
-		numValues := int(binary.LittleEndian.Uint16(data[pos+26:]))
-		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+28:]))
-		numWayIds := int(binary.LittleEndian.Uint16(data[pos+30:]))
-		numChildRelationIds := int(binary.LittleEndian.Uint16(data[pos+32:]))
-		numParentRelationIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
+		numberOfTags := int(binary.LittleEndian.Uint16(data[pos+24:]))
+		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+26:]))
+		numWayIds := int(binary.LittleEndian.Uint16(data[pos+28:]))
+		numChildRelationIds := int(binary.LittleEndian.Uint16(data[pos+30:]))
+		numParentRelationIds := int(binary.LittleEndian.Uint16(data[pos+32:]))
 
 		bbox := orb.Bound{
 			Min: orb.Point{float64(minLon), float64(minLat)},
 			Max: orb.Point{float64(maxLon), float64(maxLat)},
 		}
 
-		headerBytesCount := 8 + 16 + 2 + 2 + 2 + 2 + 2 + 2 // = 36
+		headerBytesCount := 8 + 16 + 2 + 2 + 2 + 2 + 2 // = 34
 
-		sigolo.Tracef("Read feature pos=%d, id=%d, bbox=%v, numKeys=%d, numValues=%d", pos, osmId, bbox, numEncodedKeyBytes, numValues)
+		sigolo.Tracef("Read feature pos=%d, id=%d, bbox=%v, numberOfTags=%d", pos, osmId, bbox, numberOfTags)
 
 		pos += headerBytesCount
 
 		/*
-			Read keys
+			Read tags
 		*/
-		encodedKeys := make([]byte, numEncodedKeyBytes)
-		encodedValues := make([]int, numValues)
-		copy(encodedKeys[:], data[pos:])
-		pos += numEncodedKeyBytes
+		encodedKeys := make([]int, numberOfTags)
+		encodedValues := make([]int, numberOfTags)
 
-		/*
-			Read values
-		*/
-		for i := 0; i < numValues; i++ {
-			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
-			pos += 3
+		for i := 0; i < numberOfTags; i++ {
+			encodedKeys[i] = int(binary.LittleEndian.Uint32(data[pos:]))
+			pos += 4
+			encodedValues[i] = int(binary.LittleEndian.Uint32(data[pos:]))
+			pos += 4
 		}
 
 		/*
