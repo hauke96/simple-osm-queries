@@ -144,7 +144,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 
 		tmpFeatureChannel := make(chan feature.Feature, 1000)
 		go tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent) // TODO error handling
-		err = index.ImportDataFile(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
+		err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
 		if err != nil {
 			return err
 		}
