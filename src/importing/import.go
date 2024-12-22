@@ -2,6 +2,7 @@ package importing
 
 import (
 	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb/geojson"
 	"github.com/pkg/errors"
 	"os"
 	"path"
@@ -93,21 +94,6 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	//}
 	//sigolo.Debugf("Found %d sub-extents", len(subExtents))
 	//
-	//// TODO Make the GeoJSON creation configurable
-	//featureCollection := geojson.NewFeatureCollection()
-	//for _, subExtent := range subExtents {
-	//	geoJsonFeature := geojson.NewFeature(subExtent.ToPolygon(cellWidth, cellHeight))
-	//	featureCollection.Features = append(featureCollection.Features, geoJsonFeature)
-	//}
-	//geojsonBytes, err := featureCollection.MarshalJSON()
-	//if err != nil {
-	//	sigolo.Warnf("Error marshalling sub-extents to GeoJSON: %+v", err)
-	//} else {
-	//	err = os.WriteFile("./sub-extents.geojson", geojsonBytes, 0644)
-	//	if err != nil {
-	//		sigolo.Warnf("Error writing sub-extent GeoJSON file: %+v", err)
-	//	}
-	//}
 
 	//
 	// 3. Write temp features
@@ -137,13 +123,41 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	}
 
 	subExtents := temporaryFeatureImporter.GetCellExtents()
+	subExtentToNodeCount := temporaryFeatureImporter.GetCellExtentsToNodeCountMap()
+
+	// TODO Make the GeoJSON creation configurable
+	featureCollection := geojson.NewFeatureCollection()
+	for _, subExtent := range subExtents {
+		geoJsonFeature := geojson.NewFeature(subExtent.ToPolygon(cellWidth, cellHeight))
+		featureCollection.Features = append(featureCollection.Features, geoJsonFeature)
+	}
+	geojsonBytes, err := featureCollection.MarshalJSON()
+	if err != nil {
+		sigolo.Warnf("Error marshalling sub-extents to GeoJSON: %+v", err)
+	} else {
+		err = os.WriteFile("./sub-extents.geojson", geojsonBytes, 0644)
+		if err != nil {
+			sigolo.Warnf("Error writing sub-extent GeoJSON file: %+v", err)
+		}
+	}
+
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
 	for i, subExtent := range subExtents {
 		currentSubExtentStartTime := time.Now()
 		sigolo.Debugf("=== Process sub-extent %v (%d / %d) ===", subExtent, i+1, len(subExtents))
 
+		if count, ok := subExtentToNodeCount[subExtent]; !ok || count == 0 {
+			sigolo.Debug("Extent has zero nodes -> skip it")
+			continue
+		}
+
 		tmpFeatureChannel := make(chan feature.Feature, 1000)
-		go tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent, tagIndexCreator) // TODO error handling
+		go func() {
+			err := tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent, tagIndexCreator)
+			if err != nil {
+				sigolo.Errorf("Error reading features for sub-extent %v: %+v", subExtent, err)
+			}
+		}()
 		err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
 		if err != nil {
 			return err

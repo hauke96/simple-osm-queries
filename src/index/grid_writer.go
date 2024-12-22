@@ -334,38 +334,10 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIn
 // relations, this is done using the given object to relation map. This map maps an ID of the given object type to the
 // relations this object is part of.
 func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmObjectType, objectTypeToRelationMapping map[uint64][]osm.RelationID, cell common.CellIndex) error {
-	var err error
-
-	//cellFolderName := path.Join(g.BaseFolder, objectType.String(), strconv.Itoa(cell.X()))
-	//cellFileName := path.Join(cellFolderName, strconv.Itoa(cell.Y())+".cell")
-
-	//if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
-	//	if objectType == ownOsm.OsmObjNode {
-	//		// We got all the cells in which nodes are. When this cell doesn't exist, then something went really wrong.
-	//		util.LogFatalBug("Cell file %s for nodes could not be found in the list of node-cells. This is a critical error and should not have happened", cellFileName)
-	//	}
-	//	// We found a cell only containing nodes. This might happen sometimes and is ok.
-	//	sigolo.Debugf("Cell file %s for OSM object type %v does not exist, since it might only contain nodes", cellFileName, objectType)
-	//	return nil
-	//}
-	//sigolo.FatalCheck(errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName))
-
-	//sigolo.Tracef("[Cell %v] Read cell file %s", cell, cellFileName)
-	//data, err := os.ReadFile(cellFileName)
-	//sigolo.FatalCheck(errors.Wrapf(err, "Unable to read %v-cell x=%d, y=%d", objectType, cell.X(), cell.Y()))
-
-	//sigolo.Tracef("[Cell %v] Read %v objects from cell and write them including additional IDs", cell, objectType)
-	//readFeatureChannel := make(chan []feature.Feature)
-	//var finishWaitGroup sync.WaitGroup
-	//finishWaitGroup.Add(1)
-
-	// TODO Use the data-bytes directly without deserialization first. This probably saves a lot of time.
-	//go func() {
-	//	for encFeatures := range readFeatureChannel {
-	//		for _, encFeature := range encFeatures {
-	//			if encFeature == nil {
-	//				continue
-	//			}
+	writer, err := g.getCellFile(cell.X(), cell.Y(), objectType)
+	if err != nil {
+		return err
+	}
 
 	switch objectType {
 	case ownOsm.OsmObjNode:
@@ -385,8 +357,10 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 				encFeature.SetRelationIds(relationIds)
 			}
 
-			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encFeature)
-			sigolo.FatalCheck(err)
+			err = g.writeNodeData(encFeature, writer)
+			if err != nil {
+				return errors.Wrapf(err, "Unable to write node %d to cell %v", encFeature.GetID(), cell)
+			}
 		}
 		delete(g.cacheRawEncodedNodes, cell)
 	case ownOsm.OsmObjWay:
@@ -395,8 +369,10 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 				encFeature.SetRelationIds(relationIds)
 			}
 
-			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encFeature)
-			sigolo.FatalCheck(err)
+			err = g.writeWayData(encFeature, writer)
+			if err != nil {
+				return errors.Wrapf(err, "Unable to write way %d to cell %v", encFeature.GetID(), cell)
+			}
 		}
 		delete(g.cacheRawEncodedWays, cell)
 	case ownOsm.OsmObjRelation:
@@ -405,49 +381,14 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmO
 				encFeature.SetParentRelationIds(relationIds)
 			}
 
-			err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encFeature)
-			sigolo.FatalCheck(err)
+			err = g.writeRelationData(encFeature, writer)
+			if err != nil {
+				return errors.Wrapf(err, "Unable to write relation %d to cell %v", encFeature.GetID(), cell)
+			}
 		}
 		delete(g.cacheRawEncodedRelations, cell)
 	default:
 		return errors.Errorf("Unsupported object type %v to add IDs to", objectType)
-	}
-
-	return nil
-}
-
-func (g *GridIndexWriter) writeOsmObjectToCell(cellX int, cellY int, encodedFeature feature.Feature) error {
-	switch featureObj := encodedFeature.(type) {
-	case feature.NodeFeature:
-		f, err := g.getCellFile(cellX, cellY, ownOsm.OsmObjNode)
-		if err != nil {
-			return err
-		}
-		err = g.writeNodeData(featureObj, f)
-		if err != nil {
-			return errors.Wrapf(err, "Unable to write node %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
-		}
-		return nil
-	case feature.WayFeature:
-		f, err := g.getCellFile(cellX, cellY, ownOsm.OsmObjWay)
-		if err != nil {
-			return err
-		}
-		err = g.writeWayData(featureObj, f)
-		if err != nil {
-			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
-		}
-		return nil
-	case feature.RelationFeature:
-		f, err := g.getCellFile(cellX, cellY, ownOsm.OsmObjRelation)
-		if err != nil {
-			return err
-		}
-		err = g.writeRelationData(featureObj, f)
-		if err != nil {
-			return errors.Wrapf(err, "Unable to write way %d to cell x=%d, y=%d", encodedFeature.GetID(), cellX, cellY)
-		}
-		return nil
 	}
 
 	return nil
