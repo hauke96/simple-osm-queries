@@ -64,6 +64,8 @@ func WriteFeaturesAsGeoJson(encodedFeatures []feature.Feature, tagIndex *TagInde
 		return err
 	}
 
+	sigolo.Debugf("GeoJSON is %d bytes long", len(geojsonBytes))
+
 	_, err = writer.Write(geojsonBytes)
 	if err != nil {
 		return err
