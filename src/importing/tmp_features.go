@@ -34,11 +34,11 @@ type TemporaryFeatureImporter struct {
 	repository             *TemporaryFeatureRepository
 	tagIndex               *index.TagIndex
 	tagIndexTempValueArray []int
-	nodeWriter             map[common.CellExtent]io.Writer
+	nodeWriter             map[common.CellExtent]*bufio.Writer
 	nodeFiles              map[common.CellExtent]*os.File
-	wayWriter              map[common.CellExtent]io.Writer
+	wayWriter              map[common.CellExtent]*bufio.Writer
 	wayFiles               map[common.CellExtent]*os.File
-	relationWriter         io.Writer
+	relationWriter         *bufio.Writer
 	relationFile           *os.File
 	cellExtents            []common.CellExtent
 	cellWidth              float64
@@ -50,9 +50,9 @@ func NewTemporaryFeatureImporter(repository *TemporaryFeatureRepository, tagInde
 		repository:             repository,
 		tagIndex:               tagIndex,
 		tagIndexTempValueArray: tagIndex.NewTempEncodedValueArray(),
-		nodeWriter:             map[common.CellExtent]io.Writer{},
+		nodeWriter:             map[common.CellExtent]*bufio.Writer{},
 		nodeFiles:              map[common.CellExtent]*os.File{},
-		wayWriter:              map[common.CellExtent]io.Writer{},
+		wayWriter:              map[common.CellExtent]*bufio.Writer{},
 		wayFiles:               map[common.CellExtent]*os.File{},
 		cellExtents:            cellExtents,
 		cellWidth:              cellWidth,
@@ -159,13 +159,25 @@ func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error 
 
 func (i *TemporaryFeatureImporter) Done() error {
 	var err error
+	for _, writer := range i.nodeWriter {
+		err = writer.Flush()
+		if err != nil {
+			return errors.Wrapf(err, "Error flushing node writer")
+		}
+	}
 	for _, file := range i.nodeFiles {
 		err = file.Close()
 		if err != nil {
-			return errors.Wrapf(err, "Error closing node file %s", file.Name())
+			return errors.Wrapf(err, "Error closing node writer %s", file.Name())
 		}
 	}
 
+	for _, writer := range i.wayWriter {
+		err = writer.Flush()
+		if err != nil {
+			return errors.Wrapf(err, "Error flushing way writer")
+		}
+	}
 	for _, file := range i.wayFiles {
 		err = file.Close()
 		if err != nil {
@@ -173,9 +185,13 @@ func (i *TemporaryFeatureImporter) Done() error {
 		}
 	}
 
+	err = i.relationWriter.Flush()
+	if err != nil {
+		return errors.Wrapf(err, "Error closing relation writer")
+	}
 	err = i.relationFile.Close()
 	if err != nil {
-		return errors.Wrapf(err, "Error closing relation file %s", i.relationFile.Name())
+		return errors.Wrapf(err, "Error closing relation writer %s", i.relationFile.Name())
 	}
 
 	return nil
@@ -638,7 +654,7 @@ func getFileForExtent(cellFolderName string, filename string, cellExtent common.
 	return os.OpenFile(cellFileName, os.O_RDONLY, 0644)
 }
 
-func getFileWriterForExtent(cellFolderName string, filename string, cellExtent common.CellExtent) (*os.File, io.Writer, error) {
+func getFileWriterForExtent(cellFolderName string, filename string, cellExtent common.CellExtent) (*os.File, *bufio.Writer, error) {
 	cellFileName := getFilenameForExtent(cellFolderName, filename, cellExtent)
 	return getFileWriter(cellFolderName, cellFileName)
 }
@@ -647,7 +663,7 @@ func getFilenameForExtent(cellFolderName string, filename string, cellExtent com
 	return fmt.Sprintf("%s/%s_%d-%d_%d-%d.tmpcell", cellFolderName, filename, cellExtent.LowerLeftCell().X(), cellExtent.LowerLeftCell().Y(), cellExtent.UpperRightCell().X(), cellExtent.UpperRightCell().Y())
 }
 
-func getFileWriter(cellFolderName string, cellFileName string) (*os.File, io.Writer, error) {
+func getFileWriter(cellFolderName string, cellFileName string) (*os.File, *bufio.Writer, error) {
 	file, err := openFile(cellFolderName, cellFileName, os.O_WRONLY)
 	if err != nil {
 		return nil, nil, err

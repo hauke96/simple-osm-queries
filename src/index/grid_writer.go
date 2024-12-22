@@ -35,7 +35,7 @@ type GridIndexWriter struct {
 	BaseGridIndex
 
 	cacheFileWriterFiles     map[io.Writer]*os.File
-	cacheFileWriters         map[int64]*[3]io.Writer // Key is a aggregation of the cells x and y coordinate. The array index is based on the object type. Value be a pointer to not create unnecessary files.
+	cacheFileWriters         map[int64]*[3]*bufio.Writer // Key is a aggregation of the cells x and y coordinate. The array index is based on the object type. Value be a pointer to not create unnecessary files.
 	cacheFileMutexes         map[io.Writer]*sync.Mutex
 	cacheFileMutex           *sync.Mutex
 	cacheRawEncodedNodes     map[common.CellIndex][]feature.NodeFeature
@@ -71,7 +71,7 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 	gridIndexWriter := &GridIndexWriter{
 		BaseGridIndex:            baseGridIndex,
 		cacheFileWriterFiles:     map[io.Writer]*os.File{},
-		cacheFileWriters:         map[int64]*[3]io.Writer{},
+		cacheFileWriters:         map[int64]*[3]*bufio.Writer{},
 		cacheFileMutexes:         map[io.Writer]*sync.Mutex{},
 		cacheFileMutex:           &sync.Mutex{},
 		cacheRawEncodedNodes:     map[common.CellIndex][]feature.NodeFeature{},
@@ -300,8 +300,25 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIn
 
 		cellPositionKey := g.getMapKeyForCell(cell.X(), cell.Y())
 		if writers, ok := g.cacheFileWriters[cellPositionKey]; ok {
-			for _, writer := range writers {
-				g.cacheFileWriterFiles[writer].Close()
+			for writerIndex, writer := range writers {
+				if writer == nil {
+					continue
+				}
+
+				file := g.cacheFileWriterFiles[writer]
+
+				err = writer.Flush()
+				if err != nil {
+					sigolo.Errorf("Error flushing buffered writer %d for file %s", writerIndex, file.Name())
+					// TODO return error
+				}
+
+				err = file.Close()
+				if err != nil {
+					sigolo.Errorf("Error closing file %s", file.Name())
+					// TODO return error
+				}
+
 				delete(g.cacheFileWriterFiles, writer)
 			}
 			delete(g.cacheFileWriters, cellPositionKey)
@@ -501,14 +518,12 @@ func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType ownOsm.Os
 	}
 
 	if !hasWriterForCell {
-		g.cacheFileWriters[cellPositionKey] = &[3]io.Writer{}
-		writers = g.cacheFileWriters[cellPositionKey]
+		g.cacheFileWriters[cellPositionKey] = &[3]*bufio.Writer{}
 	}
 
 	writer := bufio.NewWriter(file)
-	writers[writersIndex] = writer
+	g.cacheFileWriters[cellPositionKey][writersIndex] = writer
 	g.cacheFileWriterFiles[writer] = file
-
 	g.cacheFileMutexes[writer] = &sync.Mutex{}
 
 	g.cacheFileMutex.Unlock()
