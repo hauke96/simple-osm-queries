@@ -164,7 +164,7 @@ func (i *TemporaryFeatureImporter) getWriterForCoordinate(lon float64, lat float
 		i.cellExtents = append(i.cellExtents, extentOfNode)
 	}
 
-	var writer io.Writer
+	var writer *bufio.Writer
 	if objectType == ownOsm.OsmObjNode {
 		writer = i.nodeWriter[extentOfNode]
 	} else if objectType == ownOsm.OsmObjWay {
