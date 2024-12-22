@@ -42,15 +42,13 @@ func (f *AbstractEncodedFeature) HasKey(keyIndex int) bool {
 		return false
 	}
 
-	bin := keyIndex / 8 // Element of the array
-
-	// In case a key is requested that not even exists in the current bin, then if course the key is not set.
-	if bin > len(f.GetKeys())-1 {
-		return false
+	for _, key := range f.Keys {
+		if key == keyIndex {
+			return true
+		}
 	}
 
-	idxInBin := keyIndex % 8 // Bit position within the byte
-	return f.GetKeys()[bin]&(1<<idxInBin) != 0
+	return false
 }
 
 // GetValueIndex returns the value index (numerical representation of the actual value) for a given key index. This
@@ -58,25 +56,24 @@ func (f *AbstractEncodedFeature) HasKey(keyIndex int) bool {
 func (f *AbstractEncodedFeature) GetValueIndex(keyIndex int) int {
 	// Go through all bits to count the number of 1's.
 	// TODO This can probably be optimised by preprocessing this (i.e. map from keyIndex to position in values array)
-	valueIndexPosition := 0
-	for i := 0; i < keyIndex; i++ {
-		bin := i / 8      // Element of the array
-		idxInBin := i % 8 // Bit position within the byte
-		if f.GetKeys()[bin]&(1<<idxInBin) != 0 {
-			// Key at "i" is set -> store its value
-			valueIndexPosition++
+
+	for i, key := range f.Keys {
+		if key == keyIndex {
+			return f.GetValues()[i]
 		}
 	}
 
-	return f.GetValues()[valueIndexPosition]
+	return -1
 }
 
 func (f *AbstractEncodedFeature) HasTag(keyIndex int, valueIndex int) bool {
-	if !f.HasKey(keyIndex) {
-		return false
+	for i, key := range f.Keys {
+		if key == keyIndex {
+			return f.GetValues()[i] == valueIndex
+		}
 	}
 
-	return f.GetValueIndex(keyIndex) == valueIndex
+	return false
 }
 
 func (f *AbstractEncodedFeature) Print() {
