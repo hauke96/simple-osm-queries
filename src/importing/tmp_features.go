@@ -22,6 +22,8 @@ import (
 // Slice that contains the data of the feature that should be written to disk. These slice is reused to reduce garbage
 // collection. This is a simple solutions and cannot safely be used for concurrent writes!
 var data = make([]byte, 1000)
+var encodedKeys = make([]int, 1000)
+var encodedValues = make([]int, 1000)
 
 func ensureDataSliceSize(byteCount int) {
 	for cap(data) < byteCount {
@@ -106,17 +108,17 @@ func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
 
 	i.cellExtentToNodeCount[extentOfNode]++
 
-	encodedKeys, encodedValues := i.tagIndex.EncodeTags(node.Tags)
+	i.tagIndex.EncodeTags(node.Tags, encodedKeys, encodedValues)
 	point := node.Point()
-	return i.repository.writeNodeData(node.ID, encodedKeys, encodedValues, &point, writer)
+	return i.repository.writeNodeData(node.ID, encodedKeys[0:len(node.Tags)], encodedValues[0:len(node.Tags)], &point, writer)
 }
 
 func (i *TemporaryFeatureImporter) HandleWay(way *osm.Way) error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
 
-	encodedKeys, encodedValues := i.tagIndex.EncodeTags(way.Tags)
-	wayData := i.repository.getWayData(way.ID, encodedKeys, encodedValues, way.Nodes)
+	i.tagIndex.EncodeTags(way.Tags, encodedKeys, encodedValues)
+	wayData := i.repository.getWayData(way.ID, encodedKeys[0:len(way.Tags)], encodedValues[0:len(way.Tags)], way.Nodes)
 
 	usedWriters := make(map[io.Writer]bool)
 
@@ -160,8 +162,8 @@ func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error 
 		}
 	}
 
-	encodedKeys, encodedValues := i.tagIndex.EncodeTags(relation.Tags)
-	return i.repository.writeRelationData(relation.ID, encodedKeys, encodedValues, nodeIds, wayIds, childRelationIds, i.relationWriter)
+	i.tagIndex.EncodeTags(relation.Tags, encodedKeys, encodedValues)
+	return i.repository.writeRelationData(relation.ID, encodedKeys[0:len(relation.Tags)], encodedValues[0:len(relation.Tags)], nodeIds, wayIds, childRelationIds, i.relationWriter)
 }
 
 func (i *TemporaryFeatureImporter) getWriterForCoordinate(lon float64, lat float64, objectType ownOsm.OsmObjectType) (io.Writer, common.CellExtent, error) {

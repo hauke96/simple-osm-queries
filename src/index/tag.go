@@ -11,6 +11,7 @@ import (
 	"path"
 	"soq/common"
 	"soq/profiler"
+	"strconv"
 	"strings"
 )
 
@@ -86,14 +87,15 @@ func (t *TagIndexCreator) Done() error {
 
 // EncodeTags returns the encoded keys and values. The tempEncodedValues array can be reused to enhance performance
 // by not allocating a new array for each call of this function.
-func (t *TagIndexCreator) EncodeTags(tags osm.Tags) ([]int, []int) {
+func (t *TagIndexCreator) EncodeTags(tags osm.Tags, encodedKeys []int, encodedValues []int) {
 	numberOfTags := len(tags)
 	if numberOfTags == 0 {
-		return []int{}, []int{}
+		return
+	}
+	if numberOfTags > len(encodedKeys) {
+		panic("Feature has " + strconv.Itoa(numberOfTags) + " tags")
 	}
 
-	encodedKeys := make([]int, numberOfTags)
-	encodedValues := make([]int, numberOfTags)
 	for pos := 0; pos < numberOfTags; pos++ {
 		keyIndex := t.keyReverseMap[tags[pos].Key]
 		valueIndex := t.valueReverseMap[keyIndex][tags[pos].Value]
@@ -101,8 +103,6 @@ func (t *TagIndexCreator) EncodeTags(tags osm.Tags) ([]int, []int) {
 		encodedKeys[pos] = keyIndex
 		encodedValues[pos] = valueIndex
 	}
-
-	return encodedKeys, encodedValues
 }
 
 func (t *TagIndexCreator) CreateTagIndex() *TagIndex {
