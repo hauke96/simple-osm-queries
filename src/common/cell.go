@@ -9,9 +9,11 @@ func GetCellIndexForCoordinate(x float64, y float64, cellWidth float64, cellHeig
 }
 
 func GetCellExtentForCoordinate(x float64, y float64, cellWidth float64, cellHeight float64, cellWidthOfExtent int) CellExtent {
+	cellX := int(x/cellWidth) / cellWidthOfExtent * cellWidthOfExtent
+	cellY := int(y/cellHeight) / cellWidthOfExtent * cellWidthOfExtent
 	return CellExtent{
-		CellIndex{int(x/cellWidth) / cellWidthOfExtent * cellWidthOfExtent, int(y/cellHeight) / cellWidthOfExtent * cellWidthOfExtent},
-		CellIndex{int(x/cellWidth)/cellWidthOfExtent*cellWidthOfExtent + cellWidthOfExtent - 1, int(y/cellHeight)/cellWidthOfExtent*cellWidthOfExtent + cellWidthOfExtent - 1},
+		CellIndex{cellX, cellY},
+		CellIndex{cellX + cellWidthOfExtent - 1, cellY + cellWidthOfExtent - 1},
 	}
 }
 
