@@ -10,6 +10,7 @@ import (
 	"soq/importing"
 	"soq/index"
 	"soq/parser"
+	"soq/profiler"
 	"soq/web"
 	"strings"
 )
@@ -121,4 +122,6 @@ bbox(9.9713,53.5354,10.0160,53.5608)
 	default:
 		sigolo.Errorf("Unknown command '%s'", ctx.Command())
 	}
+
+	profiler.PrintResults()
 }

@@ -16,6 +16,7 @@ import (
 	"soq/index"
 	ownIo "soq/io"
 	ownOsm "soq/osm"
+	"soq/profiler"
 )
 
 type TemporaryFeatureImporter struct {
@@ -95,6 +96,9 @@ func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
 }
 
 func (i *TemporaryFeatureImporter) HandleWay(way *osm.Way) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	encodedKeys, encodedValues := i.tagIndex.EncodeTags(way.Tags, i.tagIndexTempValueArray)
 	data := i.repository.getWayData(way.ID, encodedKeys, encodedValues, way.Nodes)
 
@@ -138,6 +142,9 @@ func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error 
 }
 
 func (i *TemporaryFeatureImporter) Done() error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	for _, nodeWriter := range i.nodeWriter {
 		err := nodeWriter.Flush()
 		if err != nil {
@@ -248,6 +255,8 @@ func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []byte, v
 }
 
 func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []byte, values []int, nodes osm.WayNodes) []byte {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
