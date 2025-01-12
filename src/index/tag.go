@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"soq/common"
+	"soq/profiler"
 	"strings"
 )
 
@@ -48,6 +49,9 @@ func (t *TagIndexCreator) HandleNode(node *osm.Node) error {
 }
 
 func (t *TagIndexCreator) HandleWay(way *osm.Way) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	t.addTagsToIndex(way.Tags)
 	return nil
 }

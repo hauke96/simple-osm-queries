@@ -16,6 +16,7 @@ import (
 	"soq/index"
 	ownIo "soq/io"
 	ownOsm "soq/osm"
+	"soq/profiler"
 )
 
 // Slice that contains the data of the feature that should be written to disk. These slice is reused to reduce garbage
@@ -111,6 +112,9 @@ func (i *TemporaryFeatureImporter) HandleNode(node *osm.Node) error {
 }
 
 func (i *TemporaryFeatureImporter) HandleWay(way *osm.Way) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	encodedKeys, encodedValues := i.tagIndex.EncodeTags(way.Tags)
 	wayData := i.repository.getWayData(way.ID, encodedKeys, encodedValues, way.Nodes)
 
@@ -161,6 +165,9 @@ func (i *TemporaryFeatureImporter) HandleRelation(relation *osm.Relation) error 
 }
 
 func (i *TemporaryFeatureImporter) getWriterForCoordinate(lon float64, lat float64, objectType ownOsm.OsmObjectType) (io.Writer, common.CellExtent, error) {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	// TODO Make this parameter configurable
 	extentOfNode := common.GetCellExtentForCoordinate(lon, lat, i.cellWidth, i.cellHeight, 20)
 	found := false
@@ -313,6 +320,8 @@ func (r *TemporaryFeatureRepository) writeNodeData(id osm.NodeID, keys []int, va
 }
 
 func (r *TemporaryFeatureRepository) getWayData(id osm.WayID, keys []int, values []int, nodes osm.WayNodes) []byte {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
 	/*
 		Entry format:
 

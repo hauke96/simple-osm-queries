@@ -14,6 +14,7 @@ import (
 	"soq/common"
 	"soq/feature"
 	ownOsm "soq/osm"
+	"soq/profiler"
 	"strconv"
 	"sync"
 	"time"
@@ -48,6 +49,9 @@ type GridIndexWriter struct {
 }
 
 func ImportTempFeatures(tempRawFeatureChannel chan feature.Feature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	gridIndexWriter := NewGridIndexWriter(cellWidth, cellHeight, baseFolder)
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
@@ -88,6 +92,9 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 // WriteOsmToRawEncodedFeatures Reads the input feature channel and converts all OSM objects into raw encoded features and
 // writes them into their respective cells. The returned cell map contains all cells that contain nodes.
 func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.Feature, cellExtent common.CellExtent) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	sigolo.Debug("Start converting OSM data to raw encoded features")
 	importStartTime := time.Now()
 
@@ -252,6 +259,9 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 }
 
 func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIndex) {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	numberOfCells := len(cells)
 	sigolo.Debugf("Start adding way and relation IDs to raw encoded nodes in %d cells", numberOfCells)
 
@@ -334,6 +344,9 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIn
 // relations, this is done using the given object to relation map. This map maps an ID of the given object type to the
 // relations this object is part of.
 func (g *GridIndexWriter) addAdditionalIdsToObjectsOfType(objectType ownOsm.OsmObjectType, objectTypeToRelationMapping map[uint64][]osm.RelationID, cell common.CellIndex) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	writer, err := g.getCellFile(cell.X(), cell.Y(), objectType)
 	if err != nil {
 		return err
@@ -408,6 +421,9 @@ func (g *GridIndexWriter) writeOsmObjectToCellCache(cell common.CellIndex, encod
 }
 
 func (g *GridIndexWriter) getCellFile(cellX int, cellY int, objectType ownOsm.OsmObjectType) (io.Writer, error) {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
 	g.cacheFileMutex.Lock()
 
 	cellPositionKey := g.getMapKeyForCell(cellX, cellY)
