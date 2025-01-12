@@ -172,15 +172,6 @@ func (i *TemporaryFeatureImporter) getWriterForCoordinate(lon float64, lat float
 
 	// TODO Make this parameter configurable
 	extentOfNode := common.GetCellExtentForCoordinate(lon, lat, i.cellWidth, i.cellHeight, 20)
-	found := false
-	for _, extent := range i.cellExtents {
-		if extentOfNode == extent {
-			found = true
-		}
-	}
-	if !found {
-		i.cellExtents = append(i.cellExtents, extentOfNode)
-	}
 
 	var writer *bufio.Writer
 	if objectType == ownOsm.OsmObjNode {
@@ -190,6 +181,16 @@ func (i *TemporaryFeatureImporter) getWriterForCoordinate(lon float64, lat float
 	}
 
 	if writer == nil {
+		found := false
+		for _, extent := range i.cellExtents {
+			if extentOfNode == extent {
+				found = true
+			}
+		}
+		if !found {
+			i.cellExtents = append(i.cellExtents, extentOfNode)
+		}
+
 		file, newWriter, err := getFileWriterForExtent(i.repository.BaseFolder, objectType.String(), extentOfNode)
 		if err != nil {
 			return nil, extentOfNode, err
