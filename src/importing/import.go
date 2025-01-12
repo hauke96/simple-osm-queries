@@ -34,13 +34,14 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	currentStepStartTime := time.Now()
 
 	tagIndexCreator := index.NewTagIndexCreator()
+	reverseIdCollector := osm.NewReverseIdCollector()
 	//osmDensityAggregator := osm.NewOsmDensityAggregator(cellWidth, cellHeight)
 
 	tmpFeatureRepo := NewTemporaryFeatureRepository(cellWidth, cellHeight, "import-temp-cell")
 	temporaryFeatureImporter := NewTemporaryFeatureImporter(tmpFeatureRepo, tagIndexCreator, cellWidth, cellHeight)
 
 	osmReader := osm.NewOsmReader()
-	err := osmReader.Read(inputFile, tagIndexCreator, temporaryFeatureImporter)
+	err := osmReader.Read(inputFile, tagIndexCreator, temporaryFeatureImporter, reverseIdCollector)
 	if err != nil {
 		return errors.Wrapf(err, "Error importing OSM data")
 	}
@@ -158,7 +159,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 				sigolo.Errorf("Error reading features for sub-extent %v: %+v", subExtent, err)
 			}
 		}()
-		err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
+		err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent, reverseIdCollector.NodeIdsInRelations, reverseIdCollector.WayIdsInRelations)
 		if err != nil {
 			return err
 		}

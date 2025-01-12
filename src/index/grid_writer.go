@@ -48,7 +48,7 @@ type GridIndexWriter struct {
 	gridIndexReader *GridIndexReader
 }
 
-func ImportTempFeatures(tempRawFeatureChannel chan feature.Feature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent) error {
+func ImportTempFeatures(tempRawFeatureChannel chan feature.Feature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent, nodeIdsInRelations map[osm.NodeID]common.Void, wayIdsInRelations map[osm.WayID]common.Void) error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
 
@@ -56,7 +56,7 @@ func ImportTempFeatures(tempRawFeatureChannel chan feature.Feature, baseFolder s
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
-	err := gridIndexWriter.WriteOsmToRawEncodedFeatures(tempRawFeatureChannel, cellExtent)
+	err := gridIndexWriter.WriteOsmToRawEncodedFeatures(tempRawFeatureChannel, cellExtent, nodeIdsInRelations, wayIdsInRelations)
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 
 // WriteOsmToRawEncodedFeatures Reads the input feature channel and converts all OSM objects into raw encoded features and
 // writes them into their respective cells. The returned cell map contains all cells that contain nodes.
-func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.Feature, cellExtent common.CellExtent) error {
+func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel chan feature.Feature, cellExtent common.CellExtent, nodeIdsInRelations map[osm.NodeID]common.Void, wayIdsInRelations map[osm.WayID]common.Void) error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
 
@@ -119,7 +119,9 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			cell := g.GetCellIndexForCoordinate(rawFeature.GetLon(), rawFeature.GetLat())
 
 			id := osm.NodeID(rawFeature.GetID())
-			nodeToPoint[id] = rawFeature.GetGeometry().(*orb.Point)
+			if _, ok := nodeIdsInRelations[id]; ok {
+				nodeToPoint[id] = rawFeature.GetGeometry().(*orb.Point)
+			}
 
 			err := g.writeOsmObjectToCellCache(cell, rawFeature)
 			sigolo.FatalCheck(err)
@@ -136,15 +138,17 @@ func (g *GridIndexWriter) WriteOsmToRawEncodedFeatures(tempRawFeatureChannel cha
 			}
 
 			id := osm.WayID(rawFeature.GetID())
-			wayToCellsMap[id] = make([]common.CellIndex, len(wayCells))
-			j := 0
-			for _, cell := range wayCells {
-				wayToCellsMap[id][j] = cell
-				j++
-			}
+			if _, ok := wayIdsInRelations[id]; ok {
+				wayToCellsMap[id] = make([]common.CellIndex, len(wayCells))
+				j := 0
+				for _, cell := range wayCells {
+					wayToCellsMap[id][j] = cell
+					j++
+				}
 
-			bbox := rawFeature.GetGeometry().Bound()
-			wayToBound[id] = &bbox
+				bbox := rawFeature.GetGeometry().Bound()
+				wayToBound[id] = &bbox
+			}
 
 			for _, cell := range wayCells {
 				err := g.writeOsmObjectToCellCache(cell, rawFeature)
