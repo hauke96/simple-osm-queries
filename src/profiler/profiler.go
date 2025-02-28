@@ -52,6 +52,6 @@ func PrintResults() {
 
 	sigolo.Infof("Profiling measurement results:")
 	for k, v := range ProfilingResults {
-		sigolo.Infof("  %s -> %d s (%d calls)", k, v/1e9, CallingResults[k])
+		sigolo.Infof("  %s -> %d s (%d calls)", k, v/1_000_000_000.0, CallingResults[k])
 	}
 }
