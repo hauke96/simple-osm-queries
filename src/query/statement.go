@@ -1,10 +1,11 @@
 package query
 
 import (
-	"github.com/hauke96/sigolo/v2"
 	"soq/feature"
 	"soq/index"
 	"soq/osm"
+
+	"github.com/hauke96/sigolo/v2"
 )
 
 type Statement struct {
@@ -47,7 +48,7 @@ func (s Statement) Execute(context feature.Feature) ([]feature.Feature, error) {
 	var result []feature.Feature
 
 	for getFeatureResult := range featuresChannel {
-		sigolo.Tracef("Received %d features from cell %v", len(getFeatureResult.Features), getFeatureResult.Cell)
+		sigolo.Tracef("Received %d features from cell extent %v", len(getFeatureResult.Features), getFeatureResult.Cell)
 
 		for _, feature := range getFeatureResult.Features {
 			sigolo.Trace("----- next feature -----")

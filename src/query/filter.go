@@ -1,14 +1,15 @@
 package query
 
 import (
-	"github.com/hauke96/sigolo/v2"
-	"github.com/pkg/errors"
 	"reflect"
 	"soq/common"
 	"soq/feature"
 	"soq/index"
 	"soq/osm"
 	"strings"
+
+	"github.com/hauke96/sigolo/v2"
+	"github.com/pkg/errors"
 )
 
 type FilterExpression interface {
@@ -240,7 +241,7 @@ func (f *SubStatementFilterExpression) Applies(featureToCheck feature.Feature, c
 		}
 
 		for getFeatureResult := range featuresChannel {
-			sigolo.Tracef("Received %d features from cell %v", len(getFeatureResult.Features), getFeatureResult.Cell)
+			sigolo.Tracef("Received %d features from cell extent %v", len(getFeatureResult.Features), getFeatureResult.Cell)
 
 			for _, foundFeature := range getFeatureResult.Features {
 				sigolo.Trace("----- next feature -----")

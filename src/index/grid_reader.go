@@ -44,6 +44,7 @@ func (g *GridIndexReader) Get(bbox *orb.Bound, objectType ownOsm.OsmObjectType) 
 
 	resultChannel := make(chan *GetFeaturesResult)
 
+	// TODO determine CellExtents here and distribute them across the threads
 	go func() {
 		numThreads := 3
 
@@ -78,82 +79,19 @@ func (g *GridIndexReader) Get(bbox *orb.Bound, objectType ownOsm.OsmObjectType) 
 	return resultChannel, nil // Remove error from return, since it doesn't make any sense here
 }
 
-// TODO remove?
-func (g *GridIndexReader) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error) {
-	cells := map[common.CellIndex][]uint64{}            // just a lookup table to quickly see if a cell has already been collected
-	innerCellBounds := map[common.CellIndex]orb.Bound{} // just a lookup table to quickly see if a cell has already been collected
-	for _, node := range nodes {
-		cell := g.GetCellIndexForCoordinate(node.Lon, node.Lat)
-		if _, ok := cells[cell]; !ok {
-			// New cell -> Create it and add first node ID
-			cells[cell] = []uint64{uint64(node.ID)}
-			innerCellBounds[cell] = node.Point().Bound()
-		} else {
-			// Cell has been seen before -> just add the new node ID
-			cells[cell] = append(cells[cell], uint64(node.ID))
-			innerCellBounds[cell] = innerCellBounds[cell].Union(node.Point().Bound())
-		}
-	}
-
-	var resultChannel = make(chan *GetFeaturesResult, 10)
-
-	if len(cells) == 0 {
-		close(resultChannel)
-		return resultChannel, nil
-	}
-
-	go func() {
-		for cell, nodeIds := range cells {
-			innerCellBound := innerCellBounds[cell]
-			outputBuffer := []feature.Feature{}
-
-			unfilteredFeatures, err := g.readFeaturesFromCellFile(cell[0], cell[1], ownOsm.OsmObjNode)
-			sigolo.FatalCheck(err)
-
-			for i := 0; i < len(unfilteredFeatures); i++ {
-				encodedFeature := unfilteredFeatures[i]
-				if encodedFeature != nil {
-					// TODO Getting the bound, geometry and filtering takes quite long. Try to optimize this (maybe with a "encodedFeature.IsWithin()" func?)
-					featureBound := encodedFeature.GetGeometry().Bound()
-					notWithinCellContent := (innerCellBound.Max[0] < featureBound.Min[0]) ||
-						(innerCellBound.Min[0] > featureBound.Max[0]) ||
-						(innerCellBound.Max[1] < featureBound.Min[1]) ||
-						(innerCellBound.Min[1] > featureBound.Max[1])
-					if notWithinCellContent {
-						continue
-					}
-
-					for j := 0; j < len(nodeIds); j++ {
-						if encodedFeature.GetID() == nodeIds[j] {
-							outputBuffer = append(outputBuffer, encodedFeature)
-							break
-						}
-					}
-				}
-			}
-
-			resultChannel <- &GetFeaturesResult{
-				Cell:     cell,
-				Features: outputBuffer,
-			}
-		}
-		close(resultChannel)
-	}()
-
-	return resultChannel, nil
-}
-
 func (g *GridIndexReader) GetFeaturesForCells(cells []common.CellIndex, objectType ownOsm.OsmObjectType) chan *GetFeaturesResult {
 	resultChannel := make(chan *GetFeaturesResult)
 
+	cellExtents := g.featureReader.GetExtentsForCells(cells)
+
 	go func() {
-		for _, cell := range cells {
+		for _, cellExtent := range cellExtents {
 			featuresInCell := &GetFeaturesResult{
-				Cell:     cell,
+				Cell:     cellExtent,
 				Features: []feature.Feature{},
 			}
 
-			encodedFeatures, err := g.readFeaturesFromCellFile(cell[0], cell[1], objectType)
+			encodedFeatures, err := g.readFeatures(cellExtent, objectType)
 			sigolo.FatalCheck(err)
 			featuresInCell.Features = encodedFeatures
 
@@ -167,42 +105,55 @@ func (g *GridIndexReader) GetFeaturesForCells(cells []common.CellIndex, objectTy
 
 func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesResult, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType ownOsm.OsmObjectType) {
 	sigolo.Debugf("Get %s features for cells minX=%d, minY=%d / maxX=%d, maxY=%d", objectType.String(), minCellX, minCellY, maxCellX, maxCellY)
+
+	var cells []common.CellIndex
+
 	for cellX := minCellX; cellX <= maxCellX; cellX++ {
 		for cellY := minCellY; cellY <= maxCellY; cellY++ {
-			sigolo.Debugf("Get %s features for cell X=%d, Y=%d", objectType.String(), cellX, cellY)
-
-			featuresInBbox := &GetFeaturesResult{
-				Cell:     common.CellIndex{cellX, cellY},
-				Features: []feature.Feature{},
-			}
-
-			encodedFeatures, err := g.readFeaturesFromCellFile(cellX, cellY, objectType)
-			sigolo.FatalCheck(err)
-
-			for i := 0; i < len(encodedFeatures); i++ {
-				if encodedFeatures[i] != nil && bbox.Intersects(encodedFeatures[i].GetGeometry().Bound()) {
-					featuresInBbox.Features = append(featuresInBbox.Features, encodedFeatures[i])
-				}
-			}
-
-			output <- featuresInBbox
+			cells = append(cells, common.CellIndex{cellX, cellY})
 		}
 	}
+
+	cellExtents := g.featureReader.GetExtentsForCells(cells)
+
+	for _, cellExtent := range cellExtents {
+		sigolo.Debugf("Get %s features for cell extent %v", objectType.String(), cellExtent)
+
+		featuresInBbox := &GetFeaturesResult{
+			Cell:     cellExtent,
+			Features: []feature.Feature{},
+		}
+
+		encodedFeatures, err := g.readFeatures(cellExtent, objectType)
+		sigolo.FatalCheck(err)
+
+		for i := 0; i < len(encodedFeatures); i++ {
+			encodedFeature := encodedFeatures[i]
+			if encodedFeature.GetID() == 108782320 {
+				sigolo.Debug("Found")
+			}
+			if encodedFeature != nil && bbox.Intersects(encodedFeature.GetGeometry().Bound()) {
+				featuresInBbox.Features = append(featuresInBbox.Features, encodedFeature)
+			}
+		}
+
+		output <- featuresInBbox
+	}
+
 	wg.Done()
+
 	sigolo.Debugf("Finished getting %s features for cells minX=%d, maxX=%d / minY=%d, maxY=%d", objectType, minCellX, maxCellX, minCellY, maxCellY)
 }
 
-// readFeaturesFromCellFile reads all features from the specified cell and writes them periodically to the output channel.
-func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectType ownOsm.OsmObjectType) ([]feature.Feature, error) {
-	cell := common.CellIndex{cellX, cellY}
-
+// readFeatures reads all features from the specified cell and writes them periodically to the output channel.
+func (g *GridIndexReader) readFeatures(cellExtent common.CellExtent, objectType ownOsm.OsmObjectType) ([]feature.Feature, error) {
 	switch objectType {
 	case ownOsm.OsmObjNode:
-		return g.featureReader.ReadNodes(cell)
+		return g.featureReader.ReadNodes(cellExtent)
 	case ownOsm.OsmObjWay:
-		return g.featureReader.ReadWays(cell)
+		return g.featureReader.ReadWays(cellExtent)
 	case ownOsm.OsmObjRelation:
-		return g.featureReader.ReadRelations(cell)
+		return g.featureReader.ReadRelations(cellExtent)
 	default:
 		panic("Unsupported object type to read: " + objectType.String())
 	}

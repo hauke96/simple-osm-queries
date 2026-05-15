@@ -113,10 +113,10 @@ func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*inde
 }
 
 // TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
-func (r FeatureStorageReader) ReadNodes(cell common.CellIndex) ([]feature.Feature, error) {
+func (r FeatureStorageReader) ReadNodes(cellExtent common.CellExtent) ([]feature.Feature, error) {
 	result := []feature.Feature{}
 
-	cellMetadata := r.indexMetadata.getMetadataForCell(cell)
+	cellMetadata := r.indexMetadata.getCellMetadata(cellExtent)
 	if cellMetadata == nil {
 		// No data in this cell
 		return result, nil
@@ -129,7 +129,7 @@ func (r FeatureStorageReader) ReadNodes(cell common.CellIndex) ([]feature.Featur
 	// Ignore new and empty caches. Empty caches might not be actually empty but not yet filled. This might happen when
 	// the same cell file is read by multiple goroutines at the same time.
 	if !entryIsNew && len(cachedFeatures) > 0 {
-		sigolo.Tracef("Use features from cache for cell %v", cell)
+		sigolo.Tracef("Use features from cache for cell extent %v", cellExtent)
 		return cachedFeatures, nil
 	}
 
@@ -260,10 +260,10 @@ func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*inde
 }
 
 // TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
-func (r FeatureStorageReader) ReadWays(cell common.CellIndex) ([]feature.Feature, error) {
+func (r FeatureStorageReader) ReadWays(cellExtent common.CellExtent) ([]feature.Feature, error) {
 	result := []feature.Feature{}
 
-	cellMetadata := r.indexMetadata.getMetadataForCell(cell)
+	cellMetadata := r.indexMetadata.getCellMetadata(cellExtent)
 	if cellMetadata == nil {
 		// No data in this cell
 		return result, nil
@@ -276,7 +276,7 @@ func (r FeatureStorageReader) ReadWays(cell common.CellIndex) ([]feature.Feature
 	// Ignore new and empty caches. Empty caches might not be actually empty but not yet filled. This might happen when
 	// the same cell file is read by multiple goroutines at the same time.
 	if !entryIsNew && len(cachedFeatures) > 0 {
-		sigolo.Tracef("Use features from cache for cell %v", cell)
+		sigolo.Tracef("Use features from cache for cell extent %v", cellExtent)
 		return cachedFeatures, nil
 	}
 
@@ -426,10 +426,10 @@ func (r FeatureStorageReader) readRawRelations(cellExtent common.CellExtent) ([]
 }
 
 // TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
-func (r FeatureStorageReader) ReadRelations(cell common.CellIndex) ([]feature.Feature, error) {
+func (r FeatureStorageReader) ReadRelations(cellExtent common.CellExtent) ([]feature.Feature, error) {
 	result := []feature.Feature{}
 
-	cellMetadata := r.indexMetadata.getMetadataForCell(cell)
+	cellMetadata := r.indexMetadata.getCellMetadata(cellExtent)
 	if cellMetadata == nil {
 		// No data in this cell
 		return result, nil
@@ -442,7 +442,7 @@ func (r FeatureStorageReader) ReadRelations(cell common.CellIndex) ([]feature.Fe
 	// Ignore new and empty caches. Empty caches might not be actually empty but not yet filled. This might happen when
 	// the same cell file is read by multiple goroutines at the same time.
 	if !entryIsNew && len(cachedFeatures) > 0 {
-		sigolo.Tracef("Use features from cache for cell %v", cell)
+		sigolo.Tracef("Use features from cache for cell extent %v", cellExtent)
 		return cachedFeatures, nil
 	}
 
@@ -584,4 +584,19 @@ func (r FeatureStorageReader) read(cellOffsets []indexCellOffset) []byte {
 	}
 
 	return buffer
+}
+
+func (r FeatureStorageReader) GetExtentsForCells(cells []common.CellIndex) []common.CellExtent {
+	result := []common.CellExtent{}
+
+	for _, cellMetadata := range r.indexMetadata.Cells {
+		for _, cell := range cells {
+			if cellMetadata.Extent.Contains(cell) {
+				result = append(result, cellMetadata.Extent)
+				break
+			}
+		}
+	}
+
+	return result
 }
