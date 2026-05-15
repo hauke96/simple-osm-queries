@@ -168,6 +168,9 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 			sigolo.FatalCheck(errors.Wrapf(err, "Unable to write relation %d to final index", relation.GetID()))
 		}
 
+		err = featureStorageWriter.FlushData()
+		sigolo.FatalCheck(errors.Wrap(err, "Unable to flush final data from writer"))
+
 		duration = time.Since(currentSubExtentStartTime)
 		sigolo.Debugf("Processed sub-extent %v in %s", subExtent, duration)
 	}

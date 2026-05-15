@@ -105,63 +105,63 @@ type RawEncodedNodeFeature struct {
 	RelationIds []osm.RelationID // An ID list of all relations this node is part of.
 }
 
-func (f RawEncodedNodeFeature) GetData() []byte {
+func (f *RawEncodedNodeFeature) GetData() []byte {
 	return f.Data
 }
 
-func (f RawEncodedNodeFeature) GetID() uint64 {
+func (f *RawEncodedNodeFeature) GetID() uint64 {
 	return binary.LittleEndian.Uint64(f.Data[0:])
 }
 
-func (f RawEncodedNodeFeature) GetGeometry() orb.Geometry {
+func (f *RawEncodedNodeFeature) GetGeometry() orb.Geometry {
 	panic("Not implemented")
 }
 
-func (f RawEncodedNodeFeature) GetKeys() []byte {
+func (f *RawEncodedNodeFeature) GetKeys() []byte {
 	panic("Not implemented")
 }
 
-func (f RawEncodedNodeFeature) GetValues() []int {
+func (f *RawEncodedNodeFeature) GetValues() []int {
 	panic("Not implemented")
 }
 
-func (f RawEncodedNodeFeature) HasKey(keyIndex int) bool {
+func (f *RawEncodedNodeFeature) HasKey(keyIndex int) bool {
 	panic("Not implemented")
 }
 
-func (f RawEncodedNodeFeature) GetValueIndex(keyIndex int) int {
+func (f *RawEncodedNodeFeature) GetValueIndex(keyIndex int) int {
 	panic("Not implemented")
 }
 
-func (f RawEncodedNodeFeature) HasTag(keyIndex int, valueIndex int) bool {
+func (f *RawEncodedNodeFeature) HasTag(keyIndex int, valueIndex int) bool {
 	panic("Not implemented")
 }
 
-func (f RawEncodedNodeFeature) Print() {
+func (f *RawEncodedNodeFeature) Print() {
 	panic("Not implemented")
 }
 
-func (f RawEncodedNodeFeature) GetLon() float64 {
+func (f *RawEncodedNodeFeature) GetLon() float64 {
 	panic("Not implemented")
 }
 
-func (f RawEncodedNodeFeature) GetLat() float64 {
+func (f *RawEncodedNodeFeature) GetLat() float64 {
 	panic("Not implemented")
 }
 
-func (f RawEncodedNodeFeature) GetWayIds() []osm.WayID {
+func (f *RawEncodedNodeFeature) GetWayIds() []osm.WayID {
 	return f.WayIds
 }
 
-func (f RawEncodedNodeFeature) SetWayIds(wayIds []osm.WayID) {
+func (f *RawEncodedNodeFeature) SetWayIds(wayIds []osm.WayID) {
 	f.WayIds = wayIds
 }
 
-func (f RawEncodedNodeFeature) GetRelationIds() []osm.RelationID {
+func (f *RawEncodedNodeFeature) GetRelationIds() []osm.RelationID {
 	return f.RelationIds
 }
 
-func (f RawEncodedNodeFeature) SetRelationIds(relationIds []osm.RelationID) {
+func (f *RawEncodedNodeFeature) SetRelationIds(relationIds []osm.RelationID) {
 	f.RelationIds = relationIds
 }
 
@@ -200,51 +200,51 @@ type RawEncodedWayFeature struct {
 	RelationIds []osm.RelationID // An ID list of all relations this way is part of.
 }
 
-func (f RawEncodedWayFeature) GetData() []byte {
+func (f *RawEncodedWayFeature) GetData() []byte {
 	return f.Data
 }
 
-func (f RawEncodedWayFeature) GetID() uint64 {
+func (f *RawEncodedWayFeature) GetID() uint64 {
 	return binary.LittleEndian.Uint64(f.Data[0:])
 }
 
-func (f RawEncodedWayFeature) GetGeometry() orb.Geometry {
+func (f *RawEncodedWayFeature) GetGeometry() orb.Geometry {
 	panic("Not implemented")
 }
 
-func (f RawEncodedWayFeature) GetKeys() []byte {
+func (f *RawEncodedWayFeature) GetKeys() []byte {
 	panic("Not implemented")
 }
 
-func (f RawEncodedWayFeature) GetValues() []int {
+func (f *RawEncodedWayFeature) GetValues() []int {
 	panic("Not implemented")
 }
 
-func (f RawEncodedWayFeature) HasKey(keyIndex int) bool {
+func (f *RawEncodedWayFeature) HasKey(keyIndex int) bool {
 	panic("Not implemented")
 }
 
-func (f RawEncodedWayFeature) GetValueIndex(keyIndex int) int {
+func (f *RawEncodedWayFeature) GetValueIndex(keyIndex int) int {
 	panic("Not implemented")
 }
 
-func (f RawEncodedWayFeature) HasTag(keyIndex int, valueIndex int) bool {
+func (f *RawEncodedWayFeature) HasTag(keyIndex int, valueIndex int) bool {
 	panic("Not implemented")
 }
 
-func (f RawEncodedWayFeature) Print() {
+func (f *RawEncodedWayFeature) Print() {
 	panic("Not implemented")
 }
 
-func (f RawEncodedWayFeature) GetNodes() osm.WayNodes {
+func (f *RawEncodedWayFeature) GetNodes() osm.WayNodes {
 	panic("Not implemented")
 }
 
-func (f RawEncodedWayFeature) GetRelationIds() []osm.RelationID {
+func (f *RawEncodedWayFeature) GetRelationIds() []osm.RelationID {
 	return f.RelationIds
 }
 
-func (f RawEncodedWayFeature) SetRelationIds(relationIds []osm.RelationID) {
+func (f *RawEncodedWayFeature) SetRelationIds(relationIds []osm.RelationID) {
 	f.RelationIds = relationIds
 }
 
@@ -271,63 +271,63 @@ type RawEncodedRelationFeature struct {
 	ParentRelationIds []osm.RelationID
 }
 
-func (f RawEncodedRelationFeature) GetData() []byte {
+func (f *RawEncodedRelationFeature) GetData() []byte {
 	return f.Data
 }
 
-func (f RawEncodedRelationFeature) GetID() uint64 {
+func (f *RawEncodedRelationFeature) GetID() uint64 {
 	return binary.LittleEndian.Uint64(f.Data[0:])
 }
 
-func (f RawEncodedRelationFeature) GetGeometry() orb.Geometry {
+func (f *RawEncodedRelationFeature) GetGeometry() orb.Geometry {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) GetKeys() []byte {
+func (f *RawEncodedRelationFeature) GetKeys() []byte {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) GetValues() []int {
+func (f *RawEncodedRelationFeature) GetValues() []int {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) HasKey(keyIndex int) bool {
+func (f *RawEncodedRelationFeature) HasKey(keyIndex int) bool {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) GetValueIndex(keyIndex int) int {
+func (f *RawEncodedRelationFeature) GetValueIndex(keyIndex int) int {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) HasTag(keyIndex int, valueIndex int) bool {
+func (f *RawEncodedRelationFeature) HasTag(keyIndex int, valueIndex int) bool {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) Print() {
+func (f *RawEncodedRelationFeature) Print() {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) GetNodeIds() []osm.NodeID {
+func (f *RawEncodedRelationFeature) GetNodeIds() []osm.NodeID {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) GetWayIds() []osm.WayID {
+func (f *RawEncodedRelationFeature) GetWayIds() []osm.WayID {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) GetChildRelationIds() []osm.RelationID {
+func (f *RawEncodedRelationFeature) GetChildRelationIds() []osm.RelationID {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) SetGeometry(geometry orb.Geometry) {
+func (f *RawEncodedRelationFeature) SetGeometry(geometry orb.Geometry) {
 	panic("Not implemented")
 }
 
-func (f RawEncodedRelationFeature) GetParentRelationIds() []osm.RelationID {
+func (f *RawEncodedRelationFeature) GetParentRelationIds() []osm.RelationID {
 	return f.ParentRelationIds
 }
 
-func (f RawEncodedRelationFeature) SetParentRelationIds(relationIds []osm.RelationID) {
+func (f *RawEncodedRelationFeature) SetParentRelationIds(relationIds []osm.RelationID) {
 	f.ParentRelationIds = relationIds
 }
 

@@ -143,7 +143,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 			}
 
 			metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-			w.nodeCache[cellExtent] = make([]feature.NodeFeature, 0)
+			delete(w.nodeCache, cellExtent)
 		}
 	}
 
@@ -171,7 +171,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 			}
 
 			metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-			w.wayCache[cellExtent] = make([]feature.WayFeature, 0)
+			delete(w.wayCache, cellExtent)
 		}
 	}
 
@@ -199,7 +199,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 			}
 
 			metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-			w.relationCache[cellExtent] = make([]feature.RelationFeature, 0)
+			delete(w.relationCache, cellExtent)
 		}
 	}
 
@@ -232,6 +232,7 @@ func (w *FeatureStorageWriter) FlushData() error {
 		}
 
 		metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+		delete(w.nodeCache, cellExtent)
 	}
 
 	for cellExtent, wayFeatures := range w.wayCache {
@@ -255,6 +256,7 @@ func (w *FeatureStorageWriter) FlushData() error {
 		}
 
 		metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+		delete(w.wayCache, cellExtent)
 	}
 
 	for cellExtent, relationFeatures := range w.relationCache {
@@ -278,6 +280,7 @@ func (w *FeatureStorageWriter) FlushData() error {
 		}
 
 		metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+		delete(w.relationCache, cellExtent)
 	}
 
 	sigolo.Debugf("Write index metadata to %s", w.indexMetadataFileName)
@@ -391,7 +394,7 @@ func (w *FeatureStorageWriter) writeRawNodeData(encodedFeature *indexCommon.RawE
 
 	featureData := encodedFeature.GetData()
 
-	data := make([]byte, len(featureData)+len(wayIds)*4+len(relationIds)*4)
+	data := make([]byte, len(featureData)+len(wayIds)*8+len(relationIds)*8)
 
 	// Copy existing data
 	copy(data[0:], featureData)
@@ -535,7 +538,7 @@ func (w *FeatureStorageWriter) writeRawWayData(encodedFeature *indexCommon.RawEn
 
 	featureData := encodedFeature.GetData()
 
-	data := make([]byte, len(featureData)+len(relationIds)*4)
+	data := make([]byte, len(featureData)+len(relationIds)*8)
 
 	// Copy existing data
 	copy(data[0:], featureData)
@@ -702,7 +705,7 @@ func (w *FeatureStorageWriter) writeRawRelationData(encodedFeature *indexCommon.
 
 	featureData := encodedFeature.GetData()
 
-	data := make([]byte, len(featureData)+len(parentRelationIds)*4)
+	data := make([]byte, len(featureData)+len(parentRelationIds)*8)
 
 	// Copy existing data
 	copy(data[0:], featureData)
