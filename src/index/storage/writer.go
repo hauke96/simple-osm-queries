@@ -3,6 +3,7 @@ package storage
 import (
 	"bufio"
 	"encoding/binary"
+	"encoding/json"
 	"math"
 	os "os"
 	"soq/common"
@@ -11,30 +12,27 @@ import (
 	"soq/profiler"
 
 	"github.com/hauke96/sigolo/v2"
-	"github.com/paulmach/osm"
+	"github.com/paulmach/orb"
 	"github.com/pkg/errors"
 )
 
 type FeatureStorageWriter struct {
-	indexFileWriter     *bufio.Writer
-	indexFileCursorByte int64 // Byte at which point the next data will be written. Is initially 0.
-	indexMetadata       *indexMetadata
+	indexFileWriter       *bufio.Writer
+	indexFileCursorByte   int64 // Byte at which point the next data will be written. Is initially 0.
+	indexMetadata         *indexMetadata
+	indexMetadataFileName string
 
 	nodeCache     map[common.CellExtent][]feature.NodeFeature
 	wayCache      map[common.CellExtent][]feature.WayFeature
 	relationCache map[common.CellExtent][]feature.RelationFeature
 	maxCacheSize  int // Number of features. If exceeded, the cache (i.e. the list of node features for a certain cell extent) is written to disk.
-
-	nodeToWayMapping          map[osm.NodeID][]osm.WayID
-	nodeToRelationMapping     map[osm.NodeID][]osm.RelationID
-	wayToRelationMapping      map[osm.WayID][]osm.RelationID
-	relationToRelationMapping map[osm.RelationID][]osm.RelationID
 }
 
 func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorageWriter {
 	var file *os.File
 
 	indexFileName := baseFolder + "/" + filename
+	sigolo.Debugf("Use index file %s for writer", indexFileName)
 
 	// Ensure the folder exists
 	if _, err := os.Stat(baseFolder); os.IsNotExist(err) {
@@ -44,14 +42,12 @@ func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorage
 	}
 
 	if _, err := os.Stat(indexFileName); err == nil {
-		// Index file does exist -> open it
+		// Index file DOES exist -> open it
 		sigolo.Tracef("Index file %s already exist but is not cached, I'll open it", indexFileName)
 		file, err = os.OpenFile(indexFileName, os.O_RDWR, 0666)
 		sigolo.FatalCheck(errors.Wrapf(err, "Unable to open index file %s", indexFileName))
 	} else if errors.Is(err, os.ErrNotExist) {
-		// Index file does NOT exist -> create its folder (if needed) and the file itself
-
-		// Create index file
+		// Index file does NOT exist -> create new index file
 		sigolo.Tracef("Index file %s does not exist, I'll create it", indexFileName)
 		file, err = os.Create(indexFileName)
 		sigolo.FatalCheck(errors.Wrapf(err, "Unable to create new index file %s", indexFileName))
@@ -60,17 +56,14 @@ func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorage
 	}
 
 	return &FeatureStorageWriter{
-		indexFileWriter:           bufio.NewWriter(file),
-		indexFileCursorByte:       0,
-		indexMetadata:             &indexMetadata{},
-		nodeCache:                 make(map[common.CellExtent][]feature.NodeFeature),
-		wayCache:                  make(map[common.CellExtent][]feature.WayFeature),
-		relationCache:             make(map[common.CellExtent][]feature.RelationFeature),
-		maxCacheSize:              1000, // TODO make this configurable
-		nodeToWayMapping:          make(map[osm.NodeID][]osm.WayID),
-		nodeToRelationMapping:     make(map[osm.NodeID][]osm.RelationID),
-		wayToRelationMapping:      make(map[osm.WayID][]osm.RelationID),
-		relationToRelationMapping: make(map[osm.RelationID][]osm.RelationID),
+		indexFileWriter:       bufio.NewWriter(file),
+		indexFileCursorByte:   0,
+		indexMetadata:         &indexMetadata{},
+		indexMetadataFileName: baseFolder + "/metadata.json",
+		nodeCache:             make(map[common.CellExtent][]feature.NodeFeature),
+		wayCache:              make(map[common.CellExtent][]feature.WayFeature),
+		relationCache:         make(map[common.CellExtent][]feature.RelationFeature),
+		maxCacheSize:          1_000_000, // TODO make this configurable
 	}
 }
 
@@ -81,20 +74,9 @@ func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorage
 // a given node) should be collected from the given encoded features or written to them. Call this method first with
 // "true" as argument to collect the parent IDs. Call this method again with "false" as argument to write the data
 // including their parent IDs into the final index file.
-func (w *FeatureStorageWriter) WriteNodeFeature(feature feature.NodeFeature, cellExtent common.CellExtent, firstPass bool) error {
+func (w *FeatureStorageWriter) WriteNodeFeature(feature feature.NodeFeature, cellExtent common.CellExtent) error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
-
-	id := osm.NodeID(feature.GetID())
-
-	if !firstPass {
-		if wayIds, ok := w.nodeToWayMapping[id]; ok {
-			feature.SetWayIds(wayIds)
-		}
-		if relationIds, ok := w.nodeToRelationMapping[id]; ok {
-			feature.SetRelationIds(relationIds)
-		}
-	}
 
 	w.nodeCache[cellExtent] = append(w.nodeCache[cellExtent], feature)
 
@@ -108,21 +90,9 @@ func (w *FeatureStorageWriter) WriteNodeFeature(feature feature.NodeFeature, cel
 // a given node) should be collected from the given encoded features or written to them. Call this method first with
 // "true" as argument to collect the parent IDs. Call this method again with "false" as argument to write the data
 // including their parent IDs into the final index file.
-func (w *FeatureStorageWriter) WriteWayFeature(feature feature.WayFeature, cellExtent common.CellExtent, firstPass bool) error {
+func (w *FeatureStorageWriter) WriteWayFeature(feature feature.WayFeature, cellExtent common.CellExtent) error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
-
-	id := osm.WayID(feature.GetID())
-
-	if firstPass {
-		for _, node := range feature.GetNodes() {
-			w.nodeToWayMapping[node.ID] = append(w.nodeToWayMapping[node.ID], id)
-		}
-	} else {
-		if relationIds, ok := w.wayToRelationMapping[id]; ok {
-			feature.SetRelationIds(relationIds)
-		}
-	}
 
 	w.wayCache[cellExtent] = append(w.wayCache[cellExtent], feature)
 
@@ -136,27 +106,9 @@ func (w *FeatureStorageWriter) WriteWayFeature(feature feature.WayFeature, cellE
 // a given node) should be collected from the given encoded features or written to them. Call this method first with
 // "true" as argument to collect the parent IDs. Call this method again with "false" as argument to write the data
 // including their parent IDs into the final index file.
-func (w *FeatureStorageWriter) WriteRelationFeature(feature feature.RelationFeature, cellExtent common.CellExtent, firstPass bool) error {
+func (w *FeatureStorageWriter) WriteRelationFeature(feature feature.RelationFeature, cellExtent common.CellExtent) error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
-
-	id := osm.RelationID(feature.GetID())
-
-	if firstPass {
-		for _, nodeId := range feature.GetNodeIds() {
-			w.nodeToRelationMapping[nodeId] = append(w.nodeToRelationMapping[nodeId], id)
-		}
-		for _, wayId := range feature.GetWayIds() {
-			w.wayToRelationMapping[wayId] = append(w.wayToRelationMapping[wayId], id)
-		}
-		for _, relationId := range feature.GetChildRelationIds() {
-			w.relationToRelationMapping[relationId] = append(w.relationToRelationMapping[relationId], id)
-		}
-	} else {
-		if relationIds, ok := w.relationToRelationMapping[id]; ok {
-			feature.SetParentRelationIds(relationIds)
-		}
-	}
 
 	w.relationCache[cellExtent] = append(w.relationCache[cellExtent], feature)
 
@@ -171,6 +123,8 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 		if len(nodeFeatures) > w.maxCacheSize {
 			metadata := w.indexMetadata.getCellMetadata(cellExtent)
 			startIndex := w.indexFileCursorByte
+
+			sigolo.Debugf("Flush node cache for extent %v to disk starting at index %d", cellExtent, startIndex)
 
 			for _, nodeFeature := range nodeFeatures {
 				switch encodedFeature := nodeFeature.(type) {
@@ -189,6 +143,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 			}
 
 			metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+			w.nodeCache[cellExtent] = make([]feature.NodeFeature, 0)
 		}
 	}
 
@@ -196,6 +151,8 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 		if len(wayFeatures) > w.maxCacheSize {
 			metadata := w.indexMetadata.getCellMetadata(cellExtent)
 			startIndex := w.indexFileCursorByte
+
+			sigolo.Debugf("Flush way cache for extent %v to disk starting at index %d", cellExtent, startIndex)
 
 			for _, wayFeature := range wayFeatures {
 				switch encodedFeature := wayFeature.(type) {
@@ -214,6 +171,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 			}
 
 			metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+			w.wayCache[cellExtent] = make([]feature.WayFeature, 0)
 		}
 	}
 
@@ -221,6 +179,8 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 		if len(relationFeatures) > w.maxCacheSize {
 			metadata := w.indexMetadata.getCellMetadata(cellExtent)
 			startIndex := w.indexFileCursorByte
+
+			sigolo.Debugf("Flush relation cache for extent %v to disk starting at index %d", cellExtent, startIndex)
 
 			for _, relationFeature := range relationFeatures {
 				switch encodedFeature := relationFeature.(type) {
@@ -239,14 +199,15 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 			}
 
 			metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+			w.relationCache[cellExtent] = make([]feature.RelationFeature, 0)
 		}
 	}
 
 	return nil
 }
 
-// FlushCaches writes all dirty caches to disk.
-func (w *FeatureStorageWriter) FlushCaches() error {
+// FlushData writes all dirty caches to disk.
+func (w *FeatureStorageWriter) FlushData() error {
 	// TODO mutex needed?
 	// TODO extract logic and reuse in flushCachesIfNeeded
 
@@ -319,7 +280,12 @@ func (w *FeatureStorageWriter) FlushCaches() error {
 		metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
 	}
 
-	return nil
+	sigolo.Debugf("Write index metadata to %s", w.indexMetadataFileName)
+	metadataJson, err := json.Marshal(w.indexMetadata)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(w.indexMetadataFileName, metadataJson, 0644)
 }
 
 func (w *FeatureStorageWriter) writeNodeData(encodedFeature *indexCommon.EncodedNodeFeature) error {
@@ -638,7 +604,16 @@ func (w *FeatureStorageWriter) writeRelationData(encodedFeature *indexCommon.Enc
 
 	data := make([]byte, byteCount)
 
-	bbox := encodedFeature.GetGeometry().Bound()
+	geometry := encodedFeature.GetGeometry()
+	var bbox orb.Bound
+	if geometry != nil {
+		bbox = geometry.Bound()
+	} else {
+		bbox = orb.Bound{
+			Min: orb.Point{0, 0},
+			Max: orb.Point{0, 0},
+		}
+	}
 
 	binary.LittleEndian.PutUint64(data[0:], encodedFeature.GetID())
 	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(bbox.Min.Lon())))

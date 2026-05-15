@@ -2,7 +2,6 @@ package importing
 
 import (
 	"os"
-	"path"
 	"soq/common"
 	"soq/index"
 	"soq/index/importing"
@@ -16,16 +15,20 @@ import (
 	"github.com/pkg/errors"
 )
 
-func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFolder string) error {
+func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder string) error {
 	if !strings.HasSuffix(inputFile, ".osm") && !strings.HasSuffix(inputFile, ".pbf") {
 		sigolo.Error("Input file must be an .osm or .pbf file")
 		os.Exit(1)
 	}
 
-	baseFolder := path.Join(indexBaseFolder, index.GridIndexFolder)
-
 	sigolo.Infof("Start import of OSM data file %s", inputFile)
 	importStartTime := time.Now()
+
+	sigolo.Debugf("Remove the index base folder %s", baseFolder)
+	err := os.RemoveAll(baseFolder)
+	if err != nil {
+		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
+	}
 
 	// TODO Idea: Determine node density during tag index creation. The write temp features into the cell-extents instead of one huge file. This prevents reading this huge file over and over again.
 
@@ -39,14 +42,14 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	osmDensityAggregator := osm.NewOsmDensityAggregator(cellWidth, cellHeight)
 
 	osmReader := osm.NewOsmReader()
-	err := osmReader.Read(inputFile, tagIndexCreator, osmDensityAggregator)
+	err = osmReader.Read(inputFile, tagIndexCreator, osmDensityAggregator)
 	if err != nil {
 		return errors.Wrapf(err, "Error importing OSM data")
 	}
 
 	sigolo.Debugf("Create and save tag-index")
 	tagIndex := tagIndexCreator.CreateTagIndex()
-	tagIndex.BaseFolder = indexBaseFolder // TODO Set it here or pass it into some of the above functions?
+	tagIndex.BaseFolder = baseFolder // TODO Set it here or pass it into some of the above functions?
 	err = tagIndex.SaveToFile(index.TagIndexFilename)
 	if err != nil {
 		return errors.Wrapf(err, "Error writing tag index file to %s", index.TagIndexFilename)
@@ -135,12 +138,6 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	sigolo.Info("Read temp features and write them as normal features into cells")
 	currentStepStartTime = time.Now()
 
-	sigolo.Debugf("Remove the grid-index base folder %s", baseFolder)
-	err = os.RemoveAll(baseFolder)
-	if err != nil {
-		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
-	}
-
 	featureStorageWriter = storage.NewFeatureStorageWriter(baseFolder, "index")
 	featureStorageReader := storage.NewFeatureStorageReader(baseFolder, "index.raw")
 
@@ -156,8 +153,20 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		//	return err
 		//}
 
-		// TODO read and write data the new way
-		//nodes := featureStorageReader.ReadRawNodes(subExtent)
+		nodes, ways, relations := featureStorageReader.ReadRawDataWithParentIds(subExtent)
+
+		for _, node := range nodes {
+			err = featureStorageWriter.WriteNodeFeature(node, subExtent)
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to write node %d to final index", node.GetID()))
+		}
+		for _, way := range ways {
+			err = featureStorageWriter.WriteWayFeature(way, subExtent)
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to write way %d to final index", way.GetID()))
+		}
+		for _, relation := range relations {
+			err = featureStorageWriter.WriteRelationFeature(relation, subExtent)
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to write relation %d to final index", relation.GetID()))
+		}
 
 		duration = time.Since(currentSubExtentStartTime)
 		sigolo.Debugf("Processed sub-extent %v in %s", subExtent, duration)

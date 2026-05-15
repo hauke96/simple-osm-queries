@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"soq/common"
 	"soq/feature"
-	"soq/index/storage"
 	ownOsm "soq/osm"
 	"soq/profiler"
 	"strconv"
@@ -38,7 +37,6 @@ type GridIndexWriter struct {
 
 	tagIndex               *TagIndex
 	tagIndexTempValueArray []int
-	featureStorageWriter   *storage.FeatureStorageWriter
 
 	// During writing, some of the half-written data must be read again. This requires some functionality of the
 	// GridIndexReader during importing data and writing a new index.
@@ -81,8 +79,7 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 		cacheRawEncodedRelations:    map[common.CellIndex][]feature.RelationFeature{},
 		cacheRawEncodedFeatureMutex: &sync.Mutex{},
 
-		tagIndex:             tagIndex,
-		featureStorageWriter: storage.NewFeatureStorageWriter(baseFolder),
+		tagIndex: tagIndex,
 
 		gridIndexReader: &GridIndexReader{
 			BaseGridIndex:        baseGridIndex,

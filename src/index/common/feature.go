@@ -1,6 +1,8 @@
 package common
 
 import (
+	"encoding/binary"
+
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
@@ -108,7 +110,7 @@ func (f RawEncodedNodeFeature) GetData() []byte {
 }
 
 func (f RawEncodedNodeFeature) GetID() uint64 {
-	panic("Not implemented")
+	return binary.LittleEndian.Uint64(f.Data[0:])
 }
 
 func (f RawEncodedNodeFeature) GetGeometry() orb.Geometry {
@@ -203,7 +205,7 @@ func (f RawEncodedWayFeature) GetData() []byte {
 }
 
 func (f RawEncodedWayFeature) GetID() uint64 {
-	panic("Not implemented")
+	return binary.LittleEndian.Uint64(f.Data[0:])
 }
 
 func (f RawEncodedWayFeature) GetGeometry() orb.Geometry {
@@ -274,7 +276,7 @@ func (f RawEncodedRelationFeature) GetData() []byte {
 }
 
 func (f RawEncodedRelationFeature) GetID() uint64 {
-	panic("Not implemented")
+	return binary.LittleEndian.Uint64(f.Data[0:])
 }
 
 func (f RawEncodedRelationFeature) GetGeometry() orb.Geometry {

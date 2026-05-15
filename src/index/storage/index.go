@@ -6,7 +6,7 @@ type indexMetadata struct {
 	Cells []*indexCellMetadata `json:"cells"`
 }
 
-func (i indexMetadata) getCellMetadata(extent common.CellExtent) *indexCellMetadata {
+func (i *indexMetadata) getCellMetadata(extent common.CellExtent) *indexCellMetadata {
 	var cellMetadata *indexCellMetadata
 
 	for _, cell := range i.Cells {

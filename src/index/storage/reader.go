@@ -41,15 +41,40 @@ func NewFeatureStorageReader(baseFolder string, filename string) *FeatureStorage
 	}
 }
 
-// ReadRawNodes reads the nodes from the given extent and
-func (r FeatureStorageReader) ReadRawNodes(cellExtent common.CellExtent) []*indexCommon.RawEncodedNodeFeature {
+func (r FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExtent) (
+	[]*indexCommon.RawEncodedNodeFeature,
+	[]*indexCommon.RawEncodedWayFeature,
+	[]*indexCommon.RawEncodedRelationFeature,
+) {
+	nodes := r.readRawNodes(cellExtent)
+
+	ways, nodeToWayMapping := r.readRawWays(cellExtent)
+	for _, node := range nodes {
+		node.SetWayIds(nodeToWayMapping[osm.NodeID(node.GetID())])
+	}
+
+	relations, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping := r.readRelations(cellExtent)
+	for _, node := range nodes {
+		node.SetRelationIds(nodeToRelationMapping[osm.NodeID(node.GetID())])
+	}
+	for _, way := range ways {
+		way.SetRelationIds(wayToRelationMapping[osm.WayID(way.GetID())])
+	}
+	for _, relation := range relations {
+		relation.SetParentRelationIds(relationToRelationMapping[osm.RelationID(relation.GetID())])
+	}
+
+	return nodes, ways, relations
+}
+
+func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*indexCommon.RawEncodedNodeFeature {
 	features := []*indexCommon.RawEncodedNodeFeature{}
 
 	cellOffsets := r.indexMetadata.getCellMetadata(cellExtent).NodeOffsets
 	data := r.read(cellOffsets)
 
 	// Storage format see FeatureStorageWriter::writeNodeData
-	for pos := 0; pos < len(data); pos++ {
+	for pos := 0; pos < len(data); {
 		id := int64(binary.LittleEndian.Uint64(data[pos:]))
 
 		numWayIds := int(binary.LittleEndian.Uint16(data[pos+20:]))
@@ -59,7 +84,7 @@ func (r FeatureStorageReader) ReadRawNodes(cellExtent common.CellExtent) []*inde
 
 		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+22:]))
 		if numRelationIds != 0 {
-			sigolo.Fatalf("Expected number of relations on raw node %d to be 0 but was %d", id, numRelationIds)
+			sigolo.Fatalf("Expected number of relations on raw node %d (post=%d) to be 0 but was %d", id, pos, numRelationIds)
 		}
 
 		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+16:]))
@@ -73,30 +98,32 @@ func (r FeatureStorageReader) ReadRawNodes(cellExtent common.CellExtent) []*inde
 			RelationIds: make([]osm.RelationID, 0),
 		}
 		features = append(features, rawEncodedNode)
+
+		pos += numberOfBytes
 	}
 
 	return features
 }
 
-func (r FeatureStorageReader) ReadRawWays(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedWayFeature, map[osm.NodeID][]osm.WayID) {
+func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedWayFeature, map[osm.NodeID][]osm.WayID) {
 	features := []*indexCommon.RawEncodedWayFeature{}
-	var nodeToWayMapping map[osm.NodeID][]osm.WayID
+	nodeToWayMapping := map[osm.NodeID][]osm.WayID{}
 
 	cellOffsets := r.indexMetadata.getCellMetadata(cellExtent).WayOffsets
 	data := r.read(cellOffsets)
 
 	// Storage format see FeatureStorageWriter::writeWayData
-	for pos := 0; pos < len(data); pos++ {
+	for pos := 0; pos < len(data); {
 		id := osm.WayID(binary.LittleEndian.Uint64(data[pos:]))
 
 		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+14:]))
 		if numRelationIds != 0 {
-			sigolo.Fatalf("Expected number of relations on raw way %d to be 0 but was %d", id, numRelationIds)
+			sigolo.Fatalf("Expected number of relations on raw way %d (post=%d) to be 0 but was %d", id, pos, numRelationIds)
 		}
 
 		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+8:]))
 		numValues := int(binary.LittleEndian.Uint16(data[pos+10:]))
-		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+28:]))
+		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+12:]))
 
 		numHeaderBytes := 8 + 2 + 2 + 2 + 2 + numEncodedKeyBytes + numValues*3
 		numberOfBytes := numHeaderBytes + numNodeIds*16
@@ -118,17 +145,17 @@ func (r FeatureStorageReader) ReadRawWays(cellExtent common.CellExtent) ([]*inde
 	return features, nodeToWayMapping
 }
 
-func (r FeatureStorageReader) ReadRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
+func (r FeatureStorageReader) readRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
 	features := []*indexCommon.RawEncodedRelationFeature{}
-	var nodeToRelationMapping map[osm.NodeID][]osm.RelationID
-	var wayToRelationMapping map[osm.WayID][]osm.RelationID
-	var relationToRelationMapping map[osm.RelationID][]osm.RelationID
+	nodeToRelationMapping := map[osm.NodeID][]osm.RelationID{}
+	wayToRelationMapping := map[osm.WayID][]osm.RelationID{}
+	relationToRelationMapping := map[osm.RelationID][]osm.RelationID{}
 
 	cellOffsets := r.indexMetadata.getCellMetadata(cellExtent).RelationOffsets
 	data := r.read(cellOffsets)
 
 	// Storage format see FeatureStorageWriter::writeRelationData
-	for pos := 0; pos < len(data); pos++ {
+	for pos := 0; pos < len(data); {
 		id := osm.RelationID(binary.LittleEndian.Uint64(data[pos:]))
 
 		numParentRelationIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
@@ -163,6 +190,8 @@ func (r FeatureStorageReader) ReadRelations(cellExtent common.CellExtent) ([]*in
 			ParentRelationIds: make([]osm.RelationID, 0),
 		}
 		features = append(features, rawEncodedRelation)
+
+		pos += numberOfBytes
 	}
 
 	return features, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping
@@ -180,7 +209,7 @@ func (r FeatureStorageReader) read(cellOffsets []indexCellOffset) []byte {
 	for _, cellOffset := range cellOffsets {
 		numBytesToRead := cellOffset.EndIndex - cellOffset.StartIndex
 
-		numBytesActuallyRead, err := r.indexFile.ReadAt(buffer[posInBuffer:numBytesToRead], cellOffset.StartIndex)
+		numBytesActuallyRead, err := r.indexFile.ReadAt(buffer[posInBuffer:posInBuffer+numBytesToRead], cellOffset.StartIndex)
 		sigolo.FatalCheck(errors.Wrapf(err, "Unable to read bytes %d to %d from index file", cellOffset.StartIndex, cellOffset.EndIndex))
 		if int64(numBytesActuallyRead) != numBytesToRead {
 			sigolo.Fatalf("Error reading bytes %d to %d from index file. Expected to read %d bytes but actually read %d bytes.", cellOffset.StartIndex, cellOffset.EndIndex, numBytesToRead, numBytesActuallyRead)

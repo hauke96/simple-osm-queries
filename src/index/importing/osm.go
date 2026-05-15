@@ -23,7 +23,7 @@ type OsmToRawFeaturesImporter struct {
 func NewOsmToRawFeaturesImporter(tagIndex *index.TagIndex, featureStorageWriter *storage.FeatureStorageWriter, cellExtents []common.CellExtent, cellWidth float64, cellHeight float64) *OsmToRawFeaturesImporter {
 	return &OsmToRawFeaturesImporter{
 		tagIndex:               tagIndex,
-		tagIndexTempValueArray: make([]int, 0),
+		tagIndexTempValueArray: tagIndex.NewTempEncodedValueArray(),
 		featureStorageWriter:   featureStorageWriter,
 		cellExtents:            cellExtents,
 		cellWidth:              cellWidth,
@@ -44,17 +44,19 @@ func (i *OsmToRawFeaturesImporter) HandleNode(node *osm.Node) error {
 	defer profiler.EndMeasurement(key)
 
 	encodedKeys, encodedValues := i.tagIndex.EncodeTags(node.Tags, i.tagIndexTempValueArray)
+	point := node.Point()
 	encodedFeature := &indexCommon.EncodedNodeFeature{
 		AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
-			ID:     uint64(node.ID),
-			Keys:   encodedKeys,
-			Values: encodedValues,
+			ID:       uint64(node.ID),
+			Geometry: &point,
+			Keys:     encodedKeys,
+			Values:   encodedValues,
 		},
 	}
 
 	for _, cellExtent := range i.cellExtents {
 		if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
-			err := i.featureStorageWriter.WriteNodeFeature(encodedFeature, cellExtent, true)
+			err := i.featureStorageWriter.WriteNodeFeature(encodedFeature, cellExtent)
 			if err != nil {
 				return err
 			}
@@ -82,7 +84,7 @@ func (i *OsmToRawFeaturesImporter) HandleWay(way *osm.Way) error {
 	for _, cellExtent := range i.cellExtents {
 		for _, node := range way.Nodes {
 			if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
-				err := i.featureStorageWriter.WriteWayFeature(encodedFeature, cellExtent, true)
+				err := i.featureStorageWriter.WriteWayFeature(encodedFeature, cellExtent)
 				if err != nil {
 					return err
 				}
@@ -129,12 +131,12 @@ func (i *OsmToRawFeaturesImporter) HandleRelation(relation *osm.Relation) error 
 	}
 
 	// TODO is minValue a proper value to show "doesn't have a cell yet"?
-	return i.featureStorageWriter.WriteRelationFeature(encodedFeature, common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}, true)
+	return i.featureStorageWriter.WriteRelationFeature(encodedFeature, common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}})
 }
 
 func (i *OsmToRawFeaturesImporter) Done() error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
 
-	return i.featureStorageWriter.FlushCaches()
+	return i.featureStorageWriter.FlushData()
 }
