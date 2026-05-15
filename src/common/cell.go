@@ -69,6 +69,14 @@ func (c CellExtent) Contains(cell CellIndex) bool {
 	return !cell.isAboveOrRightOf(c.UpperRightCell()) && !cell.isBelowOrLeftOf(c.LowerLeftCell())
 }
 
+func (c CellExtent) Intersects(other CellExtent) bool {
+	return !(other.LowerLeftCell().Y() > c.UpperRightCell().Y() || // other is above c
+		other.LowerLeftCell().X() > c.UpperRightCell().X() || // other is right of c
+		other.UpperRightCell().Y() < c.LowerLeftCell().Y() || // other is below c
+		other.UpperRightCell().X() < c.LowerLeftCell().X()) // other is left of c
+
+}
+
 func (c CellExtent) ContainsLonLat(lon float64, lat float64, cellWidth float64, cellHeight float64) bool {
 	x := int(lon / cellWidth)
 	y := int(lat / cellHeight)

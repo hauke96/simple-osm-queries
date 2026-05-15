@@ -2,13 +2,14 @@ package query
 
 import (
 	"fmt"
-	"github.com/hauke96/sigolo/v2"
-	"github.com/paulmach/orb"
-	"github.com/pkg/errors"
 	"soq/common"
 	"soq/feature"
 	"soq/index"
 	ownOsm "soq/osm"
+
+	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb"
+	"github.com/pkg/errors"
 )
 
 type LocationExpression interface {

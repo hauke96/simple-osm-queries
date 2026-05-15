@@ -600,3 +600,17 @@ func (r FeatureStorageReader) GetExtentsForCells(cells []common.CellIndex) []com
 
 	return result
 }
+
+func (r FeatureStorageReader) GetExtentsForCellBounds(bounds common.CellExtent) []common.CellExtent {
+	result := []common.CellExtent{}
+
+	for _, cellMetadata := range r.indexMetadata.Cells {
+		if cellMetadata.Extent.Intersects(bounds) {
+			result = append(result, cellMetadata.Extent)
+		} else {
+			sigolo.Debug("No")
+		}
+	}
+
+	return result
+}

@@ -170,3 +170,30 @@ func TestGridCellExtent_containsLonLat(t *testing.T) {
 	AssertFalse(t, extent.ContainsLonLat(210, 200, 10, 10))
 	AssertFalse(t, extent.ContainsLonLat(210, 190, 10, 10))
 }
+
+func TestGridCellExtent_intersects(t *testing.T) {
+	extent := CellExtent{
+		CellIndex{10, 10},
+		CellIndex{20, 20},
+	}
+
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{15, 15}, CellIndex{16, 16}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{10, 10}, CellIndex{16, 16}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{15, 15}, CellIndex{20, 20}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{10, 10}, CellIndex{20, 20}}))
+
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{0, 0}, CellIndex{10, 10}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{0, 0}, CellIndex{10, 20}}))
+
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{10, 0}, CellIndex{20, 10}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{0, 10}, CellIndex{10, 20}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{10, 20}, CellIndex{20, 30}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{20, 20}, CellIndex{20, 10}}))
+
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{0, 0}, CellIndex{30, 15}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{0, 15}, CellIndex{30, 30}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{0, 0}, CellIndex{15, 30}}))
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{15, 0}, CellIndex{30, 30}}))
+
+	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{0, 0}, CellIndex{30, 30}}))
+}

@@ -41,42 +41,44 @@ func (g *GridIndexReader) Get(bbox *orb.Bound, objectType ownOsm.OsmObjectType) 
 	sigolo.Debugf("Get feature from bbox=%#v", bbox)
 	minCell := g.GetCellIndexForCoordinate(bbox.Min.Lon(), bbox.Min.Lat())
 	maxCell := g.GetCellIndexForCoordinate(bbox.Max.Lon(), bbox.Max.Lat())
+	bounds := common.CellExtent{minCell, maxCell}
 
 	resultChannel := make(chan *GetFeaturesResult)
 
-	// TODO determine CellExtents here and distribute them across the threads
 	go func() {
-		numThreads := 3
+		cellExtentChannel := make(chan common.CellExtent)
+		go func() {
+			cellExtents := g.featureReader.GetExtentsForCellBounds(bounds)
+			sigolo.Debugf("Found extents %v for bounds %v", cellExtents, bounds)
+			for _, cellExtent := range cellExtents {
+				cellExtentChannel <- cellExtent
+			}
+			close(cellExtentChannel)
+		}()
 
-		// Group the cells into columns of equal size so that each goroutine below can handle on column.
-		cellColumns := maxCell.X() - minCell.X() + 1 // min and max are inclusive, therefore +1
-		if cellColumns < numThreads {
-			// To prevent that two threads are fetching the same columns
-			numThreads = cellColumns
-		}
-		threadColumns := cellColumns / numThreads
+		numThreads := 3
 
 		var wg sync.WaitGroup
 		wg.Add(numThreads)
 
 		for i := 0; i < numThreads; i++ {
-			minColX := minCell.X() + i*threadColumns
-			maxColX := minCell.X() + (i+1)*threadColumns - 1 // -1 to prevent overlapping columns
-			if i == numThreads-1 {
-				// Last column: Make sure it goes til the requested end
-				maxColX = maxCell.X()
-			}
+			go func() {
+				for cellExtent := range cellExtentChannel {
+					featureResult := g.getFeaturesForCellsWithBbox(bbox, cellExtent, objectType)
+					resultChannel <- featureResult
+				}
 
-			go g.getFeaturesForCellsWithBbox(resultChannel, &wg, bbox, minColX, maxColX, minCell.Y(), maxCell.Y(), objectType)
+				wg.Done()
+			}()
 		}
 
 		wg.Wait()
-		close(resultChannel)
 
+		close(resultChannel)
 		sigolo.Debugf("Done reading %s features for area minCell=%v to maxCell=%v", objectType, minCell, maxCell)
 	}()
 
-	return resultChannel, nil // Remove error from return, since it doesn't make any sense here
+	return resultChannel, nil
 }
 
 func (g *GridIndexReader) GetFeaturesForCells(cells []common.CellIndex, objectType ownOsm.OsmObjectType) chan *GetFeaturesResult {
@@ -103,46 +105,29 @@ func (g *GridIndexReader) GetFeaturesForCells(cells []common.CellIndex, objectTy
 	return resultChannel
 }
 
-func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesResult, wg *sync.WaitGroup, bbox *orb.Bound, minCellX int, maxCellX int, minCellY int, maxCellY int, objectType ownOsm.OsmObjectType) {
-	sigolo.Debugf("Get %s features for cells minX=%d, minY=%d / maxX=%d, maxY=%d", objectType.String(), minCellX, minCellY, maxCellX, maxCellY)
+func (g *GridIndexReader) getFeaturesForCellsWithBbox(bbox *orb.Bound, cellExtent common.CellExtent, objectType ownOsm.OsmObjectType) *GetFeaturesResult {
+	sigolo.Debugf("Get %s features for cell extent %v", objectType.String(), cellExtent)
 
-	var cells []common.CellIndex
+	featuresInBbox := &GetFeaturesResult{
+		Cell:     cellExtent,
+		Features: []feature.Feature{},
+	}
 
-	for cellX := minCellX; cellX <= maxCellX; cellX++ {
-		for cellY := minCellY; cellY <= maxCellY; cellY++ {
-			cells = append(cells, common.CellIndex{cellX, cellY})
+	encodedFeatures, err := g.readFeatures(cellExtent, objectType)
+	sigolo.FatalCheck(err)
+
+	for i := 0; i < len(encodedFeatures); i++ {
+		encodedFeature := encodedFeatures[i]
+		if encodedFeature.GetID() == 108782320 {
+			sigolo.Debug("Found")
+		}
+		if bbox.Intersects(encodedFeature.GetGeometry().Bound()) {
+			featuresInBbox.Features = append(featuresInBbox.Features, encodedFeature)
 		}
 	}
 
-	cellExtents := g.featureReader.GetExtentsForCells(cells)
-
-	for _, cellExtent := range cellExtents {
-		sigolo.Debugf("Get %s features for cell extent %v", objectType.String(), cellExtent)
-
-		featuresInBbox := &GetFeaturesResult{
-			Cell:     cellExtent,
-			Features: []feature.Feature{},
-		}
-
-		encodedFeatures, err := g.readFeatures(cellExtent, objectType)
-		sigolo.FatalCheck(err)
-
-		for i := 0; i < len(encodedFeatures); i++ {
-			encodedFeature := encodedFeatures[i]
-			if encodedFeature.GetID() == 108782320 {
-				sigolo.Debug("Found")
-			}
-			if encodedFeature != nil && bbox.Intersects(encodedFeature.GetGeometry().Bound()) {
-				featuresInBbox.Features = append(featuresInBbox.Features, encodedFeature)
-			}
-		}
-
-		output <- featuresInBbox
-	}
-
-	wg.Done()
-
-	sigolo.Debugf("Finished getting %s features for cells minX=%d, maxX=%d / minY=%d, maxY=%d", objectType, minCellX, maxCellX, minCellY, maxCellY)
+	sigolo.Debugf("Finished getting %s features for cell extent %v", objectType, cellExtent)
+	return featuresInBbox
 }
 
 // readFeatures reads all features from the specified cell and writes them periodically to the output channel.
