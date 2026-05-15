@@ -169,6 +169,14 @@ func TestGridCellExtent_containsLonLat(t *testing.T) {
 	AssertFalse(t, extent.ContainsLonLat(210, 210, 10, 10))
 	AssertFalse(t, extent.ContainsLonLat(210, 200, 10, 10))
 	AssertFalse(t, extent.ContainsLonLat(210, 190, 10, 10))
+
+	// Fractions
+	AssertFalse(t, extent.ContainsLonLat(29.5, 29.99, 3, 3))
+	AssertTrue(t, extent.ContainsLonLat(30.1, 30.123, 3, 3))
+	AssertTrue(t, extent.ContainsLonLat(59.99, 59.5, 3, 3))
+	AssertTrue(t, extent.ContainsLonLat(60.01, 60.123, 3, 3))
+	AssertTrue(t, extent.ContainsLonLat(62.99, 62.5, 3, 3))
+	AssertFalse(t, extent.ContainsLonLat(63.01, 63.123, 3, 3))
 }
 
 func TestGridCellExtent_intersects(t *testing.T) {

@@ -74,14 +74,18 @@ func (c CellExtent) Intersects(other CellExtent) bool {
 		other.LowerLeftCell().X() > c.UpperRightCell().X() || // other is right of c
 		other.UpperRightCell().Y() < c.LowerLeftCell().Y() || // other is below c
 		other.UpperRightCell().X() < c.LowerLeftCell().X()) // other is left of c
-
 }
 
+// TODO can be removed?
 func (c CellExtent) ContainsLonLat(lon float64, lat float64, cellWidth float64, cellHeight float64) bool {
-	x := int(lon / cellWidth)
-	y := int(lat / cellHeight)
-
-	return x >= c.LowerLeftCell().X() && y >= c.LowerLeftCell().Y() && x <= c.UpperRightCell().X() && y <= c.UpperRightCell().Y()
+	//x := int(lon / cellWidth)
+	//y := int(lat / cellHeight)
+	//
+	//return x >= c.LowerLeftCell().X() && y >= c.LowerLeftCell().Y() && x <= c.UpperRightCell().X() && y <= c.UpperRightCell().Y()
+	return lon >= float64(c.LowerLeftCell().X())*cellWidth &&
+		lat >= float64(c.LowerLeftCell().Y())*cellHeight &&
+		lon < float64(c.UpperRightCell().X()+1)*cellWidth &&
+		lat < float64(c.UpperRightCell().Y()+1)*cellHeight
 }
 
 func (c CellExtent) ContainsAny(cells []CellIndex) bool {
