@@ -2,15 +2,40 @@ package storage
 
 import (
 	"bufio"
+	"encoding/json"
+	"os"
 	"soq/common"
 	indexCommon "soq/index/common"
 
+	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/osm"
+	"github.com/pkg/errors"
 )
 
 type FeatureStorageReader struct {
-	indexFileWriter *bufio.Reader
+	indexFileReader *bufio.Reader
 	indexMetadata   *indexMetadata
+}
+
+func NewFeatureStorageReader(baseFolder string) *FeatureStorageReader {
+	metadataFileName := baseFolder + "/metadata.json"
+
+	metadataFileContent, err := os.ReadFile(metadataFileName)
+	sigolo.FatalCheck(errors.Wrapf(err, "Unable to read metadata file %s", metadataFileName))
+
+	metadata := &indexMetadata{}
+	err = json.Unmarshal(metadataFileContent, metadata)
+	sigolo.FatalCheck(errors.Wrapf(err, "Unable to unmarshal content of metadata file %s", metadataFileName))
+
+	var file *os.File
+	indexFileName := baseFolder + "/index"
+	file, err = os.OpenFile(indexFileName, os.O_RDONLY, 0666)
+	sigolo.FatalCheck(errors.Wrapf(err, "Unable to open index file %s", indexFileName))
+
+	return &FeatureStorageReader{
+		indexFileReader: bufio.NewReader(file),
+		indexMetadata:   metadata,
+	}
 }
 
 func (r FeatureStorageReader) readNodes(cellExtent common.CellExtent) []indexCommon.EncodedNodeFeature {
