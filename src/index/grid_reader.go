@@ -80,6 +80,7 @@ func (g *GridIndexReader) Get(bbox *orb.Bound, objectType ownOsm.OsmObjectType) 
 	return resultChannel, nil // Remove error from return, since it doesn't make any sense here
 }
 
+// TODO remove?
 func (g *GridIndexReader) GetNodes(nodes osm.WayNodes) (chan *GetFeaturesResult, error) {
 	cells := map[common.CellIndex][]uint64{}            // just a lookup table to quickly see if a cell has already been collected
 	innerCellBounds := map[common.CellIndex]orb.Bound{} // just a lookup table to quickly see if a cell has already been collected
@@ -195,24 +196,16 @@ func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesRe
 
 // readFeaturesFromCellFile reads all features from the specified cell and writes them periodically to the output channel.
 func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectType ownOsm.OsmObjectType) ([]feature.Feature, error) {
-	cellFolderName := path.Join(g.BaseFolder, objectType.String(), strconv.Itoa(cellX))
-	cellFileName := path.Join(cellFolderName, strconv.Itoa(cellY)+".cell")
+	cell := common.CellIndex{cellX, cellY}
 
-	if _, err := os.Stat(cellFileName); errors.Is(err, os.ErrNotExist) {
-		sigolo.Tracef("Cell file %s does not exist, I'll return an empty feature list", cellFileName)
-		return nil, nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "Unable to get existance status of cell file %s", cellFileName)
-	}
-
-	cachedFeatures, entryIsNew, err := g.cellCache.getOrInsert(cellFileName)
+	cachedFeatures, entryIsNew, err := g.cellCache.getOrInsert(cell, objectType)
 	if err != nil {
 		return nil, err
 	}
 	// Ignore new and empty caches. Empty caches might not be actually empty but not yet filled. This might happen when
 	// the same cell file is read by multiple goroutines at the same time.
 	if !entryIsNew && len(cachedFeatures) > 0 {
-		sigolo.Tracef("Use features from cache for cell file %s", cellFileName)
+		sigolo.Tracef("Use features from cache for cell %v", cell)
 		return cachedFeatures, nil
 	}
 
@@ -229,11 +222,11 @@ func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectT
 
 	switch objectType {
 	case ownOsm.OsmObjNode:
-		g.featureReader.ReadNodes(common.CellIndex{cellX, cellY}, readFeatureChannel)
+		g.featureReader.ReadNodes(cell, readFeatureChannel)
 	case ownOsm.OsmObjWay:
-		g.featureReader.ReadWays(common.CellIndex{cellX, cellY}, readFeatureChannel)
+		g.featureReader.ReadWays(cell, readFeatureChannel)
 	case ownOsm.OsmObjRelation:
-		g.featureReader.ReadRelations(common.CellIndex{cellX, cellY}, readFeatureChannel)
+		g.featureReader.ReadRelations(cell, readFeatureChannel)
 	default:
 		panic("Unsupported object type to read: " + objectType.String())
 	}
@@ -241,7 +234,7 @@ func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectT
 	close(readFeatureChannel)
 	featureCachedWaitGroup.Wait()
 
-	g.cellCache.insertOrAppend(cellFileName, cachedFeatures)
+	g.cellCache.insertOrAppend(cell, objectType, cachedFeatures)
 
 	return cachedFeatures, nil
 }
