@@ -16,16 +16,30 @@ type OsmToRawFeaturesImporter struct {
 	tagIndexTempValueArray []int
 	featureStorageWriter   *storage.FeatureStorageWriter
 	cellExtents            []common.CellExtent
+	scaledCellExtents      [][4]float64
 	cellWidth              float64
 	cellHeight             float64
 }
 
 func NewOsmToRawFeaturesImporter(tagIndex *index.TagIndex, featureStorageWriter *storage.FeatureStorageWriter, cellExtents []common.CellExtent, cellWidth float64, cellHeight float64) *OsmToRawFeaturesImporter {
+	scaledCellExtents := make([][4]float64, len(cellExtents))
+	for i := 0; i < len(cellExtents); i++ {
+		scaledCellExtents[i] = [4]float64{
+			float64(cellExtents[i].LowerLeftCell().X()) * cellWidth,
+			float64(cellExtents[i].LowerLeftCell().Y()) * cellHeight,
+			// +1 because the cells are inclusive, i.e. a right border at cell x=5 includes all coordinates <6. To
+			// allow this inclusion, we use +1 and the "<" (instead of "<=") operator in the condition.
+			float64(cellExtents[i].UpperRightCell().X()+1) * cellWidth,
+			float64(cellExtents[i].UpperRightCell().Y()+1) * cellHeight,
+		}
+	}
+
 	return &OsmToRawFeaturesImporter{
 		tagIndex:               tagIndex,
 		tagIndexTempValueArray: tagIndex.NewTempEncodedValueArray(),
 		featureStorageWriter:   featureStorageWriter,
 		cellExtents:            cellExtents,
+		scaledCellExtents:      scaledCellExtents,
 		cellWidth:              cellWidth,
 		cellHeight:             cellHeight,
 	}
@@ -54,9 +68,9 @@ func (i *OsmToRawFeaturesImporter) HandleNode(node *osm.Node) error {
 		},
 	}
 
-	for _, cellExtent := range i.cellExtents {
-		if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
-			err := i.featureStorageWriter.WriteNodeFeature(encodedFeature, cellExtent)
+	for j, scaledExtent := range i.scaledCellExtents {
+		if i.ContainsLonLat(node.Lon, node.Lat, scaledExtent) {
+			err := i.featureStorageWriter.WriteNodeFeature(encodedFeature, i.cellExtents[j])
 			if err != nil {
 				return err
 			}
@@ -81,10 +95,10 @@ func (i *OsmToRawFeaturesImporter) HandleWay(way *osm.Way) error {
 		Nodes: way.Nodes,
 	}
 
-	for _, cellExtent := range i.cellExtents {
+	for j, scaledExtent := range i.scaledCellExtents {
 		for _, node := range way.Nodes {
-			if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
-				err := i.featureStorageWriter.WriteWayFeature(encodedFeature, cellExtent)
+			if i.ContainsLonLat(node.Lon, node.Lat, scaledExtent) {
+				err := i.featureStorageWriter.WriteWayFeature(encodedFeature, i.cellExtents[j])
 				if err != nil {
 					return err
 				}
@@ -139,4 +153,15 @@ func (i *OsmToRawFeaturesImporter) Done() error {
 	defer profiler.EndMeasurement(key)
 
 	return i.featureStorageWriter.FlushData()
+}
+
+func (i *OsmToRawFeaturesImporter) ContainsLonLat(lon float64, lat float64, scaledExtent [4]float64) bool {
+	return lon >= scaledExtent[0] &&
+		lat >= scaledExtent[1] &&
+		// "<" operator because elements [2] and [3] are one cell width/height larger than the bound. This allows the
+		// check to include the right and upper cells. E.g. a coordinate falling into cell "5.5" (i.e. in the middle of
+		// cell 5) is included when the extent ends at cell 5, because the scaledExtent value is 6 and with "<6" we then
+		// include all values that fall into the cell 5.
+		lon < scaledExtent[2] &&
+		lat < scaledExtent[3]
 }
