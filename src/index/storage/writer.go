@@ -31,10 +31,10 @@ type FeatureStorageWriter struct {
 	relationToRelationMapping map[osm.RelationID][]osm.RelationID
 }
 
-func NewFeatureStorageWriter(baseFolder string) *FeatureStorageWriter {
+func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorageWriter {
 	var file *os.File
 
-	indexFileName := baseFolder + "/index"
+	indexFileName := baseFolder + "/" + filename
 
 	// Ensure the folder exists
 	if _, err := os.Stat(baseFolder); os.IsNotExist(err) {
@@ -245,8 +245,8 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 	return nil
 }
 
-// flushCaches writes all caches to disk.
-func (w *FeatureStorageWriter) flushCaches() error {
+// FlushCaches writes all dirty caches to disk.
+func (w *FeatureStorageWriter) FlushCaches() error {
 	// TODO mutex needed?
 	// TODO extract logic and reuse in flushCachesIfNeeded
 

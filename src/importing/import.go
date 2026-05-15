@@ -4,8 +4,9 @@ import (
 	"os"
 	"path"
 	"soq/common"
-	"soq/feature"
 	"soq/index"
+	"soq/index/importing"
+	"soq/index/storage"
 	"soq/osm"
 	"strings"
 	"time"
@@ -114,12 +115,13 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	sigolo.Info("Write temporary features")
 	currentStepStartTime = time.Now()
 
-	// TODO Create new IndexFirstPassWriter (or something like that), which only deals with the first writing of features.
-	tmpFeatureRepo := NewTemporaryFeatureRepository(cellWidth, cellHeight, "import-temp-cell")
-	temporaryFeatureImporter := NewTemporaryFeatureImporter(tmpFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
+	//tmpFeatureRepo := NewTemporaryFeatureRepository(cellWidth, cellHeight, "import-temp-cell")
+	//temporaryFeatureImporter := NewTemporaryFeatureImporter(tmpFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
+	featureStorageWriter := storage.NewFeatureStorageWriter(baseFolder, "index.raw")
+	osmToRawFeatureWriter := importing.NewOsmToRawFeaturesImporter(tagIndex, featureStorageWriter, subExtents, cellWidth, cellHeight)
 
 	osmReader = osm.NewOsmReader()
-	err = osmReader.Read(inputFile, temporaryFeatureImporter)
+	err = osmReader.Read(inputFile, osmToRawFeatureWriter)
 	if err != nil {
 		return errors.Wrapf(err, "Error importing OSM data")
 	}
@@ -139,17 +141,23 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 		return errors.Wrapf(err, "Unable to remove grid-index base folder %s", baseFolder)
 	}
 
+	featureStorageWriter = storage.NewFeatureStorageWriter(baseFolder, "index")
+	featureStorageReader := storage.NewFeatureStorageReader(baseFolder, "index.raw")
+
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
 	for i, subExtent := range subExtents {
 		currentSubExtentStartTime := time.Now()
 		sigolo.Debugf("=== Process sub-extent %v (%d / %d) ===", subExtent, i+1, len(subExtents))
 
-		tmpFeatureChannel := make(chan feature.Feature, 1000)
-		go tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent) // TODO error handling
-		err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent, tagIndex)
-		if err != nil {
-			return err
-		}
+		//tmpFeatureChannel := make(chan feature.Feature, 1000)
+		//go tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent) // TODO error handling
+		//err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent, tagIndex)
+		//if err != nil {
+		//	return err
+		//}
+
+		// TODO read and write data the new way
+		//nodes := featureStorageReader.ReadRawNodes(subExtent)
 
 		duration = time.Since(currentSubExtentStartTime)
 		sigolo.Debugf("Processed sub-extent %v in %s", subExtent, duration)

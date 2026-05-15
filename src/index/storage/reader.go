@@ -19,7 +19,7 @@ type FeatureStorageReader struct {
 	indexMetadata   *indexMetadata
 }
 
-func NewFeatureStorageReader(baseFolder string) *FeatureStorageReader {
+func NewFeatureStorageReader(baseFolder string, filename string) *FeatureStorageReader {
 	metadataFileName := baseFolder + "/metadata.json"
 
 	metadataFileContent, err := os.ReadFile(metadataFileName)
@@ -30,7 +30,7 @@ func NewFeatureStorageReader(baseFolder string) *FeatureStorageReader {
 	sigolo.FatalCheck(errors.Wrapf(err, "Unable to unmarshal content of metadata file %s", metadataFileName))
 
 	var file *os.File
-	indexFileName := baseFolder + "/index"
+	indexFileName := baseFolder + "/" + filename
 	file, err = os.OpenFile(indexFileName, os.O_RDONLY, 0666)
 	sigolo.FatalCheck(errors.Wrapf(err, "Unable to open index file %s", indexFileName))
 
@@ -41,7 +41,8 @@ func NewFeatureStorageReader(baseFolder string) *FeatureStorageReader {
 	}
 }
 
-func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*indexCommon.RawEncodedNodeFeature {
+// ReadRawNodes reads the nodes from the given extent and
+func (r FeatureStorageReader) ReadRawNodes(cellExtent common.CellExtent) []*indexCommon.RawEncodedNodeFeature {
 	features := []*indexCommon.RawEncodedNodeFeature{}
 
 	cellOffsets := r.indexMetadata.getCellMetadata(cellExtent).NodeOffsets
@@ -77,7 +78,7 @@ func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*inde
 	return features
 }
 
-func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedWayFeature, map[osm.NodeID][]osm.WayID) {
+func (r FeatureStorageReader) ReadRawWays(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedWayFeature, map[osm.NodeID][]osm.WayID) {
 	features := []*indexCommon.RawEncodedWayFeature{}
 	var nodeToWayMapping map[osm.NodeID][]osm.WayID
 
@@ -117,7 +118,7 @@ func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*inde
 	return features, nodeToWayMapping
 }
 
-func (r FeatureStorageReader) readRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
+func (r FeatureStorageReader) ReadRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
 	features := []*indexCommon.RawEncodedRelationFeature{}
 	var nodeToRelationMapping map[osm.NodeID][]osm.RelationID
 	var wayToRelationMapping map[osm.WayID][]osm.RelationID

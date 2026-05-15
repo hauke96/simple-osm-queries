@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"soq/common"
 	"soq/feature"
-	indexCommon "soq/index/common"
 	"soq/index/storage"
 	ownOsm "soq/osm"
 	"soq/profiler"
@@ -358,122 +357,6 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIn
 
 	importDuration := time.Since(importStartTime)
 	sigolo.Debugf("Done adding way IDs to raw encoded nodes in %s", importDuration)
-}
-
-/*
-Reading OSM data and writing then to temporary index file.
-*/
-
-func (g *GridIndexWriter) Name() string {
-	return "GridIndexWriter"
-}
-
-func (g *GridIndexWriter) Init() error {
-	return nil
-}
-
-func (g *GridIndexWriter) HandleNode(node *osm.Node) error {
-	key := profiler.StartMeasurement()
-	defer profiler.EndMeasurement(key)
-
-	encodedKeys, encodedValues := g.tagIndex.EncodeTags(node.Tags, g.tagIndexTempValueArray)
-	encodedFeature := &indexCommon.EncodedNodeFeature{
-		AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
-			ID:     uint64(node.ID),
-			Keys:   encodedKeys,
-			Values: encodedValues,
-		},
-	}
-
-	// TODO determine cells correctly:
-	//for _, cellExtent := range i.cellExtents {
-	//	if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
-	cellExtent := common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}
-	err := g.featureStorageWriter.WriteNodeFeature(encodedFeature, cellExtent, true)
-	if err != nil {
-		return err
-	}
-	//		break
-	//	}
-	//}
-
-	return nil
-}
-
-func (g *GridIndexWriter) HandleWay(way *osm.Way) error {
-	key := profiler.StartMeasurement()
-	defer profiler.EndMeasurement(key)
-
-	encodedKeys, encodedValues := g.tagIndex.EncodeTags(way.Tags, g.tagIndexTempValueArray)
-	encodedFeature := &indexCommon.EncodedWayFeature{
-		AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
-			ID:     uint64(way.ID),
-			Keys:   encodedKeys,
-			Values: encodedValues,
-		},
-		Nodes: way.Nodes,
-	}
-
-	// TODO determine cells correctly:
-	//for _, cellExtent := range i.cellExtents {
-	//	for _, node := range way.Nodes {
-	//		if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
-	cellExtent := common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}
-	err := g.featureStorageWriter.WriteWayFeature(encodedFeature, cellExtent, true)
-	if err != nil {
-		return err
-	}
-	//			break
-	//		}
-	//	}
-	//}
-
-	return nil
-}
-
-func (g *GridIndexWriter) HandleRelation(relation *osm.Relation) error {
-	key := profiler.StartMeasurement()
-	defer profiler.EndMeasurement(key)
-
-	var nodeIds []osm.NodeID
-	var wayIds []osm.WayID
-	var childRelationIds []osm.RelationID
-
-	for _, member := range relation.Members {
-		switch member.Type {
-		case osm.TypeNode:
-			nodeId := osm.NodeID(member.Ref)
-			nodeIds = append(nodeIds, nodeId)
-		case osm.TypeWay:
-			wayId := osm.WayID(member.Ref)
-			wayIds = append(wayIds, wayId)
-		case osm.TypeRelation:
-			relId := osm.RelationID(member.Ref)
-			childRelationIds = append(childRelationIds, relId)
-		}
-	}
-
-	encodedKeys, encodedValues := g.tagIndex.EncodeTags(relation.Tags, g.tagIndexTempValueArray)
-	encodedFeature := &indexCommon.EncodedRelationFeature{
-		AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
-			ID:     uint64(relation.ID),
-			Keys:   encodedKeys,
-			Values: encodedValues,
-		},
-		NodeIds:          nodeIds,
-		WayIds:           wayIds,
-		ChildRelationIds: childRelationIds,
-	}
-
-	// TODO is minValue a proper value to show "doesn't have a cell yet"?
-	return g.featureStorageWriter.WriteRelationFeature(encodedFeature, common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}, true)
-}
-
-func (g *GridIndexWriter) Done() error {
-	key := profiler.StartMeasurement()
-	defer profiler.EndMeasurement(key)
-
-	return nil
 }
 
 // addAdditionalIdsToObjectsOfType adds the reverse IDs to the given object type. For example nodes themselves do not
