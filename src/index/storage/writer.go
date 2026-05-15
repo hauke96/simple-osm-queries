@@ -7,7 +7,6 @@ import (
 	os "os"
 	"soq/common"
 	"soq/feature"
-	indexCommon "soq/index/common"
 	"soq/profiler"
 
 	"github.com/hauke96/sigolo/v2"
@@ -21,9 +20,9 @@ type FeatureStorageWriter struct {
 	indexFileCursorByte int64 // Byte at which point the next data will be written. Is initially 0.
 	indexMetadata       *indexMetadata
 
-	nodeCache     map[common.CellExtent][]*indexCommon.EncodedNodeFeature
-	wayCache      map[common.CellExtent][]*indexCommon.EncodedWayFeature
-	relationCache map[common.CellExtent][]*indexCommon.EncodedRelationFeature
+	nodeCache     map[common.CellExtent][]feature.NodeFeature
+	wayCache      map[common.CellExtent][]feature.WayFeature
+	relationCache map[common.CellExtent][]feature.RelationFeature
 	maxCacheSize  int // Number of features. If exceeded, the cache (i.e. the list of node features for a certain cell extent) is written to disk.
 
 	nodeToWayMapping          map[osm.NodeID][]osm.WayID
@@ -64,9 +63,9 @@ func NewFeatureStorageWriter(baseFolder string) *FeatureStorageWriter {
 		indexFileWriter:           bufio.NewWriter(file),
 		indexFileCursorByte:       0,
 		indexMetadata:             &indexMetadata{},
-		nodeCache:                 make(map[common.CellExtent][]*indexCommon.EncodedNodeFeature),
-		wayCache:                  make(map[common.CellExtent][]*indexCommon.EncodedWayFeature),
-		relationCache:             make(map[common.CellExtent][]*indexCommon.EncodedRelationFeature),
+		nodeCache:                 make(map[common.CellExtent][]feature.NodeFeature),
+		wayCache:                  make(map[common.CellExtent][]feature.WayFeature),
+		relationCache:             make(map[common.CellExtent][]feature.RelationFeature),
 		maxCacheSize:              1000, // TODO make this configurable
 		nodeToWayMapping:          make(map[osm.NodeID][]osm.WayID),
 		nodeToRelationMapping:     make(map[osm.NodeID][]osm.RelationID),
@@ -75,68 +74,91 @@ func NewFeatureStorageWriter(baseFolder string) *FeatureStorageWriter {
 	}
 }
 
-// WriteFeature writes the given feature to the internal cache, which is eventually flushed to disk. This method not
-// necessarily performs ans I/O operations.
+// WriteNodeFeature writes the given feature to the internal cache, which is eventually flushed to disk. This method not
+// necessarily performs any I/O operations.
 //
 // The firstPass argument specifies whether parent-IDs (i.e. the way-IDs of
 // a given node) should be collected from the given encoded features or written to them. Call this method first with
 // "true" as argument to collect the parent IDs. Call this method again with "false" as argument to write the data
 // including their parent IDs into the final index file.
-func (w *FeatureStorageWriter) WriteFeature(feature feature.Feature, cellExtent common.CellExtent, firstPass bool) error {
+func (w *FeatureStorageWriter) WriteNodeFeature(feature feature.NodeFeature, cellExtent common.CellExtent, firstPass bool) error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
 
-	switch encodedFeature := feature.(type) {
-	case *indexCommon.EncodedNodeFeature:
-		id := osm.NodeID(encodedFeature.GetID())
+	id := osm.NodeID(feature.GetID())
 
-		if !firstPass {
-			if wayIds, ok := w.nodeToWayMapping[id]; ok {
-				encodedFeature.SetWayIds(wayIds)
-			}
-			if relationIds, ok := w.nodeToRelationMapping[id]; ok {
-				encodedFeature.SetRelationIds(relationIds)
-			}
+	if !firstPass {
+		if wayIds, ok := w.nodeToWayMapping[id]; ok {
+			feature.SetWayIds(wayIds)
 		}
-
-		w.nodeCache[cellExtent] = append(w.nodeCache[cellExtent], encodedFeature)
-	case *indexCommon.EncodedWayFeature:
-		id := osm.WayID(encodedFeature.GetID())
-
-		if firstPass {
-			for _, node := range encodedFeature.Nodes {
-				w.nodeToWayMapping[node.ID] = append(w.nodeToWayMapping[node.ID], id)
-			}
-		} else {
-			if relationIds, ok := w.wayToRelationMapping[id]; ok {
-				encodedFeature.SetRelationIds(relationIds)
-			}
+		if relationIds, ok := w.nodeToRelationMapping[id]; ok {
+			feature.SetRelationIds(relationIds)
 		}
-
-		w.wayCache[cellExtent] = append(w.wayCache[cellExtent], encodedFeature)
-	case *indexCommon.EncodedRelationFeature:
-		id := osm.RelationID(encodedFeature.GetID())
-
-		if firstPass {
-			for _, nodeId := range encodedFeature.NodeIds {
-				w.nodeToRelationMapping[nodeId] = append(w.nodeToRelationMapping[nodeId], id)
-			}
-			for _, wayId := range encodedFeature.WayIds {
-				w.wayToRelationMapping[wayId] = append(w.wayToRelationMapping[wayId], id)
-			}
-			for _, relationId := range encodedFeature.ChildRelationIds {
-				w.relationToRelationMapping[relationId] = append(w.relationToRelationMapping[relationId], id)
-			}
-		} else {
-			if relationIds, ok := w.relationToRelationMapping[id]; ok {
-				encodedFeature.SetParentRelationIds(relationIds)
-			}
-		}
-
-		w.relationCache[cellExtent] = append(w.relationCache[cellExtent], encodedFeature)
-	default:
-		return errors.Errorf("Unsupported type of feature %v", feature)
 	}
+
+	w.nodeCache[cellExtent] = append(w.nodeCache[cellExtent], feature)
+
+	return w.flushCachesIfNeeded()
+}
+
+// WriteWayFeature writes the given feature to the internal cache, which is eventually flushed to disk. This method not
+// necessarily performs any I/O operations.
+//
+// The firstPass argument specifies whether parent-IDs (i.e. the way-IDs of
+// a given node) should be collected from the given encoded features or written to them. Call this method first with
+// "true" as argument to collect the parent IDs. Call this method again with "false" as argument to write the data
+// including their parent IDs into the final index file.
+func (w *FeatureStorageWriter) WriteWayFeature(feature feature.WayFeature, cellExtent common.CellExtent, firstPass bool) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
+	id := osm.WayID(feature.GetID())
+
+	if firstPass {
+		for _, node := range feature.GetNodes() {
+			w.nodeToWayMapping[node.ID] = append(w.nodeToWayMapping[node.ID], id)
+		}
+	} else {
+		if relationIds, ok := w.wayToRelationMapping[id]; ok {
+			feature.SetRelationIds(relationIds)
+		}
+	}
+
+	w.wayCache[cellExtent] = append(w.wayCache[cellExtent], feature)
+
+	return w.flushCachesIfNeeded()
+}
+
+// WriteRelationFeature writes the given feature to the internal cache, which is eventually flushed to disk. This method not
+// necessarily performs any I/O operations.
+//
+// The firstPass argument specifies whether parent-IDs (i.e. the way-IDs of
+// a given node) should be collected from the given encoded features or written to them. Call this method first with
+// "true" as argument to collect the parent IDs. Call this method again with "false" as argument to write the data
+// including their parent IDs into the final index file.
+func (w *FeatureStorageWriter) WriteRelationFeature(feature feature.RelationFeature, cellExtent common.CellExtent, firstPass bool) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
+	id := osm.RelationID(feature.GetID())
+
+	if firstPass {
+		for _, nodeId := range feature.GetNodeIds() {
+			w.nodeToRelationMapping[nodeId] = append(w.nodeToRelationMapping[nodeId], id)
+		}
+		for _, wayId := range feature.GetWayIds() {
+			w.wayToRelationMapping[wayId] = append(w.wayToRelationMapping[wayId], id)
+		}
+		for _, relationId := range feature.GetChildRelationIds() {
+			w.relationToRelationMapping[relationId] = append(w.relationToRelationMapping[relationId], id)
+		}
+	} else {
+		if relationIds, ok := w.relationToRelationMapping[id]; ok {
+			feature.SetParentRelationIds(relationIds)
+		}
+	}
+
+	w.relationCache[cellExtent] = append(w.relationCache[cellExtent], feature)
 
 	return w.flushCachesIfNeeded()
 }

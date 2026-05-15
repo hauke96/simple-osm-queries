@@ -389,7 +389,7 @@ func (g *GridIndexWriter) HandleNode(node *osm.Node) error {
 	//for _, cellExtent := range i.cellExtents {
 	//	if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
 	cellExtent := common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}
-	err := g.featureStorageWriter.WriteFeature(encodedFeature, cellExtent, true)
+	err := g.featureStorageWriter.WriteNodeFeature(encodedFeature, cellExtent, true)
 	if err != nil {
 		return err
 	}
@@ -419,7 +419,7 @@ func (g *GridIndexWriter) HandleWay(way *osm.Way) error {
 	//	for _, node := range way.Nodes {
 	//		if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
 	cellExtent := common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}
-	err := g.featureStorageWriter.WriteFeature(encodedFeature, cellExtent, true)
+	err := g.featureStorageWriter.WriteWayFeature(encodedFeature, cellExtent, true)
 	if err != nil {
 		return err
 	}
@@ -466,63 +466,12 @@ func (g *GridIndexWriter) HandleRelation(relation *osm.Relation) error {
 	}
 
 	// TODO is minValue a proper value to show "doesn't have a cell yet"?
-	return g.featureStorageWriter.WriteFeature(encodedFeature, common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}, true)
+	return g.featureStorageWriter.WriteRelationFeature(encodedFeature, common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}, true)
 }
 
 func (g *GridIndexWriter) Done() error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
-
-	return nil
-}
-
-// TODO not needed anymore (s. featureStorageWriter)
-func (g *GridIndexWriter) writeFeature(feature feature.Feature, cell common.CellIndex) error {
-	key := profiler.StartMeasurement()
-	defer profiler.EndMeasurement(key)
-
-	var err error
-
-	// TODO Use from GridIndexWriter:
-	var nodeToWayMapping map[osm.NodeID][]osm.WayID
-	var nodeToRelationMapping map[osm.NodeID][]osm.RelationID
-	var wayToRelationMapping map[osm.WayID][]osm.RelationID
-	var relationToRelationMapping map[osm.RelationID][]osm.RelationID
-
-	switch encodedFeature := feature.(type) {
-	case *indexCommon.EncodedNodeFeature:
-		id := osm.NodeID(encodedFeature.GetID())
-
-		if wayIds, ok := nodeToWayMapping[id]; ok {
-			encodedFeature.SetWayIds(wayIds)
-		}
-		if relationIds, ok := nodeToRelationMapping[id]; ok {
-			encodedFeature.SetRelationIds(relationIds)
-		}
-
-		err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encodedFeature)
-		sigolo.FatalCheck(err)
-	case *indexCommon.EncodedWayFeature:
-		id := osm.WayID(encodedFeature.GetID())
-
-		if relationIds, ok := wayToRelationMapping[id]; ok {
-			encodedFeature.SetRelationIds(relationIds)
-		}
-
-		err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encodedFeature)
-		sigolo.FatalCheck(err)
-	case *indexCommon.EncodedRelationFeature:
-		id := osm.RelationID(encodedFeature.GetID())
-
-		if relationIds, ok := relationToRelationMapping[id]; ok {
-			encodedFeature.SetParentRelationIds(relationIds)
-		}
-
-		err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encodedFeature)
-		sigolo.FatalCheck(err)
-	default:
-		return errors.Errorf("Unsupported type of feature %v", feature)
-	}
 
 	return nil
 }

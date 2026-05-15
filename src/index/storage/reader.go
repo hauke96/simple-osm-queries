@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"soq/common"
-	indexCommon "soq/index/common"
+	"soq/feature"
 
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/osm"
@@ -38,32 +38,32 @@ func NewFeatureStorageReader(baseFolder string) *FeatureStorageReader {
 	}
 }
 
-func (r FeatureStorageReader) readNodes(cellExtent common.CellExtent) []indexCommon.EncodedNodeFeature {
-	features := []indexCommon.EncodedNodeFeature{}
+func (r FeatureStorageReader) readNodes(cellExtent common.CellExtent) []feature.NodeFeature {
+	features := []feature.NodeFeature{}
 
 	// TODO read from disk
 
 	return features
 }
 
-func (r FeatureStorageReader) readWays(cellExtent common.CellExtent) ([]indexCommon.EncodedWayFeature, map[osm.NodeID][]osm.WayID) {
-	features := []indexCommon.EncodedWayFeature{}
+func (r FeatureStorageReader) readWays(cellExtent common.CellExtent) ([]feature.WayFeature, map[osm.NodeID][]osm.WayID) {
+	features := []feature.WayFeature{}
 
 	// TODO read from disk
 
 	var nodeToWayMapping map[osm.NodeID][]osm.WayID
 
 	for _, way := range features {
-		for _, node := range way.Nodes {
-			nodeToWayMapping[node.ID] = append(nodeToWayMapping[node.ID], osm.WayID(way.ID))
+		for _, node := range way.GetNodes() {
+			nodeToWayMapping[node.ID] = append(nodeToWayMapping[node.ID], osm.WayID(way.GetID()))
 		}
 	}
 
 	return features, nodeToWayMapping
 }
 
-func (r FeatureStorageReader) readRelations(cellExtent common.CellExtent) ([]indexCommon.EncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
-	features := []indexCommon.EncodedRelationFeature{}
+func (r FeatureStorageReader) readRelations(cellExtent common.CellExtent) ([]feature.RelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
+	features := []feature.RelationFeature{}
 
 	// TODO read from disk
 
@@ -72,14 +72,14 @@ func (r FeatureStorageReader) readRelations(cellExtent common.CellExtent) ([]ind
 	var relationToRelationMapping map[osm.RelationID][]osm.RelationID
 
 	for _, relation := range features {
-		for _, nodeId := range relation.NodeIds {
-			nodeToRelationMapping[nodeId] = append(nodeToRelationMapping[nodeId], osm.RelationID(relation.ID))
+		for _, nodeId := range relation.GetNodeIds() {
+			nodeToRelationMapping[nodeId] = append(nodeToRelationMapping[nodeId], osm.RelationID(relation.GetID()))
 		}
-		for _, wayId := range relation.WayIds {
-			wayToRelationMapping[wayId] = append(wayToRelationMapping[wayId], osm.RelationID(relation.ID))
+		for _, wayId := range relation.GetWayIds() {
+			wayToRelationMapping[wayId] = append(wayToRelationMapping[wayId], osm.RelationID(relation.GetID()))
 		}
-		for _, relationId := range relation.ChildRelationIds {
-			relationToRelationMapping[relationId] = append(relationToRelationMapping[relationId], osm.RelationID(relation.ID))
+		for _, relationId := range relation.GetChildRelationIds() {
+			relationToRelationMapping[relationId] = append(relationToRelationMapping[relationId], osm.RelationID(relation.GetID()))
 		}
 	}
 
