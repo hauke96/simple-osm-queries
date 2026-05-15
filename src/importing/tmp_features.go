@@ -4,19 +4,21 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"github.com/hauke96/sigolo/v2"
-	"github.com/paulmach/orb"
-	"github.com/paulmach/osm"
-	"github.com/pkg/errors"
 	"io"
 	"math"
 	"os"
 	"soq/common"
 	"soq/feature"
 	"soq/index"
+	indexCommon "soq/index/common"
 	ownIo "soq/io"
 	ownOsm "soq/osm"
 	"soq/profiler"
+
+	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/osm"
+	"github.com/pkg/errors"
 )
 
 type TemporaryFeatureImporter struct {
@@ -508,8 +510,8 @@ func (r *TemporaryFeatureRepository) readNodesFromCellData(output chan feature.F
 		/*
 			Create encoded feature from raw data
 		*/
-		encodedFeature := &index.EncodedNodeFeature{
-			AbstractEncodedFeature: index.AbstractEncodedFeature{
+		encodedFeature := &indexCommon.EncodedNodeFeature{
+			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
 				ID:       osmId,
 				Geometry: &orb.Point{float64(lon), float64(lat)},
 				Keys:     encodedKeys,
@@ -585,8 +587,8 @@ func (r *TemporaryFeatureRepository) readWaysFromCellData(output chan feature.Fe
 			lineString[i] = orb.Point{node.Lon, node.Lat}
 		}
 
-		encodedFeature := &index.EncodedWayFeature{
-			AbstractEncodedFeature: index.AbstractEncodedFeature{
+		encodedFeature := &indexCommon.EncodedWayFeature{
+			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
 				ID:       osmId,
 				Keys:     encodedKeys,
 				Values:   encodedValues,
@@ -663,8 +665,8 @@ func (r *TemporaryFeatureRepository) readRelationsFromCellData(output chan featu
 		/*
 			Create encoded feature from raw data
 		*/
-		encodedFeature := &index.EncodedRelationFeature{
-			AbstractEncodedFeature: index.AbstractEncodedFeature{
+		encodedFeature := &indexCommon.EncodedRelationFeature{
+			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
 				ID:     osmId,
 				Keys:   encodedKeys,
 				Values: encodedValues,

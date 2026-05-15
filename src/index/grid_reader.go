@@ -2,18 +2,20 @@ package index
 
 import (
 	"encoding/binary"
-	"github.com/hauke96/sigolo/v2"
-	"github.com/paulmach/orb"
-	"github.com/paulmach/osm"
-	"github.com/pkg/errors"
 	"math"
 	"os"
 	"path"
 	"soq/common"
 	"soq/feature"
+	indexCommon "soq/index/common"
 	ownOsm "soq/osm"
 	"strconv"
 	"sync"
+
+	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/osm"
+	"github.com/pkg/errors"
 )
 
 type GridIndexReader struct {
@@ -307,8 +309,8 @@ func (g *GridIndexReader) readNodesFromCellData(output chan []feature.Feature, d
 		/*
 			Create encoded feature from raw data
 		*/
-		encodedFeature := &EncodedNodeFeature{
-			AbstractEncodedFeature: AbstractEncodedFeature{
+		encodedFeature := &indexCommon.EncodedNodeFeature{
+			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
 				ID:       osmId,
 				Geometry: &orb.Point{float64(lon), float64(lat)},
 				Keys:     encodedKeys,
@@ -404,8 +406,8 @@ func (g *GridIndexReader) readWaysFromCellData(output chan []feature.Feature, da
 			lineString[i] = orb.Point{node.Lon, node.Lat}
 		}
 
-		encodedFeature := EncodedWayFeature{
-			AbstractEncodedFeature: AbstractEncodedFeature{
+		encodedFeature := indexCommon.EncodedWayFeature{
+			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
 				ID:       osmId,
 				Keys:     encodedKeys,
 				Values:   encodedValues,
@@ -523,8 +525,8 @@ func (g *GridIndexReader) readRelationsFromCellData(output chan []feature.Featur
 			Create encoded feature from raw data
 		*/
 		bboxPolygon := bbox.ToPolygon()
-		encodedFeature := &EncodedRelationFeature{
-			AbstractEncodedFeature: AbstractEncodedFeature{
+		encodedFeature := &indexCommon.EncodedRelationFeature{
+			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
 				ID:       osmId,
 				Geometry: &bboxPolygon, // This is probably temporary until the real geometry collection is stored
 				Keys:     encodedKeys,

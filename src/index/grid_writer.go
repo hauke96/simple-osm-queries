@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"soq/common"
 	"soq/feature"
+	indexCommon "soq/index/common"
+	"soq/index/storage"
 	ownOsm "soq/osm"
 	"soq/profiler"
 	"strconv"
@@ -24,25 +26,31 @@ import (
 type GridIndexWriter struct {
 	BaseGridIndex
 
-	cacheFileHandles            map[int64]*[3]*os.File      // Key is a aggregation of the cells x and y coordinate. The array index is based on the object type.
-	cacheFileWriters            map[int64]*[3]*bufio.Writer // Key is a aggregation of the cells x and y coordinate The array index is based on the object type.
-	cacheFileMutexes            map[io.Writer]*sync.Mutex
-	cacheFileMutex              *sync.Mutex
+	// TODO Deprecated:
+	cacheFileHandles map[int64]*[3]*os.File      // Key is a aggregation of the cells x and y coordinate. The array index is based on the object type.
+	cacheFileWriters map[int64]*[3]*bufio.Writer // Key is a aggregation of the cells x and y coordinate The array index is based on the object type.
+	cacheFileMutexes map[io.Writer]*sync.Mutex
+	cacheFileMutex   *sync.Mutex
+
 	cacheRawEncodedNodes        map[common.CellIndex][]feature.NodeFeature
 	cacheRawEncodedWays         map[common.CellIndex][]feature.WayFeature
 	cacheRawEncodedRelations    map[common.CellIndex][]feature.RelationFeature
 	cacheRawEncodedFeatureMutex *sync.Mutex
+
+	tagIndex               *TagIndex
+	tagIndexTempValueArray []int
+	featureStorageWriter   *storage.FeatureStorageWriter
 
 	// During writing, some of the half-written data must be read again. This requires some functionality of the
 	// GridIndexReader during importing data and writing a new index.
 	gridIndexReader *GridIndexReader
 }
 
-func ImportTempFeatures(tempRawFeatureChannel chan feature.Feature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent) error {
+func ImportTempFeatures(tempRawFeatureChannel chan feature.Feature, baseFolder string, cellWidth float64, cellHeight float64, cellExtent common.CellExtent, tagIndex *TagIndex) error {
 	key := profiler.StartMeasurement()
 	defer profiler.EndMeasurement(key)
 
-	gridIndexWriter := NewGridIndexWriter(cellWidth, cellHeight, baseFolder)
+	gridIndexWriter := NewGridIndexWriter(cellWidth, cellHeight, baseFolder, tagIndex)
 
 	sigolo.Debug("Read OSM data and write them as raw encoded features")
 
@@ -56,12 +64,13 @@ func ImportTempFeatures(tempRawFeatureChannel chan feature.Feature, baseFolder s
 	return nil
 }
 
-func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string) *GridIndexWriter {
+func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string, tagIndex *TagIndex) *GridIndexWriter {
 	baseGridIndex := BaseGridIndex{
 		CellWidth:  cellWidth,
 		CellHeight: cellHeight,
 		BaseFolder: baseFolder,
 	}
+
 	gridIndexWriter := &GridIndexWriter{
 		BaseGridIndex:               baseGridIndex,
 		cacheFileHandles:            map[int64]*[3]*os.File{},
@@ -72,6 +81,10 @@ func NewGridIndexWriter(cellWidth float64, cellHeight float64, baseFolder string
 		cacheRawEncodedWays:         map[common.CellIndex][]feature.WayFeature{},
 		cacheRawEncodedRelations:    map[common.CellIndex][]feature.RelationFeature{},
 		cacheRawEncodedFeatureMutex: &sync.Mutex{},
+
+		tagIndex:             tagIndex,
+		featureStorageWriter: storage.NewFeatureStorageWriter(baseFolder),
+
 		gridIndexReader: &GridIndexReader{
 			BaseGridIndex:        baseGridIndex,
 			checkFeatureValidity: false,
@@ -345,6 +358,173 @@ func (g *GridIndexWriter) addAdditionalIdsToObjectsInCells(cells []common.CellIn
 
 	importDuration := time.Since(importStartTime)
 	sigolo.Debugf("Done adding way IDs to raw encoded nodes in %s", importDuration)
+}
+
+/*
+Reading OSM data and writing then to temporary index file.
+*/
+
+func (g *GridIndexWriter) Name() string {
+	return "GridIndexWriter"
+}
+
+func (g *GridIndexWriter) Init() error {
+	return nil
+}
+
+func (g *GridIndexWriter) HandleNode(node *osm.Node) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
+	encodedKeys, encodedValues := g.tagIndex.EncodeTags(node.Tags, g.tagIndexTempValueArray)
+	encodedFeature := &indexCommon.EncodedNodeFeature{
+		AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
+			ID:     uint64(node.ID),
+			Keys:   encodedKeys,
+			Values: encodedValues,
+		},
+	}
+
+	// TODO determine cells correctly:
+	//for _, cellExtent := range i.cellExtents {
+	//	if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
+	cellExtent := common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}
+	err := g.featureStorageWriter.WriteFeature(encodedFeature, cellExtent, true)
+	if err != nil {
+		return err
+	}
+	//		break
+	//	}
+	//}
+
+	return nil
+}
+
+func (g *GridIndexWriter) HandleWay(way *osm.Way) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
+	encodedKeys, encodedValues := g.tagIndex.EncodeTags(way.Tags, g.tagIndexTempValueArray)
+	encodedFeature := &indexCommon.EncodedWayFeature{
+		AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
+			ID:     uint64(way.ID),
+			Keys:   encodedKeys,
+			Values: encodedValues,
+		},
+		Nodes: way.Nodes,
+	}
+
+	// TODO determine cells correctly:
+	//for _, cellExtent := range i.cellExtents {
+	//	for _, node := range way.Nodes {
+	//		if cellExtent.ContainsLonLat(node.Lon, node.Lat, i.cellWidth, i.cellHeight) {
+	cellExtent := common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}
+	err := g.featureStorageWriter.WriteFeature(encodedFeature, cellExtent, true)
+	if err != nil {
+		return err
+	}
+	//			break
+	//		}
+	//	}
+	//}
+
+	return nil
+}
+
+func (g *GridIndexWriter) HandleRelation(relation *osm.Relation) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
+	var nodeIds []osm.NodeID
+	var wayIds []osm.WayID
+	var childRelationIds []osm.RelationID
+
+	for _, member := range relation.Members {
+		switch member.Type {
+		case osm.TypeNode:
+			nodeId := osm.NodeID(member.Ref)
+			nodeIds = append(nodeIds, nodeId)
+		case osm.TypeWay:
+			wayId := osm.WayID(member.Ref)
+			wayIds = append(wayIds, wayId)
+		case osm.TypeRelation:
+			relId := osm.RelationID(member.Ref)
+			childRelationIds = append(childRelationIds, relId)
+		}
+	}
+
+	encodedKeys, encodedValues := g.tagIndex.EncodeTags(relation.Tags, g.tagIndexTempValueArray)
+	encodedFeature := &indexCommon.EncodedRelationFeature{
+		AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
+			ID:     uint64(relation.ID),
+			Keys:   encodedKeys,
+			Values: encodedValues,
+		},
+		NodeIds:          nodeIds,
+		WayIds:           wayIds,
+		ChildRelationIds: childRelationIds,
+	}
+
+	// TODO is minValue a proper value to show "doesn't have a cell yet"?
+	return g.featureStorageWriter.WriteFeature(encodedFeature, common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}}, true)
+}
+
+func (g *GridIndexWriter) Done() error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
+	return nil
+}
+
+// TODO not needed anymore (s. featureStorageWriter)
+func (g *GridIndexWriter) writeFeature(feature feature.Feature, cell common.CellIndex) error {
+	key := profiler.StartMeasurement()
+	defer profiler.EndMeasurement(key)
+
+	var err error
+
+	// TODO Use from GridIndexWriter:
+	var nodeToWayMapping map[osm.NodeID][]osm.WayID
+	var nodeToRelationMapping map[osm.NodeID][]osm.RelationID
+	var wayToRelationMapping map[osm.WayID][]osm.RelationID
+	var relationToRelationMapping map[osm.RelationID][]osm.RelationID
+
+	switch encodedFeature := feature.(type) {
+	case *indexCommon.EncodedNodeFeature:
+		id := osm.NodeID(encodedFeature.GetID())
+
+		if wayIds, ok := nodeToWayMapping[id]; ok {
+			encodedFeature.SetWayIds(wayIds)
+		}
+		if relationIds, ok := nodeToRelationMapping[id]; ok {
+			encodedFeature.SetRelationIds(relationIds)
+		}
+
+		err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encodedFeature)
+		sigolo.FatalCheck(err)
+	case *indexCommon.EncodedWayFeature:
+		id := osm.WayID(encodedFeature.GetID())
+
+		if relationIds, ok := wayToRelationMapping[id]; ok {
+			encodedFeature.SetRelationIds(relationIds)
+		}
+
+		err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encodedFeature)
+		sigolo.FatalCheck(err)
+	case *indexCommon.EncodedRelationFeature:
+		id := osm.RelationID(encodedFeature.GetID())
+
+		if relationIds, ok := relationToRelationMapping[id]; ok {
+			encodedFeature.SetParentRelationIds(relationIds)
+		}
+
+		err = g.writeOsmObjectToCell(cell.X(), cell.Y(), encodedFeature)
+		sigolo.FatalCheck(err)
+	default:
+		return errors.Errorf("Unsupported type of feature %v", feature)
+	}
+
+	return nil
 }
 
 // addAdditionalIdsToObjectsOfType adds the reverse IDs to the given object type. For example nodes themselves do not

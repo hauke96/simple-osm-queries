@@ -1,9 +1,6 @@
 package importing
 
 import (
-	"github.com/hauke96/sigolo/v2"
-	"github.com/paulmach/orb/geojson"
-	"github.com/pkg/errors"
 	"os"
 	"path"
 	"soq/common"
@@ -12,6 +9,10 @@ import (
 	"soq/osm"
 	"strings"
 	"time"
+
+	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb/geojson"
+	"github.com/pkg/errors"
 )
 
 func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFolder string) error {
@@ -113,6 +114,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 	sigolo.Info("Write temporary features")
 	currentStepStartTime = time.Now()
 
+	// TODO Create new IndexFirstPassWriter (or something like that), which only deals with the first writing of features.
 	tmpFeatureRepo := NewTemporaryFeatureRepository(cellWidth, cellHeight, "import-temp-cell")
 	temporaryFeatureImporter := NewTemporaryFeatureImporter(tmpFeatureRepo, tagIndex, subExtents, cellWidth, cellHeight)
 
@@ -144,7 +146,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, indexBaseFo
 
 		tmpFeatureChannel := make(chan feature.Feature, 1000)
 		go tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent) // TODO error handling
-		err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent)
+		err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent, tagIndex)
 		if err != nil {
 			return err
 		}

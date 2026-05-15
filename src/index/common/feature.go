@@ -1,4 +1,4 @@
-package index
+package common
 
 import (
 	"github.com/hauke96/sigolo/v2"

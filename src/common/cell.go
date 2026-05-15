@@ -26,6 +26,10 @@ func (c CellIndex) ToPoint(cellWidth float64, cellHeight float64) orb.Point {
 
 type CellExtent [2]CellIndex
 
+func (c CellExtent) IsEqualTo(other CellExtent) bool {
+	return c[0] == other[0] && c[1] == other[1]
+}
+
 func (c CellExtent) LowerLeftCell() CellIndex { return c[0] }
 
 func (c CellExtent) UpperRightCell() CellIndex { return c[1] }
