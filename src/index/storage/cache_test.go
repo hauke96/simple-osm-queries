@@ -1,11 +1,12 @@
-package index
+package storage
 
 import (
-	"github.com/paulmach/osm"
 	"soq/common"
 	"soq/feature"
 	"testing"
 	"time"
+
+	"github.com/paulmach/osm"
 )
 
 func TestLruCache_insertAndEviction(t *testing.T) {

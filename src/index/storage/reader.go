@@ -9,6 +9,7 @@ import (
 	"soq/common"
 	"soq/feature"
 	indexCommon "soq/index/common"
+	ownOsm "soq/osm"
 
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
@@ -20,6 +21,7 @@ type FeatureStorageReader struct {
 	indexFile       *os.File
 	indexFileReader *bufio.Reader
 	indexMetadata   *indexMetadata
+	cellCache       featureCache
 }
 
 // TODO return error
@@ -42,6 +44,7 @@ func NewFeatureStorageReader(baseFolder string, filename string) *FeatureStorage
 		indexFile:       file,
 		indexFileReader: bufio.NewReader(file),
 		indexMetadata:   metadata,
+		cellCache:       newLruCache(10), // TODO make this max-size parameter configurable
 	}
 }
 
@@ -110,19 +113,30 @@ func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*inde
 }
 
 // TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
-func (r FeatureStorageReader) ReadNodes(cell common.CellIndex, output chan []feature.Feature) {
+func (r FeatureStorageReader) ReadNodes(cell common.CellIndex) ([]feature.Feature, error) {
+	result := []feature.Feature{}
+
 	cellMetadata := r.indexMetadata.getMetadataForCell(cell)
 	if cellMetadata == nil {
 		// No data in this cell
-		return
+		return result, nil
 	}
+
+	cachedFeatures, entryIsNew, err := r.cellCache.getOrInsert(cellMetadata.Extent, ownOsm.OsmObjNode)
+	if err != nil {
+		return nil, err
+	}
+	// Ignore new and empty caches. Empty caches might not be actually empty but not yet filled. This might happen when
+	// the same cell file is read by multiple goroutines at the same time.
+	if !entryIsNew && len(cachedFeatures) > 0 {
+		sigolo.Tracef("Use features from cache for cell %v", cell)
+		return cachedFeatures, nil
+	}
+
 	cellOffsets := cellMetadata.NodeOffsets
 	data := r.read(cellOffsets)
 
 	// Storage format see FeatureStorageWriter::writeNodeData
-	outputBuffer := make([]feature.Feature, 1000)
-	currentBufferPos := 0
-
 	for pos := 0; pos < len(data); {
 		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
 
@@ -197,15 +211,12 @@ func (r FeatureStorageReader) ReadNodes(cell common.CellIndex, output chan []fea
 		//	g.checkValidity(encodedFeature)
 		//}
 
-		outputBuffer[currentBufferPos] = encodedFeature
-		currentBufferPos++
-
-		if currentBufferPos == len(outputBuffer)-1 {
-			output <- outputBuffer
-			outputBuffer = make([]feature.Feature, len(outputBuffer))
-			currentBufferPos = 0
-		}
+		result = append(result, encodedFeature)
 	}
+
+	r.cellCache.insertOrAppend(cellMetadata.Extent, ownOsm.OsmObjNode, result)
+
+	return result, nil
 }
 
 func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedWayFeature, map[osm.NodeID][]osm.WayID) {
@@ -249,18 +260,28 @@ func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*inde
 }
 
 // TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
-func (r FeatureStorageReader) ReadWays(cell common.CellIndex, output chan []feature.Feature) {
+func (r FeatureStorageReader) ReadWays(cell common.CellIndex) ([]feature.Feature, error) {
+	result := []feature.Feature{}
+
 	cellMetadata := r.indexMetadata.getMetadataForCell(cell)
 	if cellMetadata == nil {
 		// No data in this cell
-		return
+		return result, nil
 	}
+
+	cachedFeatures, entryIsNew, err := r.cellCache.getOrInsert(cellMetadata.Extent, ownOsm.OsmObjWay)
+	if err != nil {
+		return nil, err
+	}
+	// Ignore new and empty caches. Empty caches might not be actually empty but not yet filled. This might happen when
+	// the same cell file is read by multiple goroutines at the same time.
+	if !entryIsNew && len(cachedFeatures) > 0 {
+		sigolo.Tracef("Use features from cache for cell %v", cell)
+		return cachedFeatures, nil
+	}
+
 	cellOffsets := cellMetadata.WayOffsets
 	data := r.read(cellOffsets)
-
-	outputBuffer := make([]feature.Feature, 1000)
-	currentBufferPos := 0
-	totalReadFeatures := 0
 
 	// Storage format see FeatureStorageWriter::writeWayData
 	for pos := 0; pos < len(data); {
@@ -327,7 +348,7 @@ func (r FeatureStorageReader) ReadWays(cell common.CellIndex, output chan []feat
 			lineString[i] = orb.Point{node.Lon, node.Lat}
 		}
 
-		encodedFeature := indexCommon.EncodedWayFeature{
+		encodedFeature := &indexCommon.EncodedWayFeature{
 			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
 				ID:       osmId,
 				Keys:     encodedKeys,
@@ -344,19 +365,12 @@ func (r FeatureStorageReader) ReadWays(cell common.CellIndex, output chan []feat
 		//	g.checkValidity(&encodedFeature)
 		//}
 
-		outputBuffer[currentBufferPos] = &encodedFeature
-		currentBufferPos++
-
-		if currentBufferPos == len(outputBuffer)-1 {
-			output <- outputBuffer
-			outputBuffer = make([]feature.Feature, len(outputBuffer))
-			currentBufferPos = 0
-		}
-
-		totalReadFeatures++
+		result = append(result, encodedFeature)
 	}
 
-	output <- outputBuffer
+	r.cellCache.insertOrAppend(cellMetadata.Extent, ownOsm.OsmObjWay, result)
+
+	return result, nil
 }
 
 func (r FeatureStorageReader) readRawRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
@@ -412,17 +426,28 @@ func (r FeatureStorageReader) readRawRelations(cellExtent common.CellExtent) ([]
 }
 
 // TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
-func (r FeatureStorageReader) ReadRelations(cell common.CellIndex, output chan []feature.Feature) {
+func (r FeatureStorageReader) ReadRelations(cell common.CellIndex) ([]feature.Feature, error) {
+	result := []feature.Feature{}
+
 	cellMetadata := r.indexMetadata.getMetadataForCell(cell)
 	if cellMetadata == nil {
 		// No data in this cell
-		return
+		return result, nil
 	}
+
+	cachedFeatures, entryIsNew, err := r.cellCache.getOrInsert(cellMetadata.Extent, ownOsm.OsmObjRelation)
+	if err != nil {
+		return nil, err
+	}
+	// Ignore new and empty caches. Empty caches might not be actually empty but not yet filled. This might happen when
+	// the same cell file is read by multiple goroutines at the same time.
+	if !entryIsNew && len(cachedFeatures) > 0 {
+		sigolo.Tracef("Use features from cache for cell %v", cell)
+		return cachedFeatures, nil
+	}
+
 	cellOffsets := cellMetadata.RelationOffsets
 	data := r.read(cellOffsets)
-
-	outputBuffer := make([]feature.Feature, 1000)
-	currentBufferPos := 0
 
 	// Storage format see FeatureStorageWriter::writeRelationData
 	for pos := 0; pos < len(data); {
@@ -529,17 +554,12 @@ func (r FeatureStorageReader) ReadRelations(cell common.CellIndex, output chan [
 		//	g.checkValidity(encodedFeature)
 		//}
 
-		outputBuffer[currentBufferPos] = encodedFeature
-		currentBufferPos++
-
-		if currentBufferPos == len(outputBuffer)-1 {
-			output <- outputBuffer
-			outputBuffer = make([]feature.Feature, len(outputBuffer))
-			currentBufferPos = 0
-		}
+		result = append(result, encodedFeature)
 	}
 
-	output <- outputBuffer
+	r.cellCache.insertOrAppend(cellMetadata.Extent, ownOsm.OsmObjRelation, result)
+
+	return result, nil
 }
 
 func (r FeatureStorageReader) read(cellOffsets []indexCellOffset) []byte {

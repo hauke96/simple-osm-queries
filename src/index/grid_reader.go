@@ -22,7 +22,6 @@ type GridIndexReader struct {
 
 	featureReader        *storage.FeatureStorageReader
 	checkFeatureValidity bool
-	cellCache            featureCache
 }
 
 func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64, checkFeatureValidity bool, tagIndex *TagIndex, featureReader *storage.FeatureStorageReader) *GridIndexReader {
@@ -35,7 +34,6 @@ func LoadGridIndex(indexBaseFolder string, cellWidth float64, cellHeight float64
 		},
 		featureReader:        featureReader,
 		checkFeatureValidity: checkFeatureValidity,
-		cellCache:            newLruCache(10), // TODO make this max-size parameter configurable
 	}
 }
 
@@ -198,45 +196,16 @@ func (g *GridIndexReader) getFeaturesForCellsWithBbox(output chan *GetFeaturesRe
 func (g *GridIndexReader) readFeaturesFromCellFile(cellX int, cellY int, objectType ownOsm.OsmObjectType) ([]feature.Feature, error) {
 	cell := common.CellIndex{cellX, cellY}
 
-	cachedFeatures, entryIsNew, err := g.cellCache.getOrInsert(cell, objectType)
-	if err != nil {
-		return nil, err
-	}
-	// Ignore new and empty caches. Empty caches might not be actually empty but not yet filled. This might happen when
-	// the same cell file is read by multiple goroutines at the same time.
-	if !entryIsNew && len(cachedFeatures) > 0 {
-		sigolo.Tracef("Use features from cache for cell %v", cell)
-		return cachedFeatures, nil
-	}
-
-	readFeatureChannel := make(chan []feature.Feature)
-	featureCachedWaitGroup := &sync.WaitGroup{}
-	featureCachedWaitGroup.Add(1)
-	go func() {
-		for readFeatures := range readFeatureChannel {
-			// TODO not-null check needed for the features?
-			cachedFeatures = append(cachedFeatures, readFeatures...)
-		}
-		featureCachedWaitGroup.Done()
-	}()
-
 	switch objectType {
 	case ownOsm.OsmObjNode:
-		g.featureReader.ReadNodes(cell, readFeatureChannel)
+		return g.featureReader.ReadNodes(cell)
 	case ownOsm.OsmObjWay:
-		g.featureReader.ReadWays(cell, readFeatureChannel)
+		return g.featureReader.ReadWays(cell)
 	case ownOsm.OsmObjRelation:
-		g.featureReader.ReadRelations(cell, readFeatureChannel)
+		return g.featureReader.ReadRelations(cell)
 	default:
 		panic("Unsupported object type to read: " + objectType.String())
 	}
-
-	close(readFeatureChannel)
-	featureCachedWaitGroup.Wait()
-
-	g.cellCache.insertOrAppend(cell, objectType, cachedFeatures)
-
-	return cachedFeatures, nil
 }
 
 // readNodeToWayMappingFromCellData is a simplified version of the general way-reading function. It returns a mapping of

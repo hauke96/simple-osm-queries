@@ -17,6 +17,7 @@ import (
 )
 
 type FeatureStorageWriter struct {
+	indexFile             *os.File
 	indexFileWriter       *bufio.Writer
 	indexFileCursorByte   int64 // Byte at which point the next data will be written. Is initially 0.
 	indexMetadata         *indexMetadata
@@ -57,6 +58,7 @@ func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorage
 
 	return &FeatureStorageWriter{
 		indexFileWriter:       bufio.NewWriter(file),
+		indexFile:             file,
 		indexFileCursorByte:   0,
 		indexMetadata:         &indexMetadata{},
 		indexMetadataFileName: baseFolder + "/metadata.json",
@@ -251,7 +253,6 @@ func (w *FeatureStorageWriter) FlushData() error {
 				if err != nil {
 					return err
 				}
-
 			}
 		}
 
@@ -283,10 +284,15 @@ func (w *FeatureStorageWriter) FlushData() error {
 		delete(w.relationCache, cellExtent)
 	}
 
+	err := w.indexFileWriter.Flush()
+	if err != nil {
+		return errors.Wrapf(err, "Error flushing buffered writer of index")
+	}
+
 	sigolo.Debugf("Write index metadata to %s", w.indexMetadataFileName)
 	metadataJson, err := json.Marshal(w.indexMetadata)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "Error marshalling index metadata into JSON")
 	}
 	return os.WriteFile(w.indexMetadataFileName, metadataJson, 0644)
 }
