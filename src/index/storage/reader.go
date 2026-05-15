@@ -79,13 +79,14 @@ func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*inde
 
 func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedWayFeature, map[osm.NodeID][]osm.WayID) {
 	features := []*indexCommon.RawEncodedWayFeature{}
+	var nodeToWayMapping map[osm.NodeID][]osm.WayID
 
 	cellOffsets := r.indexMetadata.getCellMetadata(cellExtent).WayOffsets
 	data := r.read(cellOffsets)
 
 	// Storage format see FeatureStorageWriter::writeWayData
 	for pos := 0; pos < len(data); pos++ {
-		id := int64(binary.LittleEndian.Uint64(data[pos:]))
+		id := osm.WayID(binary.LittleEndian.Uint64(data[pos:]))
 
 		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+14:]))
 		if numRelationIds != 0 {
@@ -94,22 +95,23 @@ func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*inde
 
 		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+8:]))
 		numValues := int(binary.LittleEndian.Uint16(data[pos+10:]))
+		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+28:]))
 
-		numberOfBytes := 8 + 2 + 2 + 2 + 2 + numEncodedKeyBytes + numValues*3
+		numHeaderBytes := 8 + 2 + 2 + 2 + 2 + numEncodedKeyBytes + numValues*3
+		numberOfBytes := numHeaderBytes + numNodeIds*16
+
+		for i := 0; i < numNodeIds; i++ {
+			nodeId := osm.NodeID(binary.LittleEndian.Uint64(data[pos+numHeaderBytes+i*16:]))
+			nodeToWayMapping[nodeId] = append(nodeToWayMapping[nodeId], id)
+		}
 
 		rawEncodedWay := &indexCommon.RawEncodedWayFeature{
 			Data:        data[pos : pos+numberOfBytes],
 			RelationIds: make([]osm.RelationID, 0),
 		}
 		features = append(features, rawEncodedWay)
-	}
 
-	var nodeToWayMapping map[osm.NodeID][]osm.WayID
-
-	for _, way := range features {
-		for _, node := range way.GetNodes() {
-			nodeToWayMapping[node.ID] = append(nodeToWayMapping[node.ID], osm.WayID(way.GetID()))
-		}
+		pos += numberOfBytes
 	}
 
 	return features, nodeToWayMapping
@@ -117,45 +119,49 @@ func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*inde
 
 func (r FeatureStorageReader) readRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
 	features := []*indexCommon.RawEncodedRelationFeature{}
+	var nodeToRelationMapping map[osm.NodeID][]osm.RelationID
+	var wayToRelationMapping map[osm.WayID][]osm.RelationID
+	var relationToRelationMapping map[osm.RelationID][]osm.RelationID
 
 	cellOffsets := r.indexMetadata.getCellMetadata(cellExtent).RelationOffsets
 	data := r.read(cellOffsets)
 
 	// Storage format see FeatureStorageWriter::writeRelationData
 	for pos := 0; pos < len(data); pos++ {
-		id := int64(binary.LittleEndian.Uint64(data[pos:]))
+		id := osm.RelationID(binary.LittleEndian.Uint64(data[pos:]))
 
-		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
-		if numRelationIds != 0 {
-			sigolo.Fatalf("Expected number of parent-relations on raw relation %d to be 0 but was %d", id, numRelationIds)
+		numParentRelationIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
+		if numParentRelationIds != 0 {
+			sigolo.Fatalf("Expected number of parent-relations on raw relation %d to be 0 but was %d", id, numParentRelationIds)
 		}
 
 		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+24:]))
 		numValues := int(binary.LittleEndian.Uint16(data[pos+26:]))
+		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+28:]))
+		numWayIds := int(binary.LittleEndian.Uint16(data[pos+30:]))
+		numChildRelationIds := int(binary.LittleEndian.Uint16(data[pos+32:]))
 
-		numberOfBytes := 8 + 16 + 2 + 2 + 2 + 2 + 2 + 2 + numEncodedKeyBytes + numValues*3
+		numHeaderBytes := 8 + 16 + 2 + 2 + 2 + 2 + 2 + 2 + numEncodedKeyBytes + numValues*3
+		numberOfBytes := numHeaderBytes + numNodeIds*8 + numWayIds*8 + numChildRelationIds*8
+
+		for i := 0; i < numNodeIds; i++ {
+			nodeId := osm.NodeID(binary.LittleEndian.Uint64(data[pos+numHeaderBytes+i*8:]))
+			nodeToRelationMapping[nodeId] = append(nodeToRelationMapping[nodeId], id)
+		}
+		for i := 0; i < numWayIds; i++ {
+			wayId := osm.WayID(binary.LittleEndian.Uint64(data[pos+numHeaderBytes+numNodeIds*8+i*8:]))
+			wayToRelationMapping[wayId] = append(wayToRelationMapping[wayId], id)
+		}
+		for i := 0; i < numChildRelationIds; i++ {
+			relationId := osm.RelationID(binary.LittleEndian.Uint64(data[pos+numHeaderBytes+numNodeIds*8+numWayIds*8+i*8:]))
+			relationToRelationMapping[relationId] = append(relationToRelationMapping[relationId], id)
+		}
 
 		rawEncodedRelation := &indexCommon.RawEncodedRelationFeature{
 			Data:              data[pos : pos+numberOfBytes],
 			ParentRelationIds: make([]osm.RelationID, 0),
 		}
 		features = append(features, rawEncodedRelation)
-	}
-
-	var nodeToRelationMapping map[osm.NodeID][]osm.RelationID
-	var wayToRelationMapping map[osm.WayID][]osm.RelationID
-	var relationToRelationMapping map[osm.RelationID][]osm.RelationID
-
-	for _, relation := range features {
-		for _, nodeId := range relation.GetNodeIds() {
-			nodeToRelationMapping[nodeId] = append(nodeToRelationMapping[nodeId], osm.RelationID(relation.GetID()))
-		}
-		for _, wayId := range relation.GetWayIds() {
-			wayToRelationMapping[wayId] = append(wayToRelationMapping[wayId], osm.RelationID(relation.GetID()))
-		}
-		for _, relationId := range relation.GetChildRelationIds() {
-			relationToRelationMapping[relationId] = append(relationToRelationMapping[relationId], osm.RelationID(relation.GetID()))
-		}
 	}
 
 	return features, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping

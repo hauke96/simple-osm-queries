@@ -235,7 +235,6 @@ func (f RawEncodedWayFeature) Print() {
 }
 
 func (f RawEncodedWayFeature) GetNodes() osm.WayNodes {
-	// TODO implement this
 	panic("Not implemented")
 }
 
@@ -307,17 +306,14 @@ func (f RawEncodedRelationFeature) Print() {
 }
 
 func (f RawEncodedRelationFeature) GetNodeIds() []osm.NodeID {
-	// TODO implement this
 	panic("Not implemented")
 }
 
 func (f RawEncodedRelationFeature) GetWayIds() []osm.WayID {
-	// TODO implement this
 	panic("Not implemented")
 }
 
 func (f RawEncodedRelationFeature) GetChildRelationIds() []osm.RelationID {
-	// TODO implement this
 	panic("Not implemented")
 }
 

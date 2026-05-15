@@ -245,6 +245,83 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 	return nil
 }
 
+// flushCaches writes all caches to disk.
+func (w *FeatureStorageWriter) flushCaches() error {
+	// TODO mutex needed?
+	// TODO extract logic and reuse in flushCachesIfNeeded
+
+	for cellExtent, nodeFeatures := range w.nodeCache {
+		metadata := w.indexMetadata.getCellMetadata(cellExtent)
+		startIndex := w.indexFileCursorByte
+
+		for _, nodeFeature := range nodeFeatures {
+			switch encodedFeature := nodeFeature.(type) {
+			case *indexCommon.EncodedNodeFeature:
+				err := w.writeNodeData(encodedFeature)
+				if err != nil {
+					return err
+				}
+			case *indexCommon.RawEncodedNodeFeature:
+				err := w.writeRawNodeData(encodedFeature)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+
+		metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+	}
+
+	for cellExtent, wayFeatures := range w.wayCache {
+		metadata := w.indexMetadata.getCellMetadata(cellExtent)
+		startIndex := w.indexFileCursorByte
+
+		for _, wayFeature := range wayFeatures {
+			switch encodedFeature := wayFeature.(type) {
+			case *indexCommon.EncodedWayFeature:
+				err := w.writeWayData(encodedFeature)
+				if err != nil {
+					return err
+				}
+			case *indexCommon.RawEncodedWayFeature:
+				err := w.writeRawWayData(encodedFeature)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+
+		metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+	}
+
+	for cellExtent, relationFeatures := range w.relationCache {
+		metadata := w.indexMetadata.getCellMetadata(cellExtent)
+		startIndex := w.indexFileCursorByte
+
+		for _, relationFeature := range relationFeatures {
+			switch encodedFeature := relationFeature.(type) {
+			case *indexCommon.EncodedRelationFeature:
+				err := w.writeRelationData(encodedFeature)
+				if err != nil {
+					return err
+				}
+			case *indexCommon.RawEncodedRelationFeature:
+				err := w.writeRawRelationData(encodedFeature)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+
+		metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+	}
+
+	return nil
+}
+
 func (w *FeatureStorageWriter) writeNodeData(encodedFeature *indexCommon.EncodedNodeFeature) error {
 	/*
 		Entry format:
