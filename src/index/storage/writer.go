@@ -7,6 +7,7 @@ import (
 	os "os"
 	"soq/common"
 	"soq/feature"
+	indexCommon "soq/index/common"
 	"soq/profiler"
 
 	"github.com/hauke96/sigolo/v2"
@@ -14,7 +15,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// TODO move to separate namespace to hide internal functions
 type FeatureStorageWriter struct {
 	indexFileWriter     *bufio.Writer
 	indexFileCursorByte int64 // Byte at which point the next data will be written. Is initially 0.
@@ -167,43 +167,70 @@ func (w *FeatureStorageWriter) WriteRelationFeature(feature feature.RelationFeat
 func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 	// TODO mutex needed?
 
-	for cellExtent, encodedFeatures := range w.nodeCache {
-		if len(encodedFeatures) > w.maxCacheSize {
+	for cellExtent, nodeFeatures := range w.nodeCache {
+		if len(nodeFeatures) > w.maxCacheSize {
 			metadata := w.indexMetadata.getCellMetadata(cellExtent)
 			metadata.NodeOffsets = append(metadata.NodeOffsets, w.indexFileCursorByte)
 
-			for _, encodedFeature := range encodedFeatures {
-				err := w.writeNodeData(encodedFeature)
-				if err != nil {
-					return err
+			for _, nodeFeature := range nodeFeatures {
+				switch encodedFeature := nodeFeature.(type) {
+				case *indexCommon.EncodedNodeFeature:
+					err := w.writeNodeData(encodedFeature)
+					if err != nil {
+						return err
+					}
+				case *indexCommon.RawEncodedNodeFeature:
+					err := w.writeRawNodeData(encodedFeature)
+					if err != nil {
+						return err
+					}
+
 				}
 			}
 		}
 	}
 
-	for cellExtent, encodedFeatures := range w.wayCache {
-		if len(encodedFeatures) > w.maxCacheSize {
+	for cellExtent, wayFeatures := range w.wayCache {
+		if len(wayFeatures) > w.maxCacheSize {
 			metadata := w.indexMetadata.getCellMetadata(cellExtent)
 			metadata.WayOffsets = append(metadata.WayOffsets, w.indexFileCursorByte)
 
-			for _, encodedFeature := range encodedFeatures {
-				err := w.writeWayData(encodedFeature)
-				if err != nil {
-					return err
+			for _, wayFeature := range wayFeatures {
+				switch encodedFeature := wayFeature.(type) {
+				case *indexCommon.EncodedWayFeature:
+					err := w.writeWayData(encodedFeature)
+					if err != nil {
+						return err
+					}
+				case *indexCommon.RawEncodedWayFeature:
+					err := w.writeRawWayData(encodedFeature)
+					if err != nil {
+						return err
+					}
+
 				}
 			}
 		}
 	}
 
-	for cellExtent, encodedFeatures := range w.relationCache {
-		if len(encodedFeatures) > w.maxCacheSize {
+	for cellExtent, relationFeatures := range w.relationCache {
+		if len(relationFeatures) > w.maxCacheSize {
 			metadata := w.indexMetadata.getCellMetadata(cellExtent)
 			metadata.RelationOffsets = append(metadata.NodeOffsets, w.indexFileCursorByte)
 
-			for _, encodedFeature := range encodedFeatures {
-				err := w.writeRelationData(encodedFeature)
-				if err != nil {
-					return err
+			for _, relationFeature := range relationFeatures {
+				switch encodedFeature := relationFeature.(type) {
+				case *indexCommon.EncodedRelationFeature:
+					err := w.writeRelationData(encodedFeature)
+					if err != nil {
+						return err
+					}
+				case *indexCommon.RawEncodedRelationFeature:
+					err := w.writeRawRelationData(encodedFeature)
+					if err != nil {
+						return err
+					}
+
 				}
 			}
 		}
@@ -212,7 +239,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 	return nil
 }
 
-func (w *FeatureStorageWriter) writeNodeData(encodedFeature feature.NodeFeature) error {
+func (w *FeatureStorageWriter) writeNodeData(encodedFeature *indexCommon.EncodedNodeFeature) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -302,7 +329,57 @@ func (w *FeatureStorageWriter) writeNodeData(encodedFeature feature.NodeFeature)
 	return nil
 }
 
-func (w *FeatureStorageWriter) writeWayData(encodedFeature feature.WayFeature) error {
+func (w *FeatureStorageWriter) writeRawNodeData(encodedFeature *indexCommon.RawEncodedNodeFeature) error {
+	/*
+		Entry format: See "writeNodeData".
+
+		We basically use the raw byte array of the feature, change the number of ways and relations, append these to
+		the data and then write it to disk.
+	*/
+
+	wayIds := encodedFeature.GetWayIds()
+	relationIds := encodedFeature.GetRelationIds()
+
+	featureData := encodedFeature.GetData()
+
+	data := make([]byte, len(featureData)+len(wayIds)*4+len(relationIds)*4)
+
+	// Copy existing data
+	copy(data[0:], featureData)
+
+	// Update the amounts of way- and relation-IDs
+	binary.LittleEndian.PutUint16(data[8+4+4+2+2:], uint16(len(wayIds)))
+	binary.LittleEndian.PutUint16(data[8+4+4+2+2+2:], uint16(len(relationIds)))
+
+	pos := len(featureData)
+
+	/*
+		Write way-IDs
+	*/
+	for _, wayId := range wayIds {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(wayId))
+		pos += 8
+	}
+
+	/*
+		Write relation-IDs
+	*/
+	for _, relationId := range encodedFeature.GetRelationIds() {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
+		pos += 8
+	}
+
+	writtenBytes, err := w.indexFileWriter.Write(data)
+	if err != nil {
+		return err
+	}
+
+	w.indexFileCursorByte += int64(writtenBytes)
+
+	return nil
+}
+
+func (w *FeatureStorageWriter) writeWayData(encodedFeature *indexCommon.EncodedWayFeature) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -397,7 +474,47 @@ func (w *FeatureStorageWriter) writeWayData(encodedFeature feature.WayFeature) e
 	return nil
 }
 
-func (w *FeatureStorageWriter) writeRelationData(encodedFeature feature.RelationFeature) error {
+func (w *FeatureStorageWriter) writeRawWayData(encodedFeature *indexCommon.RawEncodedWayFeature) error {
+	/*
+		Entry format: See "writeWayData".
+
+		We basically use the raw byte array of the feature, change the number of relations, append these to
+		the data and then write it to disk.
+	*/
+
+	relationIds := encodedFeature.GetRelationIds()
+
+	featureData := encodedFeature.GetData()
+
+	data := make([]byte, len(featureData)+len(relationIds)*4)
+
+	// Copy existing data
+	copy(data[0:], featureData)
+
+	// Update the amounts of relation-IDs
+	binary.LittleEndian.PutUint16(data[8+2+2+2:], uint16(len(relationIds)))
+
+	pos := len(featureData)
+
+	/*
+		Write relation-IDs
+	*/
+	for _, relationId := range encodedFeature.GetRelationIds() {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
+		pos += 8
+	}
+
+	writtenBytes, err := w.indexFileWriter.Write(data)
+	if err != nil {
+		return err
+	}
+
+	w.indexFileCursorByte += int64(writtenBytes)
+
+	return nil
+}
+
+func (w *FeatureStorageWriter) writeRelationData(encodedFeature *indexCommon.EncodedRelationFeature) error {
 	/*
 		Entry format:
 		// TODO Globally the "name" key has more than 2^24 values (max. number that can be represented with 3 bytes).
@@ -493,6 +610,49 @@ func (w *FeatureStorageWriter) writeRelationData(encodedFeature feature.Relation
 		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
 		pos += 8
 	}
+
+	/*
+		Write parent relation-IDs
+	*/
+	for _, relationId := range encodedFeature.GetParentRelationIds() {
+		binary.LittleEndian.PutUint64(data[pos:], uint64(relationId))
+		pos += 8
+	}
+
+	/*
+		Write data to disk
+	*/
+	writtenBytes, err := w.indexFileWriter.Write(data)
+	if err != nil {
+		return err
+	}
+
+	w.indexFileCursorByte += int64(writtenBytes)
+
+	return nil
+}
+
+func (w *FeatureStorageWriter) writeRawRelationData(encodedFeature *indexCommon.RawEncodedRelationFeature) error {
+	/*
+		Entry format: See "writeRelationData".
+
+		We basically use the raw byte array of the feature, change the number of parent-relations, append these to
+		the data and then write it to disk.
+	*/
+
+	parentRelationIds := encodedFeature.GetParentRelationIds()
+
+	featureData := encodedFeature.GetData()
+
+	data := make([]byte, len(featureData)+len(parentRelationIds)*4)
+
+	// Copy existing data
+	copy(data[0:], featureData)
+
+	// Update the amounts of parent-relation-IDs
+	binary.LittleEndian.PutUint16(data[8+16+2+2+2+2+2:], uint16(len(parentRelationIds)))
+
+	pos := len(featureData)
 
 	/*
 		Write parent relation-IDs
