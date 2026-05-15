@@ -170,7 +170,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 	for cellExtent, nodeFeatures := range w.nodeCache {
 		if len(nodeFeatures) > w.maxCacheSize {
 			metadata := w.indexMetadata.getCellMetadata(cellExtent)
-			metadata.NodeOffsets = append(metadata.NodeOffsets, w.indexFileCursorByte)
+			startIndex := w.indexFileCursorByte
 
 			for _, nodeFeature := range nodeFeatures {
 				switch encodedFeature := nodeFeature.(type) {
@@ -187,13 +187,15 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 
 				}
 			}
+
+			metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
 		}
 	}
 
 	for cellExtent, wayFeatures := range w.wayCache {
 		if len(wayFeatures) > w.maxCacheSize {
 			metadata := w.indexMetadata.getCellMetadata(cellExtent)
-			metadata.WayOffsets = append(metadata.WayOffsets, w.indexFileCursorByte)
+			startIndex := w.indexFileCursorByte
 
 			for _, wayFeature := range wayFeatures {
 				switch encodedFeature := wayFeature.(type) {
@@ -210,13 +212,15 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 
 				}
 			}
+
+			metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
 		}
 	}
 
 	for cellExtent, relationFeatures := range w.relationCache {
 		if len(relationFeatures) > w.maxCacheSize {
 			metadata := w.indexMetadata.getCellMetadata(cellExtent)
-			metadata.RelationOffsets = append(metadata.NodeOffsets, w.indexFileCursorByte)
+			startIndex := w.indexFileCursorByte
 
 			for _, relationFeature := range relationFeatures {
 				switch encodedFeature := relationFeature.(type) {
@@ -233,6 +237,8 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded() error {
 
 				}
 			}
+
+			metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
 		}
 	}
 

@@ -98,13 +98,13 @@ func (f *AbstractEncodedFeature) Print() {
 }
 
 type RawEncodedNodeFeature struct {
-	data        []byte
+	Data        []byte
 	WayIds      []osm.WayID      // An ID list of all ways this node is part of.
 	RelationIds []osm.RelationID // An ID list of all relations this node is part of.
 }
 
 func (f RawEncodedNodeFeature) GetData() []byte {
-	return f.data
+	return f.Data
 }
 
 func (f RawEncodedNodeFeature) GetID() uint64 {
@@ -194,12 +194,12 @@ func (f *EncodedNodeFeature) GetLat() float64 {
 }
 
 type RawEncodedWayFeature struct {
-	data        []byte
+	Data        []byte
 	RelationIds []osm.RelationID // An ID list of all relations this way is part of.
 }
 
 func (f RawEncodedWayFeature) GetData() []byte {
-	return f.data
+	return f.Data
 }
 
 func (f RawEncodedWayFeature) GetID() uint64 {
@@ -235,6 +235,7 @@ func (f RawEncodedWayFeature) Print() {
 }
 
 func (f RawEncodedWayFeature) GetNodes() osm.WayNodes {
+	// TODO implement this
 	panic("Not implemented")
 }
 
@@ -265,12 +266,12 @@ func (f *EncodedWayFeature) SetRelationIds(relationIds []osm.RelationID) {
 }
 
 type RawEncodedRelationFeature struct {
-	data              []byte
+	Data              []byte
 	ParentRelationIds []osm.RelationID
 }
 
 func (f RawEncodedRelationFeature) GetData() []byte {
-	return f.data
+	return f.Data
 }
 
 func (f RawEncodedRelationFeature) GetID() uint64 {
@@ -306,14 +307,17 @@ func (f RawEncodedRelationFeature) Print() {
 }
 
 func (f RawEncodedRelationFeature) GetNodeIds() []osm.NodeID {
+	// TODO implement this
 	panic("Not implemented")
 }
 
 func (f RawEncodedRelationFeature) GetWayIds() []osm.WayID {
+	// TODO implement this
 	panic("Not implemented")
 }
 
 func (f RawEncodedRelationFeature) GetChildRelationIds() []osm.RelationID {
+	// TODO implement this
 	panic("Not implemented")
 }
 

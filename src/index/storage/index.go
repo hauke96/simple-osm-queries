@@ -19,9 +19,9 @@ func (i indexMetadata) getCellMetadata(extent common.CellExtent) *indexCellMetad
 	if cellMetadata == nil {
 		cellMetadata = &indexCellMetadata{
 			Extent:          extent,
-			NodeOffsets:     []int64{},
-			WayOffsets:      []int64{},
-			RelationOffsets: []int64{},
+			NodeOffsets:     []indexCellOffset{},
+			WayOffsets:      []indexCellOffset{},
+			RelationOffsets: []indexCellOffset{},
 		}
 		i.Cells = append(i.Cells, cellMetadata)
 	}
@@ -31,7 +31,12 @@ func (i indexMetadata) getCellMetadata(extent common.CellExtent) *indexCellMetad
 
 type indexCellMetadata struct {
 	Extent          common.CellExtent `json:"extent"`
-	NodeOffsets     []int64           `json:"node-offsets"`
-	WayOffsets      []int64           `json:"way-offsets"`
-	RelationOffsets []int64           `json:"relation-offsets"`
+	NodeOffsets     []indexCellOffset `json:"node-offsets"`
+	WayOffsets      []indexCellOffset `json:"way-offsets"`
+	RelationOffsets []indexCellOffset `json:"relation-offsets"`
+}
+
+type indexCellOffset struct {
+	StartIndex int64 `json:"start-index"` // This is the first byte of the cell.
+	EndIndex   int64 `json:"end-index"`   // This is the first byte *behind* the cell, i.e. this byte if not part of the cell anymore.
 }
