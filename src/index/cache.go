@@ -1,13 +1,15 @@
 package index
 
 import (
-	"github.com/pkg/errors"
 	"math"
 	"soq/feature"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
+// TODO abstract from filename and use Cell + maybe object type
 type featureCache interface {
 	// has checks whether the given file is cached.
 	has(filename string) bool

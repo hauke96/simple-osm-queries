@@ -4,11 +4,14 @@ import (
 	"bufio"
 	"encoding/binary"
 	"encoding/json"
+	"math"
 	"os"
 	"soq/common"
+	"soq/feature"
 	indexCommon "soq/index/common"
 
 	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb"
 	"github.com/paulmach/osm"
 	"github.com/pkg/errors"
 )
@@ -19,6 +22,7 @@ type FeatureStorageReader struct {
 	indexMetadata   *indexMetadata
 }
 
+// TODO return error
 func NewFeatureStorageReader(baseFolder string, filename string) *FeatureStorageReader {
 	metadataFileName := baseFolder + "/metadata.json"
 
@@ -53,7 +57,7 @@ func (r FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExt
 		node.SetWayIds(nodeToWayMapping[osm.NodeID(node.GetID())])
 	}
 
-	relations, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping := r.readRelations(cellExtent)
+	relations, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping := r.readRawRelations(cellExtent)
 	for _, node := range nodes {
 		node.SetRelationIds(nodeToRelationMapping[osm.NodeID(node.GetID())])
 	}
@@ -105,6 +109,105 @@ func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*inde
 	return features
 }
 
+// TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
+func (r FeatureStorageReader) ReadNodes(cell common.CellIndex, output chan []feature.Feature) {
+	cellMetadata := r.indexMetadata.getMetadataForCell(cell)
+	if cellMetadata == nil {
+		// No data in this cell
+		return
+	}
+	cellOffsets := cellMetadata.NodeOffsets
+	data := r.read(cellOffsets)
+
+	// Storage format see FeatureStorageWriter::writeNodeData
+	outputBuffer := make([]feature.Feature, 1000)
+	currentBufferPos := 0
+
+	for pos := 0; pos < len(data); {
+		// See format details (bit position, field sizes, etc.) in function "writeNodeData".
+
+		/*
+			Read header fields
+		*/
+		osmId := binary.LittleEndian.Uint64(data[pos+0:])
+		lon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+8:]))
+		lat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+16:]))
+		numValues := int(binary.LittleEndian.Uint16(data[pos+18:]))
+		numWayIds := int(binary.LittleEndian.Uint16(data[pos+20:]))
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+22:]))
+
+		headerBytesCount := 8 + 4 + 4 + 2 + 2 + 2 + 2 // = 24
+
+		sigolo.Tracef("Read feature pos=%d, id=%d, lon=%f, lat=%f, numKeys=%d, numValues=%d", pos, osmId, lon, lat, numEncodedKeyBytes, numValues)
+
+		pos += headerBytesCount
+
+		/*
+			Read keys
+		*/
+		encodedKeys := make([]byte, numEncodedKeyBytes)
+		encodedValues := make([]int, numValues)
+		copy(encodedKeys[:], data[pos:])
+		pos += numEncodedKeyBytes
+
+		/*
+			Read values
+		*/
+		for i := 0; i < numValues; i++ {
+			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
+			pos += 3
+		}
+
+		/*
+			Read way-IDs
+		*/
+		wayIds := make([]osm.WayID, numWayIds)
+		for i := 0; i < numWayIds; i++ {
+			wayIds[i] = osm.WayID(binary.LittleEndian.Uint64(data[pos:]))
+			pos += 8
+		}
+
+		/*
+			Read relation-IDs
+		*/
+		relationIds := make([]osm.RelationID, numRelationIds)
+		for i := 0; i < numRelationIds; i++ {
+			relationIds[i] = osm.RelationID(binary.LittleEndian.Uint64(data[pos:]))
+			pos += 8
+		}
+
+		/*
+			Create encoded feature from raw data
+		*/
+		encodedFeature := &indexCommon.EncodedNodeFeature{
+			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
+				ID:       osmId,
+				Geometry: &orb.Point{float64(lon), float64(lat)},
+				Keys:     encodedKeys,
+				Values:   encodedValues,
+			},
+			WayIds:      wayIds,
+			RelationIds: relationIds,
+		}
+
+		// TODO
+		//if g.checkFeatureValidity {
+		//	sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
+		//	g.checkValidity(encodedFeature)
+		//}
+
+		outputBuffer[currentBufferPos] = encodedFeature
+		currentBufferPos++
+
+		if currentBufferPos == len(outputBuffer)-1 {
+			output <- outputBuffer
+			outputBuffer = make([]feature.Feature, len(outputBuffer))
+			currentBufferPos = 0
+		}
+	}
+}
+
 func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedWayFeature, map[osm.NodeID][]osm.WayID) {
 	features := []*indexCommon.RawEncodedWayFeature{}
 	nodeToWayMapping := map[osm.NodeID][]osm.WayID{}
@@ -145,7 +248,118 @@ func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*inde
 	return features, nodeToWayMapping
 }
 
-func (r FeatureStorageReader) readRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
+// TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
+func (r FeatureStorageReader) ReadWays(cell common.CellIndex, output chan []feature.Feature) {
+	cellMetadata := r.indexMetadata.getMetadataForCell(cell)
+	if cellMetadata == nil {
+		// No data in this cell
+		return
+	}
+	cellOffsets := cellMetadata.WayOffsets
+	data := r.read(cellOffsets)
+
+	outputBuffer := make([]feature.Feature, 1000)
+	currentBufferPos := 0
+	totalReadFeatures := 0
+
+	// Storage format see FeatureStorageWriter::writeWayData
+	for pos := 0; pos < len(data); {
+		// See format details (bit position, field sizes, etc.) in function "writeWayData".
+
+		/*
+			Read header fields
+		*/
+		osmId := binary.LittleEndian.Uint64(data[pos+0:])
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+8:]))
+		numValues := int(binary.LittleEndian.Uint16(data[pos+10:]))
+		numNodes := int(binary.LittleEndian.Uint16(data[pos+12:]))
+		numRelationIds := int(binary.LittleEndian.Uint16(data[pos+14:]))
+
+		headerBytesCount := 8 + 2 + 2 + 2 + 2
+
+		sigolo.Tracef("Read feature pos=%d, id=%d, numKeys=%d, numValues=%d", pos, osmId, numEncodedKeyBytes, numValues)
+
+		pos += headerBytesCount
+
+		/*
+			Read keys
+		*/
+		encodedKeys := make([]byte, numEncodedKeyBytes)
+		encodedValues := make([]int, numValues)
+		copy(encodedKeys[:], data[pos:])
+		pos += numEncodedKeyBytes
+
+		/*
+			Read values
+		*/
+		for i := 0; i < numValues; i++ {
+			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
+			pos += 3
+		}
+
+		/*
+			Read node-IDs
+		*/
+		nodes := make([]osm.WayNode, numNodes)
+		for i := 0; i < numNodes; i++ {
+			nodes[i] = osm.WayNode{
+				ID:  osm.NodeID(binary.LittleEndian.Uint64(data[pos:])),
+				Lon: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[(pos + 8):]))),
+				Lat: float64(math.Float32frombits(binary.LittleEndian.Uint32(data[(pos + 12):]))),
+			}
+			pos += 16
+		}
+
+		/*
+			Read relation-IDs
+		*/
+		var relationIds []osm.RelationID
+		for i := 0; i < numRelationIds; i++ {
+			relationIds = append(relationIds, osm.RelationID(binary.LittleEndian.Uint64(data[pos:])))
+			pos += 8
+		}
+
+		/*
+			Create encoded feature from raw data
+		*/
+		lineString := make(orb.LineString, len(nodes))
+		for i, node := range nodes {
+			lineString[i] = orb.Point{node.Lon, node.Lat}
+		}
+
+		encodedFeature := indexCommon.EncodedWayFeature{
+			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
+				ID:       osmId,
+				Keys:     encodedKeys,
+				Values:   encodedValues,
+				Geometry: &lineString,
+			},
+			Nodes:       nodes,
+			RelationIds: relationIds,
+		}
+
+		// TODO
+		//if g.checkFeatureValidity {
+		//	sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
+		//	g.checkValidity(&encodedFeature)
+		//}
+
+		outputBuffer[currentBufferPos] = &encodedFeature
+		currentBufferPos++
+
+		if currentBufferPos == len(outputBuffer)-1 {
+			output <- outputBuffer
+			outputBuffer = make([]feature.Feature, len(outputBuffer))
+			currentBufferPos = 0
+		}
+
+		totalReadFeatures++
+	}
+
+	output <- outputBuffer
+}
+
+func (r FeatureStorageReader) readRawRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
 	features := []*indexCommon.RawEncodedRelationFeature{}
 	nodeToRelationMapping := map[osm.NodeID][]osm.RelationID{}
 	wayToRelationMapping := map[osm.WayID][]osm.RelationID{}
@@ -195,6 +409,137 @@ func (r FeatureStorageReader) readRelations(cellExtent common.CellExtent) ([]*in
 	}
 
 	return features, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping
+}
+
+// TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
+func (r FeatureStorageReader) ReadRelations(cell common.CellIndex, output chan []feature.Feature) {
+	cellMetadata := r.indexMetadata.getMetadataForCell(cell)
+	if cellMetadata == nil {
+		// No data in this cell
+		return
+	}
+	cellOffsets := cellMetadata.RelationOffsets
+	data := r.read(cellOffsets)
+
+	outputBuffer := make([]feature.Feature, 1000)
+	currentBufferPos := 0
+
+	// Storage format see FeatureStorageWriter::writeRelationData
+	for pos := 0; pos < len(data); {
+		// See format details (bit position, field sizes, etc.) in function "writeRelationData".
+
+		/*
+			Read header fields
+		*/
+		osmId := binary.LittleEndian.Uint64(data[pos+0:])
+		minLon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+8:]))
+		minLat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+12:]))
+		maxLon := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+16:]))
+		maxLat := math.Float32frombits(binary.LittleEndian.Uint32(data[pos+20:]))
+		numEncodedKeyBytes := int(binary.LittleEndian.Uint16(data[pos+24:]))
+		numValues := int(binary.LittleEndian.Uint16(data[pos+26:]))
+		numNodeIds := int(binary.LittleEndian.Uint16(data[pos+28:]))
+		numWayIds := int(binary.LittleEndian.Uint16(data[pos+30:]))
+		numChildRelationIds := int(binary.LittleEndian.Uint16(data[pos+32:]))
+		numParentRelationIds := int(binary.LittleEndian.Uint16(data[pos+34:]))
+
+		bbox := orb.Bound{
+			Min: orb.Point{float64(minLon), float64(minLat)},
+			Max: orb.Point{float64(maxLon), float64(maxLat)},
+		}
+
+		headerBytesCount := 8 + 16 + 2 + 2 + 2 + 2 + 2 + 2 // = 36
+
+		sigolo.Tracef("Read feature pos=%d, id=%d, bbox=%v, numKeys=%d, numValues=%d", pos, osmId, bbox, numEncodedKeyBytes, numValues)
+
+		pos += headerBytesCount
+
+		/*
+			Read keys
+		*/
+		encodedKeys := make([]byte, numEncodedKeyBytes)
+		encodedValues := make([]int, numValues)
+		copy(encodedKeys[:], data[pos:])
+		pos += numEncodedKeyBytes
+
+		/*
+			Read values
+		*/
+		for i := 0; i < numValues; i++ {
+			encodedValues[i] = int(uint32(data[pos]) | uint32(data[pos+1])<<8 | uint32(data[pos+2])<<16)
+			pos += 3
+		}
+
+		/*
+			Read node-IDs
+		*/
+		nodeIds := make([]osm.NodeID, numNodeIds)
+		for i := 0; i < numNodeIds; i++ {
+			nodeIds[i] = osm.NodeID(binary.LittleEndian.Uint64(data[pos:]))
+			pos += 8
+		}
+
+		/*
+			Read way-IDs
+		*/
+		wayIds := make([]osm.WayID, numWayIds)
+		for i := 0; i < numWayIds; i++ {
+			wayIds[i] = osm.WayID(binary.LittleEndian.Uint64(data[pos:]))
+			pos += 8
+		}
+
+		/*
+			Read child relation-IDs
+		*/
+		childRelationIds := make([]osm.RelationID, numChildRelationIds)
+		for i := 0; i < numChildRelationIds; i++ {
+			childRelationIds[i] = osm.RelationID(binary.LittleEndian.Uint64(data[pos:]))
+			pos += 8
+		}
+
+		/*
+			Read relation-IDs
+		*/
+		parentRelationIds := make([]osm.RelationID, numParentRelationIds)
+		for i := 0; i < numParentRelationIds; i++ {
+			parentRelationIds[i] = osm.RelationID(binary.LittleEndian.Uint64(data[pos:]))
+			pos += 8
+		}
+
+		/*
+			Create encoded feature from raw data
+		*/
+		bboxPolygon := bbox.ToPolygon()
+		encodedFeature := &indexCommon.EncodedRelationFeature{
+			AbstractEncodedFeature: indexCommon.AbstractEncodedFeature{
+				ID:       osmId,
+				Geometry: &bboxPolygon, // This is probably temporary until the real geometry collection is stored
+				Keys:     encodedKeys,
+				Values:   encodedValues,
+			},
+			NodeIds:           nodeIds,
+			WayIds:            wayIds,
+			ChildRelationIds:  childRelationIds,
+			ParentRelationIds: parentRelationIds,
+		}
+
+		// TODO
+		//if g.checkFeatureValidity {
+		//	sigolo.Debugf("Check validity of feature %d", encodedFeature.ID)
+		//	g.checkValidity(encodedFeature)
+		//}
+
+		outputBuffer[currentBufferPos] = encodedFeature
+		currentBufferPos++
+
+		if currentBufferPos == len(outputBuffer)-1 {
+			output <- outputBuffer
+			outputBuffer = make([]feature.Feature, len(outputBuffer))
+			currentBufferPos = 0
+		}
+	}
+
+	output <- outputBuffer
 }
 
 func (r FeatureStorageReader) read(cellOffsets []indexCellOffset) []byte {

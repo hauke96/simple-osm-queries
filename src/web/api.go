@@ -3,12 +3,14 @@ package web
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	"github.com/hauke96/sigolo/v2"
 	"io"
 	"net/http"
 	"soq/index"
+	"soq/index/storage"
 	"soq/parser"
+
+	"github.com/gorilla/mux"
+	"github.com/hauke96/sigolo/v2"
 )
 
 type ErrorResponse struct {
@@ -40,7 +42,10 @@ func StartServerTls(port string, certFile string, keyFile string, indexBaseFolde
 func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureValidity bool) *mux.Router {
 	tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 	sigolo.FatalCheck(err)
-	geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, checkFeatureValidity, tagIndex)
+
+	featureStorageReader := storage.NewFeatureStorageReader(indexBaseFolder, "index")
+
+	geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, checkFeatureValidity, tagIndex, featureStorageReader)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/app", func(writer http.ResponseWriter, request *http.Request) {

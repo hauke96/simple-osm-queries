@@ -2,17 +2,19 @@ package main
 
 import (
 	"fmt"
-	"github.com/alecthomas/kong"
-	"github.com/hauke96/sigolo/v2"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"soq/importing"
 	"soq/index"
+	"soq/index/storage"
 	"soq/parser"
 	"soq/profiler"
 	"soq/web"
 	"strings"
+
+	"github.com/alecthomas/kong"
+	"github.com/hauke96/sigolo/v2"
 )
 
 const VERSION = "v0.1.0"
@@ -91,7 +93,9 @@ func main() {
 		tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 		sigolo.FatalCheck(err)
 
-		geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, cli.Query.CheckFeatureValidity, tagIndex)
+		featureStorageReader := storage.NewFeatureStorageReader(indexBaseFolder, "index")
+
+		geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, cli.Query.CheckFeatureValidity, tagIndex, featureStorageReader)
 
 		q, err := parser.ParseQueryString(`
 //bbox(9.99549,53.55688,9.99569,53.55701)

@@ -29,6 +29,16 @@ func (i *indexMetadata) getCellMetadata(extent common.CellExtent) *indexCellMeta
 	return cellMetadata
 }
 
+func (i *indexMetadata) getMetadataForCell(cell common.CellIndex) *indexCellMetadata {
+	for _, cellMetadata := range i.Cells {
+		if cellMetadata.Extent.Contains(cell) {
+			return cellMetadata
+		}
+	}
+
+	return nil
+}
+
 type indexCellMetadata struct {
 	Extent          common.CellExtent `json:"extent"`
 	NodeOffsets     []indexCellOffset `json:"node-offsets"`
