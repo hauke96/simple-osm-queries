@@ -118,9 +118,6 @@ func (g *GridIndexReader) getFeaturesForCellsWithBbox(bbox *orb.Bound, cellExten
 
 	for i := 0; i < len(encodedFeatures); i++ {
 		encodedFeature := encodedFeatures[i]
-		if encodedFeature.GetID() == 108782320 {
-			sigolo.Debug("Found")
-		}
 		if bbox.Intersects(encodedFeature.GetGeometry().Bound()) {
 			featuresInBbox.Features = append(featuresInBbox.Features, encodedFeature)
 		}

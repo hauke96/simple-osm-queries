@@ -112,7 +112,6 @@ func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*inde
 	return features
 }
 
-// TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
 func (r FeatureStorageReader) ReadNodes(cellExtent common.CellExtent) ([]feature.Feature, error) {
 	result := []feature.Feature{}
 
@@ -259,7 +258,6 @@ func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*inde
 	return features, nodeToWayMapping
 }
 
-// TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
 func (r FeatureStorageReader) ReadWays(cellExtent common.CellExtent) ([]feature.Feature, error) {
 	result := []feature.Feature{}
 
@@ -425,7 +423,6 @@ func (r FeatureStorageReader) readRawRelations(cellExtent common.CellExtent) ([]
 	return features, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping
 }
 
-// TODO Evaluate if a simple maybe buffered "chan feature.Feature" is also working:
 func (r FeatureStorageReader) ReadRelations(cellExtent common.CellExtent) ([]feature.Feature, error) {
 	result := []feature.Feature{}
 
@@ -607,8 +604,6 @@ func (r FeatureStorageReader) GetExtentsForCellBounds(bounds common.CellExtent) 
 	for _, cellMetadata := range r.indexMetadata.Cells {
 		if cellMetadata.Extent.Intersects(bounds) {
 			result = append(result, cellMetadata.Extent)
-		} else {
-			sigolo.Debug("No")
 		}
 	}
 
