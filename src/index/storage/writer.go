@@ -126,7 +126,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded(cellExtent common.CellExtent)
 		metadata := w.indexMetadata.getCellMetadata(cellExtent)
 		startIndex := w.indexFileCursorByte
 
-		sigolo.Debugf("Flush node cache for extent %v to disk starting at index %d", cellExtent, startIndex)
+		sigolo.Tracef("Flush node cache for extent %v to disk starting at index %d", cellExtent, startIndex)
 
 		for _, nodeFeature := range nodeFeatures {
 			switch encodedFeature := nodeFeature.(type) {
@@ -153,7 +153,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded(cellExtent common.CellExtent)
 		metadata := w.indexMetadata.getCellMetadata(cellExtent)
 		startIndex := w.indexFileCursorByte
 
-		sigolo.Debugf("Flush way cache for extent %v to disk starting at index %d", cellExtent, startIndex)
+		sigolo.Tracef("Flush way cache for extent %v to disk starting at index %d", cellExtent, startIndex)
 
 		for _, wayFeature := range wayFeatures {
 			switch encodedFeature := wayFeature.(type) {
@@ -180,7 +180,7 @@ func (w *FeatureStorageWriter) flushCachesIfNeeded(cellExtent common.CellExtent)
 		metadata := w.indexMetadata.getCellMetadata(cellExtent)
 		startIndex := w.indexFileCursorByte
 
-		sigolo.Debugf("Flush relation cache for extent %v to disk starting at index %d", cellExtent, startIndex)
+		sigolo.Tracef("Flush relation cache for extent %v to disk starting at index %d", cellExtent, startIndex)
 
 		for _, relationFeature := range relationFeatures {
 			switch encodedFeature := relationFeature.(type) {
