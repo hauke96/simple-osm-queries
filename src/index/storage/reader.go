@@ -60,15 +60,71 @@ func (r FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExt
 		node.SetWayIds(nodeToWayMapping[osm.NodeID(node.GetID())])
 	}
 
-	relations, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping := r.readRawRelations(cellExtent)
+	relations, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping := r.readRawRelations(common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}})
+	relationMap := map[uint64]*indexCommon.RawEncodedRelationFeature{}
+
+	// Map to store the bound of the relation within this cellExtent. The relation might be larger but currently we only
+	// consider data within this cell extent.
+	relationMinXMap := map[osm.RelationID]float32{}
+	relationMaxXMap := map[osm.RelationID]float32{}
+	relationMinYMap := map[osm.RelationID]float32{}
+	relationMaxYMap := map[osm.RelationID]float32{}
+	for _, relation := range relations {
+		relationMap[relation.GetID()] = relation
+	}
+
 	for _, node := range nodes {
-		node.SetRelationIds(nodeToRelationMapping[osm.NodeID(node.GetID())])
+		relationIDsOfNode := nodeToRelationMapping[osm.NodeID(node.GetID())]
+		node.SetRelationIds(relationIDsOfNode)
+		for _, relationId := range relationIDsOfNode {
+			lon := float32(node.GetLon())
+			lat := float32(node.GetLat())
+			if val, ok := relationMinXMap[relationId]; !ok || val > lon {
+				relationMinXMap[relationId] = lon
+			}
+			if val, ok := relationMaxXMap[relationId]; !ok || val < lon {
+				relationMaxXMap[relationId] = lon
+			}
+			if val, ok := relationMinYMap[relationId]; !ok || val > lat {
+				relationMinYMap[relationId] = lat
+			}
+			if val, ok := relationMaxYMap[relationId]; !ok || val < lat {
+				relationMaxYMap[relationId] = lat
+			}
+		}
 	}
 	for _, way := range ways {
-		way.SetRelationIds(wayToRelationMapping[osm.WayID(way.GetID())])
+		relationIDsOfWay := wayToRelationMapping[osm.WayID(way.GetID())]
+		way.SetRelationIds(relationIDsOfWay)
+		longitudes, latitudes := way.GetNodeCoordinates()
+		for i, _ := range longitudes {
+			for _, relationId := range relationIDsOfWay {
+				lon := longitudes[i]
+				lat := latitudes[i]
+				if val, ok := relationMinXMap[relationId]; !ok || val > lon {
+					relationMinXMap[relationId] = lon
+				}
+				if val, ok := relationMaxXMap[relationId]; !ok || val < lon {
+					relationMaxXMap[relationId] = lon
+				}
+				if val, ok := relationMinYMap[relationId]; !ok || val > lat {
+					relationMinYMap[relationId] = lat
+				}
+				if val, ok := relationMaxYMap[relationId]; !ok || val < lat {
+					relationMaxYMap[relationId] = lat
+				}
+			}
+		}
 	}
 	for _, relation := range relations {
-		relation.SetParentRelationIds(relationToRelationMapping[osm.RelationID(relation.GetID())])
+		relationId := osm.RelationID(relation.GetID())
+		relation.SetParentRelationIds(relationToRelationMapping[relationId])
+		if _, relationHasCoordinates := relationMinXMap[relationId]; relationHasCoordinates {
+			relation.SetBounds(orb.Bound{
+				Min: orb.Point{float64(relationMinXMap[relationId]), float64(relationMinYMap[relationId])},
+				Max: orb.Point{float64(relationMaxXMap[relationId]), float64(relationMaxYMap[relationId])},
+			})
+		}
 	}
 
 	return nodes, ways, relations

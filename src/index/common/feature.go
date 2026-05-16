@@ -2,6 +2,7 @@ package common
 
 import (
 	"encoding/binary"
+	"math"
 
 	"github.com/hauke96/sigolo/v2"
 	"github.com/paulmach/orb"
@@ -142,11 +143,13 @@ func (f *RawEncodedNodeFeature) Print() {
 }
 
 func (f *RawEncodedNodeFeature) GetLon() float64 {
-	panic("Not implemented")
+	// See writer for encoding of nodes
+	return float64(math.Float32frombits(binary.LittleEndian.Uint32(f.Data[8:])))
 }
 
 func (f *RawEncodedNodeFeature) GetLat() float64 {
-	panic("Not implemented")
+	// See writer for encoding of nodes
+	return float64(math.Float32frombits(binary.LittleEndian.Uint32(f.Data[12:])))
 }
 
 func (f *RawEncodedNodeFeature) GetWayIds() []osm.WayID {
@@ -240,6 +243,25 @@ func (f *RawEncodedWayFeature) GetNodes() osm.WayNodes {
 	panic("Not implemented")
 }
 
+// GetNodeCoordinates returns the node coordinates. The first return value are longitudes, the seconds latitudes.
+func (f *RawEncodedWayFeature) GetNodeCoordinates() ([]float32, []float32) {
+	// See writer for encoding of ways
+	numEncodedKeyBytes := int(binary.LittleEndian.Uint16(f.Data[8:]))
+	numValues := int(binary.LittleEndian.Uint16(f.Data[10:]))
+	numNodes := int(binary.LittleEndian.Uint16(f.Data[12:]))
+
+	lon := make([]float32, numNodes)
+	lat := make([]float32, numNodes)
+	pos := 8 + 2 + 2 + 2 + 2 + numEncodedKeyBytes + numValues*3
+	for i := 0; i < numNodes; i++ {
+		lon[i] = math.Float32frombits(binary.LittleEndian.Uint32(f.Data[(pos + 8):]))
+		lat[i] = math.Float32frombits(binary.LittleEndian.Uint32(f.Data[(pos + 12):]))
+		pos += 16
+	}
+
+	return lon, lat
+}
+
 func (f *RawEncodedWayFeature) GetRelationIds() []osm.RelationID {
 	return f.RelationIds
 }
@@ -269,6 +291,7 @@ func (f *EncodedWayFeature) SetRelationIds(relationIds []osm.RelationID) {
 type RawEncodedRelationFeature struct {
 	Data              []byte
 	ParentRelationIds []osm.RelationID
+	Bound             orb.Bound
 }
 
 func (f *RawEncodedRelationFeature) GetData() []byte {
@@ -321,6 +344,10 @@ func (f *RawEncodedRelationFeature) GetChildRelationIds() []osm.RelationID {
 
 func (f *RawEncodedRelationFeature) SetGeometry(geometry orb.Geometry) {
 	panic("Not implemented")
+}
+
+func (f *RawEncodedRelationFeature) SetBounds(bound orb.Bound) {
+	f.Bound = bound
 }
 
 func (f *RawEncodedRelationFeature) GetParentRelationIds() []osm.RelationID {

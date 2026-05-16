@@ -704,7 +704,8 @@ func (w *FeatureStorageWriter) writeRawRelationData(encodedFeature *indexCommon.
 		the data and then write it to disk.
 	*/
 
-	parentRelationIds := encodedFeature.GetParentRelationIds()
+	parentRelationIds := encodedFeature.ParentRelationIds
+	bbox := encodedFeature.Bound
 
 	featureData := encodedFeature.GetData()
 
@@ -715,6 +716,10 @@ func (w *FeatureStorageWriter) writeRawRelationData(encodedFeature *indexCommon.
 
 	// Update the amounts of parent-relation-IDs
 	binary.LittleEndian.PutUint16(data[8+16+2+2+2+2+2:], uint16(len(parentRelationIds)))
+	binary.LittleEndian.PutUint32(data[8:], math.Float32bits(float32(bbox.Min.Lon())))
+	binary.LittleEndian.PutUint32(data[12:], math.Float32bits(float32(bbox.Min.Lat())))
+	binary.LittleEndian.PutUint32(data[16:], math.Float32bits(float32(bbox.Max.Lon())))
+	binary.LittleEndian.PutUint32(data[20:], math.Float32bits(float32(bbox.Max.Lat())))
 
 	pos := len(featureData)
 

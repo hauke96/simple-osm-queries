@@ -19,6 +19,7 @@ type OsmToRawFeaturesImporter struct {
 	scaledCellExtents      [][4]float64
 	cellWidth              float64
 	cellHeight             float64
+	rawRelationsCellExtent common.CellExtent // Raw relations don't have bounds or geometries, so we first write them to this extent and later add coordinates.
 }
 
 func NewOsmToRawFeaturesImporter(tagIndex *index.TagIndex, featureStorageWriter *storage.FeatureStorageWriter, cellExtents []common.CellExtent, cellWidth float64, cellHeight float64) *OsmToRawFeaturesImporter {
@@ -42,6 +43,7 @@ func NewOsmToRawFeaturesImporter(tagIndex *index.TagIndex, featureStorageWriter 
 		scaledCellExtents:      scaledCellExtents,
 		cellWidth:              cellWidth,
 		cellHeight:             cellHeight,
+		rawRelationsCellExtent: common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}},
 	}
 }
 
@@ -145,7 +147,7 @@ func (i *OsmToRawFeaturesImporter) HandleRelation(relation *osm.Relation) error 
 	}
 
 	// TODO is minValue a proper value to show "doesn't have a cell yet"?
-	return i.featureStorageWriter.WriteRelationFeature(encodedFeature, common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}})
+	return i.featureStorageWriter.WriteRelationFeature(encodedFeature, i.rawRelationsCellExtent)
 }
 
 func (i *OsmToRawFeaturesImporter) Done() error {
