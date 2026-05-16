@@ -211,7 +211,7 @@
         const container = document.getElementById("popup");
         const content = document.getElementById("popup-content");
         const closer = document.getElementById("popup-closer");
-        const codeInputControl = document.getElementById("colored-code-input");
+        const coloredQueryInputControl = document.getElementById("colored-code-input");
 
         /*
         Set default values
@@ -248,7 +248,7 @@
             style: new ol.style.Style({
                 stroke: new ol.style.Stroke({
                     color: "#e64a19",
-                    width: 2,
+                    width: 3,
                 }),
                 image: new ol.style.Circle({
                     fill: new ol.style.Fill({
@@ -364,7 +364,7 @@
             const bboxPlaceholder = "{{bbox}}";
             const bboxValue = "" + getCurrentBbox();
             const bboxPlaceholderIndex = query.indexOf(bboxPlaceholder);
-            console.log("Replace bbox placeholder at index "+bboxPlaceholderIndex)
+            console.log("Replace bbox placeholder at index " + bboxPlaceholderIndex)
             query = query.replace(bboxPlaceholder, bboxValue);
             console.log("Send query:", query);
 
@@ -393,13 +393,13 @@
 
                         // Revert the changes made to the query due to expansion of the {{bbox}} placeholder.
                         let errPos = responseObject.details.position;
-                        if(bboxPlaceholderIndex >= 0 && errPos > bboxPlaceholderIndex) {
+                        if (bboxPlaceholderIndex >= 0 && errPos > bboxPlaceholderIndex) {
                             errPos = errPos - bboxValue.length + bboxPlaceholder.length;
                         }
 
-                        codeInputControl.innerHTML = codeInputControl.innerHTML.substring(0, errPos) +
-                            '<span style="background: red; color: white">'+codeInputControl.innerHTML.at(errPos)+"</span>" +
-                            codeInputControl.innerHTML.substring(errPos+1, codeInputControl.innerHTML.length);
+                        coloredQueryInputControl.innerHTML = coloredQueryInputControl.innerHTML.substring(0, errPos) +
+                            '<span style="background: red; color: white">' + coloredQueryInputControl.innerHTML.at(errPos) + "</span>" +
+                            coloredQueryInputControl.innerHTML.substring(errPos + 1, coloredQueryInputControl.innerHTML.length);
 
                         return;
                     }
@@ -455,24 +455,53 @@
 
         const queryInputControl = document.getElementById("query-input");
         const storedValue = localStorage.getItem("query-input");
-        if(!!storedValue) {
+        if (!!storedValue) {
             queryInputControl.value = storedValue;
-            codeInputControl.innerHTML = storedValue;
+            coloredQueryInputControl.innerHTML = storedValue;
         }
         queryInputControl.addEventListener("input", evt => { // For manual input
             localStorage.setItem("query-input", evt.target.value);
-            codeInputControl.innerHTML = evt.target.value;
+            coloredQueryInputControl.innerHTML = evt.target.value;
         });
         queryInputControl.addEventListener("change", evt => { // For automatic input, i.e. Tab behavior from below
             localStorage.setItem("query-input", evt.target.value);
-            codeInputControl.innerHTML = evt.target.value;
+            coloredQueryInputControl.innerHTML = evt.target.value;
         });
         queryInputControl.addEventListener("keydown", evt => {
-            if(evt.code === "Tab") {
+            if (evt.code === "Tab" && !evt.shiftKey) {
                 const caretPost = queryInputControl.selectionStart;
                 queryInputControl.value = queryInputControl.value.substring(0, caretPost) + "  " + queryInputControl.value.substring(caretPost, queryInputControl.value.length);
                 queryInputControl.selectionStart = caretPost + 2;
                 queryInputControl.selectionEnd = caretPost + 2;
+                coloredQueryInputControl.innerHTML = queryInputControl.value;
+
+                evt.preventDefault();
+            } else if (evt.shiftKey && evt.code === "Tab") {
+                const caretPost = queryInputControl.selectionStart;
+                let linesUntilCursor = queryInputControl.value.substring(0, caretPost).split("\n");
+                if (linesUntilCursor[linesUntilCursor.length - 1].startsWith("  ")) {
+                    let spaceMatcher = /^( {2}|\t)(\s*)(.*)/;
+                    linesUntilCursor[linesUntilCursor.length - 1] = linesUntilCursor[linesUntilCursor.length - 1].replace(spaceMatcher, "$2$3");
+                    let newContentUntilCursor = linesUntilCursor.join("\n");
+
+                    queryInputControl.value = newContentUntilCursor + queryInputControl.value.substring(caretPost, queryInputControl.value.length);
+                    queryInputControl.selectionStart = caretPost - 2;
+                    queryInputControl.selectionEnd = caretPost - 2;
+                    coloredQueryInputControl.innerHTML = queryInputControl.value;
+                }
+
+                evt.preventDefault();
+            } else if (evt.code === 'Enter') {
+                const caretPost = queryInputControl.selectionStart;
+                let lineOfCursor = queryInputControl.value.substring(0, caretPost).split("\n").at(-1);
+                let spaceMatcher = /(^\s*)/;
+                let indentation = spaceMatcher.exec(lineOfCursor)[1];
+
+                queryInputControl.value = queryInputControl.value.substring(0, caretPost) + "\n" + indentation + queryInputControl.value.substring(caretPost, queryInputControl.value.length);
+                queryInputControl.selectionStart = caretPost + indentation.length + 1; // +1 for the newline
+                queryInputControl.selectionEnd = caretPost + indentation.length + 1;
+                coloredQueryInputControl.innerHTML = queryInputControl.value;
+
                 evt.preventDefault();
             }
         });
