@@ -129,6 +129,10 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 		return errors.Wrapf(err, "Error importing OSM data")
 	}
 
+	osmReader = nil
+	featureStorageWriter = nil
+	osmToRawFeatureWriter = nil
+
 	duration = time.Since(currentStepStartTime)
 	sigolo.Infof("Imported OSM data into temp features in %s", duration)
 

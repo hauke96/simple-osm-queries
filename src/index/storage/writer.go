@@ -23,10 +23,11 @@ type FeatureStorageWriter struct {
 	indexMetadata         *indexMetadata
 	indexMetadataFileName string
 
-	nodeCache     map[common.CellExtent][]feature.NodeFeature
-	wayCache      map[common.CellExtent][]feature.WayFeature
-	relationCache map[common.CellExtent][]feature.RelationFeature
-	maxCacheSize  int // Number of features. If exceeded, the cache (i.e. the list of node features for a certain cell extent) is written to disk.
+	nodeCache        map[common.CellExtent][]feature.NodeFeature
+	wayCache         map[common.CellExtent][]feature.WayFeature
+	relationCache    map[common.CellExtent][]feature.RelationFeature
+	currentCacheSize int
+	maxCacheSize     int // Number of features. If exceeded, the cache (i.e. the list of node features for a certain cell extent) is written to disk.
 }
 
 func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorageWriter {
@@ -65,7 +66,8 @@ func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorage
 		nodeCache:             make(map[common.CellExtent][]feature.NodeFeature),
 		wayCache:              make(map[common.CellExtent][]feature.WayFeature),
 		relationCache:         make(map[common.CellExtent][]feature.RelationFeature),
-		maxCacheSize:          50_000, // TODO make this configurable
+		currentCacheSize:      0,
+		maxCacheSize:          1_000_000, // TODO make this configurable
 	}
 }
 
@@ -81,8 +83,9 @@ func (w *FeatureStorageWriter) WriteNodeFeature(feature feature.NodeFeature, cel
 	defer profiler.EndMeasurement(key)
 
 	w.nodeCache[cellExtent] = append(w.nodeCache[cellExtent], feature)
+	w.currentCacheSize++
 
-	return w.flushCachesIfNeeded(cellExtent)
+	return w.flushDataCachesLargerThan(w.maxCacheSize / 100)
 }
 
 // WriteWayFeature writes the given feature to the internal cache, which is eventually flushed to disk. This method not
@@ -97,8 +100,9 @@ func (w *FeatureStorageWriter) WriteWayFeature(feature feature.WayFeature, cellE
 	defer profiler.EndMeasurement(key)
 
 	w.wayCache[cellExtent] = append(w.wayCache[cellExtent], feature)
+	w.currentCacheSize++
 
-	return w.flushCachesIfNeeded(cellExtent)
+	return w.flushDataCachesLargerThan(w.maxCacheSize / 100)
 }
 
 // WriteRelationFeature writes the given feature to the internal cache, which is eventually flushed to disk. This method not
@@ -113,96 +117,9 @@ func (w *FeatureStorageWriter) WriteRelationFeature(feature feature.RelationFeat
 	defer profiler.EndMeasurement(key)
 
 	w.relationCache[cellExtent] = append(w.relationCache[cellExtent], feature)
+	w.currentCacheSize++
 
-	return w.flushCachesIfNeeded(cellExtent)
-}
-
-// flushCachesIfNeeded writes full caches, i.e. caches above the size threshold, to disk.
-func (w *FeatureStorageWriter) flushCachesIfNeeded(cellExtent common.CellExtent) error {
-	// TODO mutex needed?
-
-	nodeFeatures := w.nodeCache[cellExtent]
-	if len(nodeFeatures) > w.maxCacheSize {
-		metadata := w.indexMetadata.getCellMetadata(cellExtent)
-		startIndex := w.indexFileCursorByte
-
-		sigolo.Tracef("Flush node cache for extent %v to disk starting at index %d", cellExtent, startIndex)
-
-		for _, nodeFeature := range nodeFeatures {
-			switch encodedFeature := nodeFeature.(type) {
-			case *indexCommon.EncodedNodeFeature:
-				err := w.writeNodeData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			case *indexCommon.RawEncodedNodeFeature:
-				err := w.writeRawNodeData(encodedFeature)
-				if err != nil {
-					return err
-				}
-
-			}
-		}
-
-		metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-		w.nodeCache[cellExtent] = w.nodeCache[cellExtent][0:0]
-	}
-
-	wayFeatures := w.wayCache[cellExtent]
-	if len(wayFeatures) > w.maxCacheSize {
-		metadata := w.indexMetadata.getCellMetadata(cellExtent)
-		startIndex := w.indexFileCursorByte
-
-		sigolo.Tracef("Flush way cache for extent %v to disk starting at index %d", cellExtent, startIndex)
-
-		for _, wayFeature := range wayFeatures {
-			switch encodedFeature := wayFeature.(type) {
-			case *indexCommon.EncodedWayFeature:
-				err := w.writeWayData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			case *indexCommon.RawEncodedWayFeature:
-				err := w.writeRawWayData(encodedFeature)
-				if err != nil {
-					return err
-				}
-
-			}
-		}
-
-		metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-		w.wayCache[cellExtent] = w.wayCache[cellExtent][0:0]
-	}
-
-	relationFeatures := w.relationCache[cellExtent]
-	if len(relationFeatures) > w.maxCacheSize {
-		metadata := w.indexMetadata.getCellMetadata(cellExtent)
-		startIndex := w.indexFileCursorByte
-
-		sigolo.Tracef("Flush relation cache for extent %v to disk starting at index %d", cellExtent, startIndex)
-
-		for _, relationFeature := range relationFeatures {
-			switch encodedFeature := relationFeature.(type) {
-			case *indexCommon.EncodedRelationFeature:
-				err := w.writeRelationData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			case *indexCommon.RawEncodedRelationFeature:
-				err := w.writeRawRelationData(encodedFeature)
-				if err != nil {
-					return err
-				}
-
-			}
-		}
-
-		metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-		w.relationCache[cellExtent] = w.relationCache[cellExtent][0:0]
-	}
-
-	return nil
+	return w.flushDataCachesLargerThan(w.maxCacheSize / 100)
 }
 
 // FlushData writes all dirty caches to disk.
@@ -210,78 +127,12 @@ func (w *FeatureStorageWriter) FlushData() error {
 	// TODO mutex needed?
 	// TODO extract logic and reuse in flushCachesIfNeeded
 
-	for cellExtent, nodeFeatures := range w.nodeCache {
-		metadata := w.indexMetadata.getCellMetadata(cellExtent)
-		startIndex := w.indexFileCursorByte
-
-		for _, nodeFeature := range nodeFeatures {
-			switch encodedFeature := nodeFeature.(type) {
-			case *indexCommon.EncodedNodeFeature:
-				err := w.writeNodeData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			case *indexCommon.RawEncodedNodeFeature:
-				err := w.writeRawNodeData(encodedFeature)
-				if err != nil {
-					return err
-				}
-
-			}
-		}
-
-		metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-		w.nodeCache[cellExtent] = w.nodeCache[cellExtent][0:0]
+	err := w.flushDataCachesLargerThan(-1)
+	if err != nil {
+		return err
 	}
 
-	for cellExtent, wayFeatures := range w.wayCache {
-		metadata := w.indexMetadata.getCellMetadata(cellExtent)
-		startIndex := w.indexFileCursorByte
-
-		for _, wayFeature := range wayFeatures {
-			switch encodedFeature := wayFeature.(type) {
-			case *indexCommon.EncodedWayFeature:
-				err := w.writeWayData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			case *indexCommon.RawEncodedWayFeature:
-				err := w.writeRawWayData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-		w.wayCache[cellExtent] = w.wayCache[cellExtent][0:0]
-	}
-
-	for cellExtent, relationFeatures := range w.relationCache {
-		metadata := w.indexMetadata.getCellMetadata(cellExtent)
-		startIndex := w.indexFileCursorByte
-
-		for _, relationFeature := range relationFeatures {
-			switch encodedFeature := relationFeature.(type) {
-			case *indexCommon.EncodedRelationFeature:
-				err := w.writeRelationData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			case *indexCommon.RawEncodedRelationFeature:
-				err := w.writeRawRelationData(encodedFeature)
-				if err != nil {
-					return err
-				}
-
-			}
-		}
-
-		metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-		w.relationCache[cellExtent] = w.relationCache[cellExtent][0:0]
-	}
-
-	err := w.indexFileWriter.Flush()
+	err = w.indexFileWriter.Flush()
 	if err != nil {
 		return errors.Wrapf(err, "Error flushing buffered writer of index")
 	}
@@ -292,6 +143,106 @@ func (w *FeatureStorageWriter) FlushData() error {
 		return errors.Wrapf(err, "Error marshalling index metadata into JSON")
 	}
 	return os.WriteFile(w.indexMetadataFileName, metadataJson, 0644)
+}
+
+func (w *FeatureStorageWriter) flushDataCachesLargerThan(minNumberOfObjects int) error {
+	if minNumberOfObjects != -1 && w.currentCacheSize < w.maxCacheSize {
+		return nil
+	}
+
+	objectsBeforeFlushing := w.currentCacheSize
+
+	for cellExtent, nodeFeatures := range w.nodeCache {
+		if minNumberOfObjects != -1 && len(nodeFeatures) < minNumberOfObjects {
+			continue
+		}
+
+		metadata := w.indexMetadata.getCellMetadata(cellExtent)
+		startIndex := w.indexFileCursorByte
+
+		for _, nodeFeature := range nodeFeatures {
+			switch encodedFeature := nodeFeature.(type) {
+			case *indexCommon.EncodedNodeFeature:
+				err := w.writeNodeData(encodedFeature)
+				if err != nil {
+					return err
+				}
+			case *indexCommon.RawEncodedNodeFeature:
+				err := w.writeRawNodeData(encodedFeature)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+		delete(w.nodeCache, cellExtent)
+		w.currentCacheSize -= len(nodeFeatures)
+	}
+
+	for cellExtent, wayFeatures := range w.wayCache {
+		if minNumberOfObjects != -1 && len(wayFeatures) < minNumberOfObjects {
+			continue
+		}
+
+		metadata := w.indexMetadata.getCellMetadata(cellExtent)
+		startIndex := w.indexFileCursorByte
+
+		for _, wayFeature := range wayFeatures {
+			switch encodedFeature := wayFeature.(type) {
+			case *indexCommon.EncodedWayFeature:
+				err := w.writeWayData(encodedFeature)
+				if err != nil {
+					return err
+				}
+			case *indexCommon.RawEncodedWayFeature:
+				err := w.writeRawWayData(encodedFeature)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+		delete(w.wayCache, cellExtent)
+		w.currentCacheSize -= len(wayFeatures)
+	}
+
+	for cellExtent, relationFeatures := range w.relationCache {
+		if minNumberOfObjects != -1 && len(relationFeatures) < minNumberOfObjects {
+			continue
+		}
+
+		metadata := w.indexMetadata.getCellMetadata(cellExtent)
+		startIndex := w.indexFileCursorByte
+
+		for _, relationFeature := range relationFeatures {
+			switch encodedFeature := relationFeature.(type) {
+			case *indexCommon.EncodedRelationFeature:
+				err := w.writeRelationData(encodedFeature)
+				if err != nil {
+					return err
+				}
+			case *indexCommon.RawEncodedRelationFeature:
+				err := w.writeRawRelationData(encodedFeature)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+		delete(w.relationCache, cellExtent)
+		w.currentCacheSize -= len(relationFeatures)
+	}
+
+	objectsAfterFlushing := w.currentCacheSize
+	numberOfWrittenObjects := objectsBeforeFlushing - objectsAfterFlushing
+	if numberOfWrittenObjects != 0 {
+		sigolo.Tracef("Flushed %d objects and %d objects remaining", numberOfWrittenObjects, objectsAfterFlushing)
+	}
+
+	return nil
 }
 
 func (w *FeatureStorageWriter) writeNodeData(encodedFeature *indexCommon.EncodedNodeFeature) error {
