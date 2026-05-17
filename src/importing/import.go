@@ -121,6 +121,7 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 	featureStorageReader := storage.NewFeatureStorageReader(baseFolder, "index.raw")
 
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
+	featureStorageReader.InitRelationCache()
 	for i, subExtent := range subExtents {
 		currentSubExtentStartTime := time.Now()
 		sigolo.Debugf("=== Process sub-extent [%d/%d, %d/%d] (%d / %d) ===", subExtent.LowerLeftCell().X(), subExtent.LowerLeftCell().Y(), subExtent.UpperRightCell().X(), subExtent.UpperRightCell().Y(), i+1, len(subExtents))

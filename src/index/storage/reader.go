@@ -22,6 +22,13 @@ type FeatureStorageReader struct {
 	indexFileReader *bufio.Reader
 	indexMetadata   *indexMetadata
 	cellCache       featureCache
+
+	// Caches uses for raw(!) relations. They don't have any geometry and therefore do not belong to any specific
+	// cell extent. We therefore can read the relations once and reuse them.
+	relations                 []*indexCommon.RawEncodedRelationFeature
+	nodeToRelationMapping     map[osm.NodeID][]osm.RelationID
+	wayToRelationMapping      map[osm.WayID][]osm.RelationID
+	relationToRelationMapping map[osm.RelationID][]osm.RelationID
 }
 
 // TODO return error
@@ -48,7 +55,16 @@ func NewFeatureStorageReader(baseFolder string, filename string) *FeatureStorage
 	}
 }
 
-func (r FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExtent) (
+func (r *FeatureStorageReader) InitRelationCache() {
+	r.relations, r.nodeToRelationMapping, r.wayToRelationMapping, r.relationToRelationMapping = r.readRawRelations(common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}})
+	relationMap := map[uint64]*indexCommon.RawEncodedRelationFeature{}
+	for _, relation := range r.relations {
+		relationMap[relation.GetID()] = relation
+		relation.SetParentRelationIds(r.relationToRelationMapping[osm.RelationID(relation.GetID())])
+	}
+}
+
+func (r *FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExtent) (
 	[]*indexCommon.RawEncodedNodeFeature,
 	[]*indexCommon.RawEncodedWayFeature,
 	[]*indexCommon.RawEncodedRelationFeature,
@@ -60,21 +76,15 @@ func (r FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExt
 		node.SetWayIds(nodeToWayMapping[osm.NodeID(node.GetID())])
 	}
 
-	relations, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping := r.readRawRelations(common.CellExtent{common.CellIndex{math.MinInt32, math.MinInt32}, common.CellIndex{math.MinInt32, math.MinInt32}})
-	relationMap := map[uint64]*indexCommon.RawEncodedRelationFeature{}
-
 	// Map to store the bound of the relation within this cellExtent. The relation might be larger but currently we only
 	// consider data within this cell extent.
 	relationMinXMap := map[osm.RelationID]float32{}
 	relationMaxXMap := map[osm.RelationID]float32{}
 	relationMinYMap := map[osm.RelationID]float32{}
 	relationMaxYMap := map[osm.RelationID]float32{}
-	for _, relation := range relations {
-		relationMap[relation.GetID()] = relation
-	}
 
 	for _, node := range nodes {
-		relationIDsOfNode := nodeToRelationMapping[osm.NodeID(node.GetID())]
+		relationIDsOfNode := r.nodeToRelationMapping[osm.NodeID(node.GetID())]
 		node.SetRelationIds(relationIDsOfNode)
 		for _, relationId := range relationIDsOfNode {
 			lon := float32(node.GetLon())
@@ -94,7 +104,7 @@ func (r FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExt
 		}
 	}
 	for _, way := range ways {
-		relationIDsOfWay := wayToRelationMapping[osm.WayID(way.GetID())]
+		relationIDsOfWay := r.wayToRelationMapping[osm.WayID(way.GetID())]
 		way.SetRelationIds(relationIDsOfWay)
 		longitudes, latitudes := way.GetNodeCoordinates()
 		for i, _ := range longitudes {
@@ -116,23 +126,28 @@ func (r FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExt
 			}
 		}
 	}
-	for _, relation := range relations {
+
+	var resultRelations []*indexCommon.RawEncodedRelationFeature
+	for _, relation := range r.relations {
 		relationId := osm.RelationID(relation.GetID())
-		relation.SetParentRelationIds(relationToRelationMapping[relationId])
 		if _, relationHasCoordinates := relationMinXMap[relationId]; relationHasCoordinates {
-			relation.SetBounds(orb.Bound{
-				Min: orb.Point{float64(relationMinXMap[relationId]), float64(relationMinYMap[relationId])},
-				Max: orb.Point{float64(relationMaxXMap[relationId]), float64(relationMaxYMap[relationId])},
-			})
+			// Copy relation so that the bounds are only determined by the data from this cell extent
+			relationCopy := &indexCommon.RawEncodedRelationFeature{
+				Data:              relation.Data,
+				ParentRelationIds: relation.ParentRelationIds,
+				Bound: orb.Bound{
+					Min: orb.Point{float64(relationMinXMap[relationId]), float64(relationMinYMap[relationId])},
+					Max: orb.Point{float64(relationMaxXMap[relationId]), float64(relationMaxYMap[relationId])},
+				},
+			}
+			resultRelations = append(resultRelations, relationCopy)
 		}
 	}
 
-	// TODO filter relations by their bounds so that only the ones in this extent are returned. Relations had no bound before. Also consider reading them once and then holding them in memory.
-
-	return nodes, ways, relations
+	return nodes, ways, resultRelations
 }
 
-func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*indexCommon.RawEncodedNodeFeature {
+func (r *FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*indexCommon.RawEncodedNodeFeature {
 	features := []*indexCommon.RawEncodedNodeFeature{}
 
 	cellOffsets := r.indexMetadata.getCellMetadata(cellExtent).NodeOffsets
@@ -170,7 +185,7 @@ func (r FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*inde
 	return features
 }
 
-func (r FeatureStorageReader) ReadNodes(cellExtent common.CellExtent) ([]feature.Feature, error) {
+func (r *FeatureStorageReader) ReadNodes(cellExtent common.CellExtent) ([]feature.Feature, error) {
 	result := []feature.Feature{}
 
 	cellMetadata := r.indexMetadata.getCellMetadata(cellExtent)
@@ -276,7 +291,7 @@ func (r FeatureStorageReader) ReadNodes(cellExtent common.CellExtent) ([]feature
 	return result, nil
 }
 
-func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedWayFeature, map[osm.NodeID][]osm.WayID) {
+func (r *FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedWayFeature, map[osm.NodeID][]osm.WayID) {
 	features := []*indexCommon.RawEncodedWayFeature{}
 	nodeToWayMapping := map[osm.NodeID][]osm.WayID{}
 
@@ -316,7 +331,7 @@ func (r FeatureStorageReader) readRawWays(cellExtent common.CellExtent) ([]*inde
 	return features, nodeToWayMapping
 }
 
-func (r FeatureStorageReader) ReadWays(cellExtent common.CellExtent) ([]feature.Feature, error) {
+func (r *FeatureStorageReader) ReadWays(cellExtent common.CellExtent) ([]feature.Feature, error) {
 	result := []feature.Feature{}
 
 	cellMetadata := r.indexMetadata.getCellMetadata(cellExtent)
@@ -429,7 +444,7 @@ func (r FeatureStorageReader) ReadWays(cellExtent common.CellExtent) ([]feature.
 	return result, nil
 }
 
-func (r FeatureStorageReader) readRawRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
+func (r *FeatureStorageReader) readRawRelations(cellExtent common.CellExtent) ([]*indexCommon.RawEncodedRelationFeature, map[osm.NodeID][]osm.RelationID, map[osm.WayID][]osm.RelationID, map[osm.RelationID][]osm.RelationID) {
 	features := []*indexCommon.RawEncodedRelationFeature{}
 	nodeToRelationMapping := map[osm.NodeID][]osm.RelationID{}
 	wayToRelationMapping := map[osm.WayID][]osm.RelationID{}
@@ -481,7 +496,7 @@ func (r FeatureStorageReader) readRawRelations(cellExtent common.CellExtent) ([]
 	return features, nodeToRelationMapping, wayToRelationMapping, relationToRelationMapping
 }
 
-func (r FeatureStorageReader) ReadRelations(cellExtent common.CellExtent) ([]feature.Feature, error) {
+func (r *FeatureStorageReader) ReadRelations(cellExtent common.CellExtent) ([]feature.Feature, error) {
 	result := []feature.Feature{}
 
 	cellMetadata := r.indexMetadata.getCellMetadata(cellExtent)
@@ -617,7 +632,7 @@ func (r FeatureStorageReader) ReadRelations(cellExtent common.CellExtent) ([]fea
 	return result, nil
 }
 
-func (r FeatureStorageReader) read(cellOffsets []indexCellOffset) []byte {
+func (r *FeatureStorageReader) read(cellOffsets []indexCellOffset) []byte {
 	numBytes := int64(0)
 	for _, cellOffset := range cellOffsets {
 		numBytes += cellOffset.EndIndex - cellOffset.StartIndex
@@ -641,7 +656,7 @@ func (r FeatureStorageReader) read(cellOffsets []indexCellOffset) []byte {
 	return buffer
 }
 
-func (r FeatureStorageReader) GetExtentsForCells(cells []common.CellIndex) []common.CellExtent {
+func (r *FeatureStorageReader) GetExtentsForCells(cells []common.CellIndex) []common.CellExtent {
 	result := []common.CellExtent{}
 
 	for _, cellMetadata := range r.indexMetadata.Cells {
@@ -656,7 +671,7 @@ func (r FeatureStorageReader) GetExtentsForCells(cells []common.CellIndex) []com
 	return result
 }
 
-func (r FeatureStorageReader) GetExtentsForCellBounds(bounds common.CellExtent) []common.CellExtent {
+func (r *FeatureStorageReader) GetExtentsForCellBounds(bounds common.CellExtent) []common.CellExtent {
 	result := []common.CellExtent{}
 
 	for _, cellMetadata := range r.indexMetadata.Cells {
