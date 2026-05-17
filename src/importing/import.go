@@ -123,35 +123,56 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
 	for i, subExtent := range subExtents {
 		currentSubExtentStartTime := time.Now()
-		sigolo.Debugf("=== Process sub-extent %v (%d / %d) ===", subExtent, i+1, len(subExtents))
-
-		//tmpFeatureChannel := make(chan feature.Feature, 1000)
-		//go tmpFeatureRepo.ReadFeatures(tmpFeatureChannel, subExtent) // TODO error handling
-		//err = index.ImportTempFeatures(tmpFeatureChannel, baseFolder, cellWidth, cellHeight, subExtent, tagIndex)
-		//if err != nil {
-		//	return err
-		//}
+		sigolo.Debugf("=== Process sub-extent [%d/%d, %d/%d] (%d / %d) ===", subExtent.LowerLeftCell().X(), subExtent.LowerLeftCell().Y(), subExtent.UpperRightCell().X(), subExtent.UpperRightCell().Y(), i+1, len(subExtents))
 
 		nodes, ways, relations := featureStorageReader.ReadRawDataWithParentIds(subExtent)
 
+		sizeBeforeWriting := getIndexFileSize(baseFolder)
+
+		/*
+			Nodes
+		*/
+		sizeBeforeWritingPartOfCell := getIndexFileSize(baseFolder)
 		for _, node := range nodes {
 			err = featureStorageWriter.WriteNodeFeature(node, subExtent)
 			sigolo.FatalCheck(errors.Wrapf(err, "Unable to write node %d to final index", node.GetID()))
 		}
+		err = featureStorageWriter.FlushData()
+		sigolo.FatalCheck(errors.Wrap(err, "Unable to flush final data from writer"))
+		sizeAfterWritingPartOfCell := getIndexFileSize(baseFolder)
+		sigolo.Debugf("Size of %d nodes in cell: %.2f MB", len(nodes), float64(sizeAfterWritingPartOfCell-sizeBeforeWritingPartOfCell)/1024/1024)
+
+		/*
+			Ways
+		*/
+		sizeBeforeWritingPartOfCell = getIndexFileSize(baseFolder)
 		for _, way := range ways {
 			err = featureStorageWriter.WriteWayFeature(way, subExtent)
 			sigolo.FatalCheck(errors.Wrapf(err, "Unable to write way %d to final index", way.GetID()))
 		}
+		err = featureStorageWriter.FlushData()
+		sigolo.FatalCheck(errors.Wrap(err, "Unable to flush final data from writer"))
+		sizeAfterWritingPartOfCell = getIndexFileSize(baseFolder)
+		sigolo.Debugf("Size of %d ways in cell: %.2f MB", len(ways), float64(sizeAfterWritingPartOfCell-sizeBeforeWritingPartOfCell)/1024/1024)
+
+		/*
+			Relations
+		*/
+		sizeBeforeWritingPartOfCell = getIndexFileSize(baseFolder)
 		for _, relation := range relations {
 			err = featureStorageWriter.WriteRelationFeature(relation, subExtent)
 			sigolo.FatalCheck(errors.Wrapf(err, "Unable to write relation %d to final index", relation.GetID()))
 		}
-
 		err = featureStorageWriter.FlushData()
 		sigolo.FatalCheck(errors.Wrap(err, "Unable to flush final data from writer"))
+		sizeAfterWritingPartOfCell = getIndexFileSize(baseFolder)
+		sigolo.Debugf("Size of %d relations in cell: %.2f MB", len(relations), float64(sizeAfterWritingPartOfCell-sizeBeforeWritingPartOfCell)/1024/1024)
 
 		duration = time.Since(currentSubExtentStartTime)
 		sigolo.Debugf("Processed sub-extent %v in %s", subExtent, duration)
+
+		sizeAfterWriting := getIndexFileSize(baseFolder)
+		sigolo.Debugf("Size of Cell: %.2f MB", float64(sizeAfterWriting-sizeBeforeWriting)/1024/1024)
 	}
 
 	duration = time.Since(currentStepStartTime)
@@ -163,9 +184,21 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 	return nil
 }
 
+func getIndexFileSize(baseFolder string) int64 {
+	filePath := baseFolder + "/index"
+	fi, err := os.Stat(filePath)
+	if err != nil {
+		sigolo.Warnf("Could not get size of file %s", filePath)
+		return -1
+	}
+	return fi.Size()
+}
+
 func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentThreshold int, cellWidth float64, cellHeight float64) []common.CellExtent {
 	result := []common.CellExtent{}
-	toleratedAspectRatio := 2.000001 // 2.0 with some buffer for float inaccuracies
+
+	// TODO make this configurable:
+	toleratedAspectRatio := 4.000001 // 2.0 with some buffer for float inaccuracies
 
 	// Copy original map to not change the import parameter
 	cellToNodeCount := make(map[common.CellIndex]int, len(originalCellToNodeCount))
@@ -230,7 +263,7 @@ func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentT
 				break
 			}
 		}
-		sigolo.Debugf("Use start cell %+v", startCell)
+		sigolo.Tracef("Use start cell %+v", startCell)
 
 		// Try to expand the extent. This approach tries to do that in an alternating fashion: First try to expand the
 		// extent by 1 cell to the right. Then try the same to the top. Again to the right and so on until the extent
@@ -332,7 +365,7 @@ func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentT
 
 		result = append(result, newExtent)
 
-		sigolo.Debugf("%d cells remaining", len(cellToNodeCount))
+		sigolo.Tracef("%d cells remaining", len(cellToNodeCount))
 	}
 
 	return result

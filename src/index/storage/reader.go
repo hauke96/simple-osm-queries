@@ -127,6 +127,8 @@ func (r FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExt
 		}
 	}
 
+	// TODO filter relations by their bounds so that only the ones in this extent are returned. Relations had no bound before. Also consider reading them once and then holding them in memory.
+
 	return nodes, ways, relations
 }
 
