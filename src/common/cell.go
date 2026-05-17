@@ -1,6 +1,10 @@
 package common
 
-import "github.com/paulmach/orb"
+import (
+	"fmt"
+
+	"github.com/paulmach/orb"
+)
 
 type CellIndex [2]int
 
@@ -22,6 +26,10 @@ func (c CellIndex) isAboveOrRightOf(other CellIndex) bool {
 
 func (c CellIndex) ToPoint(cellWidth float64, cellHeight float64) orb.Point {
 	return orb.Point{float64(c[0]) * cellWidth, float64(c[1]) * cellHeight}
+}
+
+func (c CellIndex) String() string {
+	return fmt.Sprintf("CellIndex{x=%d, y=%d}", c.X(), c.Y())
 }
 
 type CellExtent [2]CellIndex
@@ -141,4 +149,8 @@ func (c CellExtent) ToPolygon(cellWidth float64, cellHeight float64) orb.Polygon
 			lowerLeft,
 		},
 	}
+}
+
+func (c CellExtent) String() string {
+	return fmt.Sprintf("CellExtent{lowerLeft=%s, upperRight=%s}", c.LowerLeftCell().String(), c.UpperRightCell().String())
 }

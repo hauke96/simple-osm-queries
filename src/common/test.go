@@ -2,12 +2,13 @@ package common
 
 import (
 	"fmt"
-	"github.com/hauke96/sigolo/v2"
 	"math"
 	"reflect"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/hauke96/sigolo/v2"
 )
 
 func AssertEqual(t *testing.T, expected any, actual any) {
@@ -128,6 +129,59 @@ func AssertNoMatch(t *testing.T, regexString string, content string) {
 	regex := regexp.MustCompile(regexString)
 	if regex.MatchString(content) {
 		sigolo.Errorb(1, "Expected NOT to match\nRegex: %s\nContent: %s", regexString, content)
+		t.Fail()
+	}
+}
+
+func AssertContainsExactlyInAnyOrder[V comparable](t *testing.T, expected []V, actual []V) {
+	if len(expected) != len(actual) {
+		sigolo.Errorb(1, "Expected lists to be of equal size but found %d actual elements while expecting %d", len(actual), len(expected))
+		t.Fail()
+	}
+
+	var valueInActualListButNotExpected []V
+	for _, actualValue := range actual {
+		found := false
+		for _, expectedValue := range expected {
+			if reflect.DeepEqual(actualValue, expectedValue) {
+				found = true
+			}
+		}
+		if !found {
+			valueInActualListButNotExpected = append(valueInActualListButNotExpected, actualValue)
+		}
+	}
+
+	var valuesExpectedButNotInActualList []V
+	for _, expectedValue := range expected {
+		found := false
+		for _, actualValue := range actual {
+			if reflect.DeepEqual(expectedValue, actualValue) {
+				found = true
+			}
+		}
+		if !found {
+			valuesExpectedButNotInActualList = append(valuesExpectedButNotInActualList, expectedValue)
+		}
+	}
+
+	if len(valueInActualListButNotExpected) != 0 || len(valuesExpectedButNotInActualList) != 0 {
+		foundButNotExpectedString := ""
+		for _, v := range valueInActualListButNotExpected {
+			foundButNotExpectedString += fmt.Sprintf("%+v\n", v)
+		}
+
+		expectedButNotFoundString := ""
+		for _, v := range valuesExpectedButNotInActualList {
+			expectedButNotFoundString += fmt.Sprintf("%+v\n", v)
+		}
+
+		sigolo.Errorb(1, `Expect to be equal.
+
+Values found but not expected:
+%s
+Values expected but not found:
+%s`, foundButNotExpectedString, expectedButNotFoundString)
 		t.Fail()
 	}
 }

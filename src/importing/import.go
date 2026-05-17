@@ -1,6 +1,7 @@
 package importing
 
 import (
+	"math"
 	"os"
 	"soq/common"
 	"soq/index"
@@ -64,36 +65,37 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 	//
 	sigolo.Info("Determine sub-extents for temporary features")
 	cellToNodeCount := osmDensityAggregator.CellToNodeCount
-	inputDataCellExtent := osmDensityAggregator.InputDataCellExtent
+	//inputDataCellExtent := osmDensityAggregator.InputDataCellExtent
 
 	var subExtents []common.CellExtent
+	subExtents = getExtents(cellToNodeCount, 1_000_000)
 
-	cellsToProcessedState := map[common.CellIndex]bool{}
-	for _, cell := range inputDataCellExtent.GetCellIndices() {
-		cellsToProcessedState[cell] = false
-	}
-
-	for {
-		// Import (2024-11-15) for different file sizes:
-		// Hamburg (47 MB): TODO
-		// Niedersachsen (675 MB): 4-5m, 4 GB RAM, 2.9 GB temp cell files, 3.8 GB Index
-		// Germany (4.2 GB): 4h30m, 16 GB RAM, 32 GB temp cell files, 40 GB Index
-
-		// Experience for a ~500 MB PBF file (2024-11-01):
-		//  1_000_000 ~  6 GB RAM / 16 min. / 53 sub-extents
-		//  2_000_000 ~  6 GB RAM / 11 min. / 30 sub-extents
-		//  5_000_000 ~ 10 GB RAM / 6 min. / 15 sub-extents
-		//  6_000_000 ~ 11 GB RAM / 6 min. / 10 sub-extents
-		//  7_500_000 ~ 14 GB RAM / 9 min. / 9 sub-extents
-		// 10_000_000 ~ 13 GB RAM / 6 min. / 7 sub-extents
-		// 20_000_000 ~ 17 GB RAM / 9 min. / 3 sub-extents
-		// TODO Make this parameter configurable
-		extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 1_000_000)
-		if extent == nil {
-			break
-		}
-		subExtents = append(subExtents, *extent)
-	}
+	//cellsToProcessedState := map[common.CellIndex]bool{}
+	//for _, cell := range inputDataCellExtent.GetCellIndices() {
+	//	cellsToProcessedState[cell] = false
+	//}
+	//
+	//for {
+	//	// Import (2024-11-15) for different file sizes:
+	//	// Hamburg (47 MB): TODO
+	//	// Niedersachsen (675 MB): 4-5m, 4 GB RAM, 2.9 GB temp cell files, 3.8 GB Index
+	//	// Germany (4.2 GB): 4h30m, 16 GB RAM, 32 GB temp cell files, 40 GB Index
+	//
+	//	// Experience for a ~500 MB PBF file (2024-11-01):
+	//	//  1_000_000 ~  6 GB RAM / 16 min. / 53 sub-extents
+	//	//  2_000_000 ~  6 GB RAM / 11 min. / 30 sub-extents
+	//	//  5_000_000 ~ 10 GB RAM / 6 min. / 15 sub-extents
+	//	//  6_000_000 ~ 11 GB RAM / 6 min. / 10 sub-extents
+	//	//  7_500_000 ~ 14 GB RAM / 9 min. / 9 sub-extents
+	//	// 10_000_000 ~ 13 GB RAM / 6 min. / 7 sub-extents
+	//	// 20_000_000 ~ 17 GB RAM / 9 min. / 3 sub-extents
+	//	// TODO Make this parameter configurable
+	//	extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 1_000_000)
+	//	if extent == nil {
+	//		break
+	//	}
+	//	subExtents = append(subExtents, *extent)
+	//}
 	sigolo.Debugf("Found %d sub-extents", len(subExtents))
 
 	// TODO Make the GeoJSON creation configurable
@@ -110,6 +112,10 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 		if err != nil {
 			sigolo.Warnf("Error writing sub-extent GeoJSON file: %+v", err)
 		}
+	}
+
+	if 1 == 1 {
+		return nil
 	}
 
 	//
@@ -256,4 +262,114 @@ func getNextExtent(cellsToProcessedState map[common.CellIndex]bool, cellToNodeCo
 	}
 
 	return &biggestExtent
+}
+
+func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentThreshold int) []common.CellExtent {
+	result := []common.CellExtent{}
+
+	// Copy original map to not change the import parameter
+	cellToNodeCount := make(map[common.CellIndex]int, len(originalCellToNodeCount))
+	potentialStartCells := make(map[common.CellIndex]bool, len(originalCellToNodeCount)) // Use map as set. The boolean is no used.
+	for cell, count := range originalCellToNodeCount {
+		cellToNodeCount[cell] = count
+		potentialStartCells[cell] = false
+	}
+
+	for len(cellToNodeCount) != 0 {
+		startCell := common.CellIndex{math.MaxInt32, math.MaxInt32}
+		for cell, _ := range potentialStartCells {
+			if cell.X() <= startCell.X() && cell.Y() <= startCell.Y() {
+				startCell = cell
+			}
+		}
+		// Remove from potential start cells to not use it again. Otherwise, this would result in an endless loop.
+		delete(potentialStartCells, startCell)
+		delete(cellToNodeCount, startCell)
+		sigolo.Debugf("Use start cell %+v", startCell)
+
+		newExtent := common.CellExtent{startCell, startCell}
+		nodesInNewExtent := cellToNodeCount[startCell]
+		for nodesInNewExtent <= nodePerExtentThreshold {
+			/*
+				Extend right
+			*/
+
+			sigolo.Tracef("Try to grow extent %+v in X-direction", newExtent)
+
+			// Go through all cells on the right side of the new extent and check whether the extent can be extended.
+			expansionInXDirectionPossible := true
+			nodesInNewExtentAfterExpansion := nodesInNewExtent
+			for y := newExtent.LowerLeftCell().Y(); y <= newExtent.UpperRightCell().Y(); y++ {
+				cellToCheck := common.CellIndex{newExtent.UpperRightCell().X() + 1, y}
+				nodeCount, cellFound := cellToNodeCount[cellToCheck]
+				nodesInNewExtentAfterExpansion += nodeCount
+				if !cellFound || nodesInNewExtentAfterExpansion > nodePerExtentThreshold {
+					expansionInXDirectionPossible = false
+					break
+				}
+			}
+
+			if expansionInXDirectionPossible {
+				previousExtent := newExtent
+				newExtent = common.CellExtent{startCell, common.CellIndex{newExtent.UpperRightCell().X() + 1, newExtent.UpperRightCell().Y()}}
+				nodesInNewExtent = nodesInNewExtentAfterExpansion
+				sigolo.Tracef("Expanded extent  %+v  -->  %+v  with new node count %d", previousExtent, newExtent, nodesInNewExtent)
+
+				// Delete the cells, since they are not part of the new extent
+				for y := newExtent.LowerLeftCell().Y(); y <= newExtent.UpperRightCell().Y(); y++ {
+					cellToDelete := common.CellIndex{newExtent.UpperRightCell().X(), y}
+					delete(cellToNodeCount, cellToDelete)
+					delete(potentialStartCells, cellToDelete)
+				}
+			} else {
+				sigolo.Tracef("Growing extent %+v in X-direction not possible", newExtent)
+			}
+
+			/*
+				Extend up
+			*/
+
+			sigolo.Tracef("Try to grow extent %+v in Y-direction", newExtent)
+
+			// Go through all cells on the right side of the new extent and check whether the extent can be extended.
+			expansionInYDirectionPossible := true
+			nodesInNewExtentAfterExpansion = nodesInNewExtent
+			for x := newExtent.LowerLeftCell().X(); x <= newExtent.UpperRightCell().X(); x++ {
+				cellToCheck := common.CellIndex{x, newExtent.UpperRightCell().Y() + 1}
+				nodeCount, cellFound := cellToNodeCount[cellToCheck]
+				nodesInNewExtentAfterExpansion += nodeCount
+				if !cellFound || nodesInNewExtentAfterExpansion > nodePerExtentThreshold {
+					expansionInYDirectionPossible = false
+					break
+				}
+			}
+
+			if expansionInYDirectionPossible {
+				previousExtent := newExtent
+				newExtent = common.CellExtent{startCell, common.CellIndex{newExtent.UpperRightCell().X(), newExtent.UpperRightCell().Y() + 1}}
+				nodesInNewExtent = nodesInNewExtentAfterExpansion
+				sigolo.Tracef("Expanded extent  %+v  -->  %+v  with new node count %d", previousExtent, newExtent, nodesInNewExtent)
+
+				// Delete the cells, since they are not part of the new extent
+				for x := newExtent.LowerLeftCell().X(); x <= newExtent.UpperRightCell().X(); x++ {
+					cellToDelete := common.CellIndex{x, newExtent.UpperRightCell().Y()}
+					delete(cellToNodeCount, cellToDelete)
+					delete(potentialStartCells, cellToDelete)
+				}
+			} else {
+				sigolo.Tracef("Growing extent %+v in Y-direction not possible", newExtent)
+			}
+
+			if !expansionInXDirectionPossible && !expansionInYDirectionPossible {
+				sigolo.Tracef("Expansion of cell extent %+v was neither in X- nor in Y-direction successful. End expansion.", newExtent)
+				break
+			}
+		}
+
+		result = append(result, newExtent)
+
+		sigolo.Debugf("%d cells remaining", len(cellToNodeCount))
+	}
+
+	return result
 }
