@@ -1,17 +1,17 @@
 package osm
 
 import (
-	"github.com/paulmach/osm"
 	"soq/common"
+
+	"github.com/paulmach/osm"
 )
 
 // OsmDensityAggregator implements the OsmDataHandler to aggregate the data density per cell. It also determines the
 // total cell extent of the data.
 type OsmDensityAggregator struct {
-	CellToNodeCount     map[common.CellIndex]int
-	InputDataCellExtent *common.CellExtent
-	cellWidth           float64
-	cellHeight          float64
+	CellToNodeCount map[common.CellIndex]int
+	cellWidth       float64
+	cellHeight      float64
 }
 
 func NewOsmDensityAggregator(cellWidth float64, cellHeight float64) *OsmDensityAggregator {
@@ -36,13 +36,6 @@ func (a *OsmDensityAggregator) HandleNode(node *osm.Node) error {
 		a.CellToNodeCount[cell] = 1
 	} else {
 		a.CellToNodeCount[cell] = a.CellToNodeCount[cell] + 1
-	}
-
-	if a.InputDataCellExtent == nil {
-		a.InputDataCellExtent = &common.CellExtent{cell, cell}
-	} else {
-		newExtent := a.InputDataCellExtent.Expand(cell)
-		a.InputDataCellExtent = &newExtent
 	}
 
 	return nil

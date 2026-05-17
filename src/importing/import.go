@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/geo"
 	"github.com/paulmach/orb/geojson"
 	"github.com/pkg/errors"
 )
@@ -65,37 +67,8 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 	//
 	sigolo.Info("Determine sub-extents for temporary features")
 	cellToNodeCount := osmDensityAggregator.CellToNodeCount
-	//inputDataCellExtent := osmDensityAggregator.InputDataCellExtent
 
-	var subExtents []common.CellExtent
-	subExtents = getExtents(cellToNodeCount, 1_000_000)
-
-	//cellsToProcessedState := map[common.CellIndex]bool{}
-	//for _, cell := range inputDataCellExtent.GetCellIndices() {
-	//	cellsToProcessedState[cell] = false
-	//}
-	//
-	//for {
-	//	// Import (2024-11-15) for different file sizes:
-	//	// Hamburg (47 MB): TODO
-	//	// Niedersachsen (675 MB): 4-5m, 4 GB RAM, 2.9 GB temp cell files, 3.8 GB Index
-	//	// Germany (4.2 GB): 4h30m, 16 GB RAM, 32 GB temp cell files, 40 GB Index
-	//
-	//	// Experience for a ~500 MB PBF file (2024-11-01):
-	//	//  1_000_000 ~  6 GB RAM / 16 min. / 53 sub-extents
-	//	//  2_000_000 ~  6 GB RAM / 11 min. / 30 sub-extents
-	//	//  5_000_000 ~ 10 GB RAM / 6 min. / 15 sub-extents
-	//	//  6_000_000 ~ 11 GB RAM / 6 min. / 10 sub-extents
-	//	//  7_500_000 ~ 14 GB RAM / 9 min. / 9 sub-extents
-	//	// 10_000_000 ~ 13 GB RAM / 6 min. / 7 sub-extents
-	//	// 20_000_000 ~ 17 GB RAM / 9 min. / 3 sub-extents
-	//	// TODO Make this parameter configurable
-	//	extent := getNextExtent(cellsToProcessedState, cellToNodeCount, 1_000_000)
-	//	if extent == nil {
-	//		break
-	//	}
-	//	subExtents = append(subExtents, *extent)
-	//}
+	subExtents := getExtents(cellToNodeCount, 1_000_000, cellWidth, cellHeight)
 	sigolo.Debugf("Found %d sub-extents", len(subExtents))
 
 	// TODO Make the GeoJSON creation configurable
@@ -112,10 +85,6 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 		if err != nil {
 			sigolo.Warnf("Error writing sub-extent GeoJSON file: %+v", err)
 		}
-	}
-
-	if 1 == 1 {
-		return nil
 	}
 
 	//
@@ -194,99 +163,78 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 	return nil
 }
 
-// getNextExtent determines the next largest extent from the bottom left of the given cell indices. The extent is as
-// large as possible without containing more than the given threshold.
-func getNextExtent(cellsToProcessedState map[common.CellIndex]bool, cellToNodeCount map[common.CellIndex]int, nodePerExtentThreshold int) *common.CellExtent {
-	var startCell *common.CellIndex
-	var baseExtent *common.CellExtent
-
-	for cell, _ := range cellsToProcessedState {
-		if baseExtent == nil {
-			baseExtent = &common.CellExtent{cell, cell}
-		} else {
-			newExtent := baseExtent.Expand(cell)
-			baseExtent = &newExtent
-		}
-	}
-
-	if baseExtent == nil {
-		return nil
-	}
-
-	for y := baseExtent.LowerLeftCell().Y(); y <= baseExtent.UpperRightCell().Y() && startCell == nil; y++ {
-		for x := baseExtent.LowerLeftCell().X(); x <= baseExtent.UpperRightCell().X() && startCell == nil; x++ {
-			cell := common.CellIndex{x, y}
-			if !cellsToProcessedState[cell] {
-				startCell = &cell
-			}
-		}
-	}
-
-	if startCell == nil {
-		return nil
-	}
-	if cellToNodeCount[*startCell] > nodePerExtentThreshold {
-		cellsToProcessedState[*startCell] = true
-		return &common.CellExtent{*startCell, *startCell}
-	}
-
-	biggestExtent := common.CellExtent{*startCell, *startCell}
-	biggestExtentCoveredNodes := cellToNodeCount[*startCell]
-
-	for y := startCell.Y(); y <= baseExtent.UpperRightCell().Y(); y++ {
-		for x := startCell.X(); x <= baseExtent.UpperRightCell().X(); x++ {
-			extent := common.CellExtent{*startCell, *startCell}
-			extent = extent.Expand(common.CellIndex{x, y})
-
-			coveredNodes := 0
-			containsAlreadyProcessedCell := false
-
-			for _, c := range extent.GetCellIndices() {
-				if cellsToProcessedState[c] {
-					containsAlreadyProcessedCell = true
-					break
-				}
-
-				coveredNodes += cellToNodeCount[c]
-			}
-
-			if !containsAlreadyProcessedCell && coveredNodes >= biggestExtentCoveredNodes && coveredNodes <= nodePerExtentThreshold {
-				biggestExtent = extent
-				biggestExtentCoveredNodes = coveredNodes
-			}
-		}
-	}
-
-	for _, c := range biggestExtent.GetCellIndices() {
-		cellsToProcessedState[c] = true
-	}
-
-	return &biggestExtent
-}
-
-func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentThreshold int) []common.CellExtent {
+func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentThreshold int, cellWidth float64, cellHeight float64) []common.CellExtent {
 	result := []common.CellExtent{}
+	toleratedAspectRatio := 2.000001 // 2.0 with some buffer for float inaccuracies
 
 	// Copy original map to not change the import parameter
 	cellToNodeCount := make(map[common.CellIndex]int, len(originalCellToNodeCount))
-	potentialStartCells := make(map[common.CellIndex]bool, len(originalCellToNodeCount)) // Use map as set. The boolean is no used.
+	minCell := common.CellIndex{math.MaxInt32, math.MaxInt32}
+	maxCell := common.CellIndex{math.MinInt32, math.MinInt32}
 	for cell, count := range originalCellToNodeCount {
 		cellToNodeCount[cell] = count
-		potentialStartCells[cell] = false
+		if cell.X() <= minCell.X() {
+			minCell[0] = cell[0]
+		}
+		if cell.Y() <= minCell.Y() {
+			minCell[1] = cell[1]
+		}
+		if cell.X() >= maxCell.X() {
+			maxCell[0] = cell[0]
+		}
+		if cell.Y() >= maxCell.Y() {
+			maxCell[1] = cell[1]
+		}
+	}
+
+	// Extent stretching over the entire input data
+	allCells := make(map[common.CellIndex]bool) // Use map as set. The boolean is no used.
+	for x := minCell.X(); x <= maxCell.X(); x++ {
+		for y := minCell.Y(); y <= maxCell.Y(); y++ {
+			allCells[common.CellIndex{x, y}] = false
+		}
 	}
 
 	for len(cellToNodeCount) != 0 {
+		// Search next start cell that of the low-left-most cell. See sketch below for search pattern.
 		startCell := common.CellIndex{math.MaxInt32, math.MaxInt32}
-		for cell, _ := range potentialStartCells {
-			if cell.X() <= startCell.X() && cell.Y() <= startCell.Y() {
-				startCell = cell
+		totalDataAreaWidth := maxCell.X() - minCell.X()
+		totalDataAreaHeight := maxCell.Y() - minCell.Y()
+		for x := 0; x <= totalDataAreaWidth+totalDataAreaHeight; x++ {
+			for y := 0; y <= totalDataAreaHeight && y <= x; y++ {
+				/*
+					minCell.X() + x - y is used to traverse all possible cells from the bottom left to the top right.
+
+					Sketch:
+						X = already checkes
+						* = not checked yet
+						# = this cell
+						% = next cell
+
+						* * * * *
+						* * * * *
+						% * * * *
+						X # * * *
+						X X X * *
+				*/
+				cell := common.CellIndex{minCell.X() + x - y, minCell.Y() + y}
+				_, cellIsFreeToUse := cellToNodeCount[cell]
+				if cellIsFreeToUse {
+					startCell = cell
+					break
+				}
+			}
+
+			if startCell.X() != math.MaxInt32 {
+				// Found a start cell
+				break
 			}
 		}
-		// Remove from potential start cells to not use it again. Otherwise, this would result in an endless loop.
-		delete(potentialStartCells, startCell)
-		delete(cellToNodeCount, startCell)
 		sigolo.Debugf("Use start cell %+v", startCell)
 
+		// Try to expand the extent. This approach tries to do that in an alternating fashion: First try to expand the
+		// extent by 1 cell to the right. Then try the same to the top. Again to the right and so on until the extent
+		// covers an area that cannot be expanded without violating the nodePerExtentThreshold.
 		newExtent := common.CellExtent{startCell, startCell}
 		nodesInNewExtent := cellToNodeCount[startCell]
 		for nodesInNewExtent <= nodePerExtentThreshold {
@@ -299,11 +247,22 @@ func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentT
 			// Go through all cells on the right side of the new extent and check whether the extent can be extended.
 			expansionInXDirectionPossible := true
 			nodesInNewExtentAfterExpansion := nodesInNewExtent
+
+			// Determine actual aspect ratio of the potentially new geographic area. The +1 is needed, because the
+			// .ToPoint returns the lower-left corner of a cell. The +2 is needed, because of the same reason, but
+			// additionally we also want to area in case the extent is expanded.
+			bottomLeftPoint := newExtent.LowerLeftCell().ToPoint(cellWidth, cellHeight)
+			topRightPoint := common.CellIndex{newExtent.UpperRightCell().X() + 2, newExtent.UpperRightCell().Y() + 1}.ToPoint(cellWidth, cellHeight)
+			topLeftPoint := orb.Point{bottomLeftPoint.X(), topRightPoint.Y()}
+			newWidthInCells := geo.Distance(topLeftPoint, topRightPoint)
+			newHeightInCells := geo.Distance(bottomLeftPoint, topLeftPoint)
+			aspectRatio := math.Max(newWidthInCells, newHeightInCells) / math.Min(newWidthInCells, newHeightInCells)
+
 			for y := newExtent.LowerLeftCell().Y(); y <= newExtent.UpperRightCell().Y(); y++ {
 				cellToCheck := common.CellIndex{newExtent.UpperRightCell().X() + 1, y}
-				nodeCount, cellFound := cellToNodeCount[cellToCheck]
-				nodesInNewExtentAfterExpansion += nodeCount
-				if !cellFound || nodesInNewExtentAfterExpansion > nodePerExtentThreshold {
+				nodesInNewExtentAfterExpansion += cellToNodeCount[cellToCheck]
+				_, cellIsFreeToUse := allCells[cellToCheck]
+				if !cellIsFreeToUse || nodesInNewExtentAfterExpansion > nodePerExtentThreshold || aspectRatio > toleratedAspectRatio {
 					expansionInXDirectionPossible = false
 					break
 				}
@@ -314,13 +273,6 @@ func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentT
 				newExtent = common.CellExtent{startCell, common.CellIndex{newExtent.UpperRightCell().X() + 1, newExtent.UpperRightCell().Y()}}
 				nodesInNewExtent = nodesInNewExtentAfterExpansion
 				sigolo.Tracef("Expanded extent  %+v  -->  %+v  with new node count %d", previousExtent, newExtent, nodesInNewExtent)
-
-				// Delete the cells, since they are not part of the new extent
-				for y := newExtent.LowerLeftCell().Y(); y <= newExtent.UpperRightCell().Y(); y++ {
-					cellToDelete := common.CellIndex{newExtent.UpperRightCell().X(), y}
-					delete(cellToNodeCount, cellToDelete)
-					delete(potentialStartCells, cellToDelete)
-				}
 			} else {
 				sigolo.Tracef("Growing extent %+v in X-direction not possible", newExtent)
 			}
@@ -334,11 +286,22 @@ func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentT
 			// Go through all cells on the right side of the new extent and check whether the extent can be extended.
 			expansionInYDirectionPossible := true
 			nodesInNewExtentAfterExpansion = nodesInNewExtent
+
+			// Determine actual aspect ratio of the potentially new geographic area. The +1 is needed, because the
+			// .ToPoint returns the lower-left corner of a cell. The +2 is needed, because of the same reason, but
+			// additionally we also want to area in case the extent is expanded.
+			bottomLeftPoint = newExtent.LowerLeftCell().ToPoint(cellWidth, cellHeight)
+			topRightPoint = common.CellIndex{newExtent.UpperRightCell().X() + 1, newExtent.UpperRightCell().Y() + 2}.ToPoint(cellWidth, cellHeight)
+			topLeftPoint = orb.Point{bottomLeftPoint.X(), topRightPoint.Y()}
+			newWidthInCells = geo.Distance(topLeftPoint, topRightPoint)
+			newHeightInCells = geo.Distance(bottomLeftPoint, topLeftPoint)
+			aspectRatio = math.Max(newWidthInCells, newHeightInCells) / math.Min(newWidthInCells, newHeightInCells)
+
 			for x := newExtent.LowerLeftCell().X(); x <= newExtent.UpperRightCell().X(); x++ {
 				cellToCheck := common.CellIndex{x, newExtent.UpperRightCell().Y() + 1}
-				nodeCount, cellFound := cellToNodeCount[cellToCheck]
-				nodesInNewExtentAfterExpansion += nodeCount
-				if !cellFound || nodesInNewExtentAfterExpansion > nodePerExtentThreshold {
+				nodesInNewExtentAfterExpansion += cellToNodeCount[cellToCheck]
+				_, cellIsFreeToUse := allCells[cellToCheck]
+				if !cellIsFreeToUse || nodesInNewExtentAfterExpansion > nodePerExtentThreshold || aspectRatio > toleratedAspectRatio {
 					expansionInYDirectionPossible = false
 					break
 				}
@@ -349,13 +312,6 @@ func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentT
 				newExtent = common.CellExtent{startCell, common.CellIndex{newExtent.UpperRightCell().X(), newExtent.UpperRightCell().Y() + 1}}
 				nodesInNewExtent = nodesInNewExtentAfterExpansion
 				sigolo.Tracef("Expanded extent  %+v  -->  %+v  with new node count %d", previousExtent, newExtent, nodesInNewExtent)
-
-				// Delete the cells, since they are not part of the new extent
-				for x := newExtent.LowerLeftCell().X(); x <= newExtent.UpperRightCell().X(); x++ {
-					cellToDelete := common.CellIndex{x, newExtent.UpperRightCell().Y()}
-					delete(cellToNodeCount, cellToDelete)
-					delete(potentialStartCells, cellToDelete)
-				}
 			} else {
 				sigolo.Tracef("Growing extent %+v in Y-direction not possible", newExtent)
 			}
@@ -363,6 +319,14 @@ func getExtents(originalCellToNodeCount map[common.CellIndex]int, nodePerExtentT
 			if !expansionInXDirectionPossible && !expansionInYDirectionPossible {
 				sigolo.Tracef("Expansion of cell extent %+v was neither in X- nor in Y-direction successful. End expansion.", newExtent)
 				break
+			}
+		}
+
+		for x := newExtent.LowerLeftCell().X(); x <= newExtent.UpperRightCell().X(); x++ {
+			for y := newExtent.LowerLeftCell().Y(); y <= newExtent.UpperRightCell().Y(); y++ {
+				cellToDelete := common.CellIndex{x, y}
+				delete(cellToNodeCount, cellToDelete)
+				delete(allCells, cellToDelete)
 			}
 		}
 

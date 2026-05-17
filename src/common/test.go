@@ -166,6 +166,11 @@ func AssertContainsExactlyInAnyOrder[V comparable](t *testing.T, expected []V, a
 	}
 
 	if len(valueInActualListButNotExpected) != 0 || len(valuesExpectedButNotInActualList) != 0 {
+		actualString := ""
+		for _, v := range actual {
+			actualString += fmt.Sprintf("%+v\n", v)
+		}
+
 		foundButNotExpectedString := ""
 		for _, v := range valueInActualListButNotExpected {
 			foundButNotExpectedString += fmt.Sprintf("%+v\n", v)
@@ -177,11 +182,12 @@ func AssertContainsExactlyInAnyOrder[V comparable](t *testing.T, expected []V, a
 		}
 
 		sigolo.Errorb(1, `Expect to be equal.
-
-Values found but not expected:
+Actual:
 %s
-Values expected but not found:
-%s`, foundButNotExpectedString, expectedButNotFoundString)
+Actual values that were not expected:
+%s
+Expected Values that were not found:
+%s`, actualString, foundButNotExpectedString, expectedButNotFoundString)
 		t.Fail()
 	}
 }
