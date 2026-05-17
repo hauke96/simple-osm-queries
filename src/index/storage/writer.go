@@ -23,11 +23,14 @@ type FeatureStorageWriter struct {
 	indexMetadata         *indexMetadata
 	indexMetadataFileName string
 
-	nodeCache        map[common.CellExtent][]feature.NodeFeature
-	wayCache         map[common.CellExtent][]feature.WayFeature
-	relationCache    map[common.CellExtent][]feature.RelationFeature
-	currentCacheSize int
-	maxCacheSize     int // Number of features. If exceeded, the cache (i.e. the list of node features for a certain cell extent) is written to disk.
+	nodeCache                map[common.CellExtent][]feature.NodeFeature
+	wayCache                 map[common.CellExtent][]feature.WayFeature
+	relationCache            map[common.CellExtent][]feature.RelationFeature
+	currentNodeCacheSize     int
+	currentWayCacheSize      int
+	currentRelationCacheSize int
+	maxTotalCacheSize        int // Number of features. If exceeded, the cache (i.e. the list of node features for a certain cell extent) is written to disk.
+	minCacheSize             int // Minimum number of features per cache cell, so that it's flushed. Cache cells with less objects will only be flushed in the very end.
 }
 
 func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorageWriter {
@@ -58,16 +61,19 @@ func NewFeatureStorageWriter(baseFolder string, filename string) *FeatureStorage
 	}
 
 	return &FeatureStorageWriter{
-		indexFileWriter:       bufio.NewWriter(file),
-		indexFile:             file,
-		indexFileCursorByte:   0,
-		indexMetadata:         &indexMetadata{},
-		indexMetadataFileName: baseFolder + "/metadata.json",
-		nodeCache:             make(map[common.CellExtent][]feature.NodeFeature),
-		wayCache:              make(map[common.CellExtent][]feature.WayFeature),
-		relationCache:         make(map[common.CellExtent][]feature.RelationFeature),
-		currentCacheSize:      0,
-		maxCacheSize:          1_000_000, // TODO make this configurable
+		indexFileWriter:          bufio.NewWriter(file),
+		indexFile:                file,
+		indexFileCursorByte:      0,
+		indexMetadata:            &indexMetadata{},
+		indexMetadataFileName:    baseFolder + "/metadata.json",
+		nodeCache:                make(map[common.CellExtent][]feature.NodeFeature),
+		wayCache:                 make(map[common.CellExtent][]feature.WayFeature),
+		relationCache:            make(map[common.CellExtent][]feature.RelationFeature),
+		currentNodeCacheSize:     0,
+		currentWayCacheSize:      0,
+		currentRelationCacheSize: 0,
+		maxTotalCacheSize:        500_000, // TODO make this configurable
+		minCacheSize:             50_000,  // TODO make this configurable
 	}
 }
 
@@ -83,9 +89,9 @@ func (w *FeatureStorageWriter) WriteNodeFeature(feature feature.NodeFeature, cel
 	defer profiler.EndMeasurement(key)
 
 	w.nodeCache[cellExtent] = append(w.nodeCache[cellExtent], feature)
-	w.currentCacheSize++
+	w.currentNodeCacheSize++
 
-	return w.flushDataCachesLargerThan(w.maxCacheSize / 100)
+	return w.flushDataCachesLargerThan(w.minCacheSize)
 }
 
 // WriteWayFeature writes the given feature to the internal cache, which is eventually flushed to disk. This method not
@@ -100,9 +106,9 @@ func (w *FeatureStorageWriter) WriteWayFeature(feature feature.WayFeature, cellE
 	defer profiler.EndMeasurement(key)
 
 	w.wayCache[cellExtent] = append(w.wayCache[cellExtent], feature)
-	w.currentCacheSize++
+	w.currentWayCacheSize++
 
-	return w.flushDataCachesLargerThan(w.maxCacheSize / 100)
+	return w.flushDataCachesLargerThan(w.minCacheSize)
 }
 
 // WriteRelationFeature writes the given feature to the internal cache, which is eventually flushed to disk. This method not
@@ -117,9 +123,9 @@ func (w *FeatureStorageWriter) WriteRelationFeature(feature feature.RelationFeat
 	defer profiler.EndMeasurement(key)
 
 	w.relationCache[cellExtent] = append(w.relationCache[cellExtent], feature)
-	w.currentCacheSize++
+	w.currentRelationCacheSize++
 
-	return w.flushDataCachesLargerThan(w.maxCacheSize / 100)
+	return w.flushDataCachesLargerThan(w.minCacheSize)
 }
 
 // FlushData writes all dirty caches to disk.
@@ -145,98 +151,106 @@ func (w *FeatureStorageWriter) FlushData() error {
 	return os.WriteFile(w.indexMetadataFileName, metadataJson, 0644)
 }
 
+// flushDataCachesLargerThan flushes objects to disk. The minNumberOfObjects is the number of objects per cell extent
+// cache so that it's flushes. Caches with less objects will not be flushed.
 func (w *FeatureStorageWriter) flushDataCachesLargerThan(minNumberOfObjects int) error {
-	if minNumberOfObjects != -1 && w.currentCacheSize < w.maxCacheSize {
-		return nil
-	}
+	objectsBeforeFlushing := w.currentNodeCacheSize + w.currentWayCacheSize + w.currentRelationCacheSize
 
-	objectsBeforeFlushing := w.currentCacheSize
+	//if minNumberOfObjects != -1 && w.currentCacheSize < w.maxCacheSize {
+	//	return nil
+	//}
 
-	for cellExtent, nodeFeatures := range w.nodeCache {
-		if minNumberOfObjects != -1 && len(nodeFeatures) < minNumberOfObjects {
-			continue
-		}
+	if minNumberOfObjects == -1 || w.currentNodeCacheSize >= w.maxTotalCacheSize {
+		for cellExtent, nodeFeatures := range w.nodeCache {
+			if minNumberOfObjects != -1 && len(nodeFeatures) < minNumberOfObjects {
+				continue
+			}
 
-		metadata := w.indexMetadata.getCellMetadata(cellExtent)
-		startIndex := w.indexFileCursorByte
+			metadata := w.indexMetadata.getCellMetadata(cellExtent)
+			startIndex := w.indexFileCursorByte
 
-		for _, nodeFeature := range nodeFeatures {
-			switch encodedFeature := nodeFeature.(type) {
-			case *indexCommon.EncodedNodeFeature:
-				err := w.writeNodeData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			case *indexCommon.RawEncodedNodeFeature:
-				err := w.writeRawNodeData(encodedFeature)
-				if err != nil {
-					return err
+			for _, nodeFeature := range nodeFeatures {
+				switch encodedFeature := nodeFeature.(type) {
+				case *indexCommon.EncodedNodeFeature:
+					err := w.writeNodeData(encodedFeature)
+					if err != nil {
+						return err
+					}
+				case *indexCommon.RawEncodedNodeFeature:
+					err := w.writeRawNodeData(encodedFeature)
+					if err != nil {
+						return err
+					}
 				}
 			}
-		}
 
-		metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-		delete(w.nodeCache, cellExtent)
-		w.currentCacheSize -= len(nodeFeatures)
+			metadata.NodeOffsets = append(metadata.NodeOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+			delete(w.nodeCache, cellExtent)
+			w.currentNodeCacheSize -= len(nodeFeatures)
+		}
 	}
 
-	for cellExtent, wayFeatures := range w.wayCache {
-		if minNumberOfObjects != -1 && len(wayFeatures) < minNumberOfObjects {
-			continue
-		}
+	if minNumberOfObjects == -1 || w.currentWayCacheSize >= w.maxTotalCacheSize/10 {
+		for cellExtent, wayFeatures := range w.wayCache {
+			if minNumberOfObjects != -1 && len(wayFeatures) < minNumberOfObjects/10 {
+				continue
+			}
 
-		metadata := w.indexMetadata.getCellMetadata(cellExtent)
-		startIndex := w.indexFileCursorByte
+			metadata := w.indexMetadata.getCellMetadata(cellExtent)
+			startIndex := w.indexFileCursorByte
 
-		for _, wayFeature := range wayFeatures {
-			switch encodedFeature := wayFeature.(type) {
-			case *indexCommon.EncodedWayFeature:
-				err := w.writeWayData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			case *indexCommon.RawEncodedWayFeature:
-				err := w.writeRawWayData(encodedFeature)
-				if err != nil {
-					return err
+			for _, wayFeature := range wayFeatures {
+				switch encodedFeature := wayFeature.(type) {
+				case *indexCommon.EncodedWayFeature:
+					err := w.writeWayData(encodedFeature)
+					if err != nil {
+						return err
+					}
+				case *indexCommon.RawEncodedWayFeature:
+					err := w.writeRawWayData(encodedFeature)
+					if err != nil {
+						return err
+					}
 				}
 			}
-		}
 
-		metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-		delete(w.wayCache, cellExtent)
-		w.currentCacheSize -= len(wayFeatures)
+			metadata.WayOffsets = append(metadata.WayOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+			delete(w.wayCache, cellExtent)
+			w.currentWayCacheSize -= len(wayFeatures)
+		}
 	}
 
-	for cellExtent, relationFeatures := range w.relationCache {
-		if minNumberOfObjects != -1 && len(relationFeatures) < minNumberOfObjects {
-			continue
-		}
+	if minNumberOfObjects == -1 || w.currentRelationCacheSize >= w.maxTotalCacheSize/5 {
+		for cellExtent, relationFeatures := range w.relationCache {
+			if minNumberOfObjects != -1 && len(relationFeatures) < minNumberOfObjects/5 {
+				continue
+			}
 
-		metadata := w.indexMetadata.getCellMetadata(cellExtent)
-		startIndex := w.indexFileCursorByte
+			metadata := w.indexMetadata.getCellMetadata(cellExtent)
+			startIndex := w.indexFileCursorByte
 
-		for _, relationFeature := range relationFeatures {
-			switch encodedFeature := relationFeature.(type) {
-			case *indexCommon.EncodedRelationFeature:
-				err := w.writeRelationData(encodedFeature)
-				if err != nil {
-					return err
-				}
-			case *indexCommon.RawEncodedRelationFeature:
-				err := w.writeRawRelationData(encodedFeature)
-				if err != nil {
-					return err
+			for _, relationFeature := range relationFeatures {
+				switch encodedFeature := relationFeature.(type) {
+				case *indexCommon.EncodedRelationFeature:
+					err := w.writeRelationData(encodedFeature)
+					if err != nil {
+						return err
+					}
+				case *indexCommon.RawEncodedRelationFeature:
+					err := w.writeRawRelationData(encodedFeature)
+					if err != nil {
+						return err
+					}
 				}
 			}
-		}
 
-		metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
-		delete(w.relationCache, cellExtent)
-		w.currentCacheSize -= len(relationFeatures)
+			metadata.RelationOffsets = append(metadata.RelationOffsets, indexCellOffset{StartIndex: startIndex, EndIndex: w.indexFileCursorByte})
+			delete(w.relationCache, cellExtent)
+			w.currentRelationCacheSize -= len(relationFeatures)
+		}
 	}
 
-	objectsAfterFlushing := w.currentCacheSize
+	objectsAfterFlushing := w.currentNodeCacheSize + w.currentWayCacheSize + w.currentRelationCacheSize
 	numberOfWrittenObjects := objectsBeforeFlushing - objectsAfterFlushing
 	if numberOfWrittenObjects != 0 {
 		sigolo.Tracef("Flushed %d objects and %d objects remaining", numberOfWrittenObjects, objectsAfterFlushing)
