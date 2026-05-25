@@ -23,16 +23,18 @@ type FeatureStorageReader struct {
 	indexMetadata   *indexMetadata
 	cellCache       featureCache
 
-	// Caches uses for raw(!) relations. They don't have any geometry and therefore do not belong to any specific
+	// Caches used for raw(!) relations. They don't have any geometry and therefore do not belong to any specific
 	// cell extent. We therefore can read the relations once and reuse them.
 	relations                 []*indexCommon.RawEncodedRelationFeature
 	nodeToRelationMapping     map[osm.NodeID][]osm.RelationID
 	wayToRelationMapping      map[osm.WayID][]osm.RelationID
 	relationToRelationMapping map[osm.RelationID][]osm.RelationID
+	cellWidth                 float64
+	cellHeight                float64
 }
 
 // TODO return error
-func NewFeatureStorageReader(baseFolder string, filename string) *FeatureStorageReader {
+func NewFeatureStorageReader(baseFolder string, filename string, cellWidth float64, cellHeight float64) *FeatureStorageReader {
 	metadataFileName := baseFolder + "/metadata.json"
 
 	metadataFileContent, err := os.ReadFile(metadataFileName)
@@ -51,7 +53,9 @@ func NewFeatureStorageReader(baseFolder string, filename string) *FeatureStorage
 		indexFile:       file,
 		indexFileReader: bufio.NewReader(file),
 		indexMetadata:   metadata,
-		cellCache:       newLruCache(10), // TODO make this max-size parameter configurable
+		cellCache:       newLruCache(10), // TODO make this max-size parameter configurable,
+		cellWidth:       cellWidth,
+		cellHeight:      cellHeight,
 	}
 }
 
@@ -67,7 +71,6 @@ func (r *FeatureStorageReader) InitRelationCache() {
 func (r *FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellExtent) (
 	[]*indexCommon.RawEncodedNodeFeature,
 	[]*indexCommon.RawEncodedWayFeature,
-	[]*indexCommon.RawEncodedRelationFeature,
 ) {
 	nodes := r.readRawNodes(cellExtent)
 
@@ -127,24 +130,25 @@ func (r *FeatureStorageReader) ReadRawDataWithParentIds(cellExtent common.CellEx
 		}
 	}
 
-	var resultRelations []*indexCommon.RawEncodedRelationFeature
 	for _, relation := range r.relations {
 		relationId := osm.RelationID(relation.GetID())
-		if _, relationHasCoordinates := relationMinXMap[relationId]; relationHasCoordinates {
+		if _, hasCoordinatesForRelation := relationMinXMap[relationId]; hasCoordinatesForRelation {
 			// Copy relation so that the bounds are only determined by the data from this cell extent
-			relationCopy := &indexCommon.RawEncodedRelationFeature{
-				Data:              relation.Data,
-				ParentRelationIds: relation.ParentRelationIds,
-				Bound: orb.Bound{
+			if relation.Bound.IsZero() {
+				relation.Bound = orb.Bound{
 					Min: orb.Point{float64(relationMinXMap[relationId]), float64(relationMinYMap[relationId])},
 					Max: orb.Point{float64(relationMaxXMap[relationId]), float64(relationMaxYMap[relationId])},
-				},
+				}
+			} else {
+				relation.Bound.Min[0] = math.Min(relation.Bound.Min[0], float64(relationMinXMap[relationId]))
+				relation.Bound.Min[1] = math.Min(relation.Bound.Min[1], float64(relationMinYMap[relationId]))
+				relation.Bound.Max[0] = math.Max(relation.Bound.Max[0], float64(relationMaxXMap[relationId]))
+				relation.Bound.Max[1] = math.Max(relation.Bound.Max[1], float64(relationMaxYMap[relationId]))
 			}
-			resultRelations = append(resultRelations, relationCopy)
 		}
 	}
 
-	return nodes, ways, resultRelations
+	return nodes, ways
 }
 
 func (r *FeatureStorageReader) readRawNodes(cellExtent common.CellExtent) []*indexCommon.RawEncodedNodeFeature {
@@ -630,6 +634,17 @@ func (r *FeatureStorageReader) ReadRelations(cellExtent common.CellExtent) ([]fe
 	r.cellCache.insertOrAppend(cellMetadata.Extent, ownOsm.OsmObjRelation, result)
 
 	return result, nil
+}
+
+func (r *FeatureStorageReader) GetRelationsInExtent(extent common.CellExtent) []*indexCommon.RawEncodedRelationFeature {
+	var result []*indexCommon.RawEncodedRelationFeature
+	extentBound := extent.ToBound(r.cellWidth, r.cellHeight)
+	for _, relation := range r.relations {
+		if !relation.Bound.IsZero() && extentBound.Intersects(relation.Bound) {
+			result = append(result, relation)
+		}
+	}
+	return result
 }
 
 func (r *FeatureStorageReader) read(cellOffsets []indexCellOffset) []byte {

@@ -44,7 +44,7 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 	tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 	sigolo.FatalCheck(err)
 
-	featureStorageReader := storage.NewFeatureStorageReader(indexBaseFolder, "index")
+	featureStorageReader := storage.NewFeatureStorageReader(indexBaseFolder, "index", defaultCellSize, defaultCellSize)
 
 	geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, checkFeatureValidity, tagIndex, featureStorageReader)
 

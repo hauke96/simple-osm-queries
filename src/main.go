@@ -93,7 +93,7 @@ func main() {
 		tagIndex, err := index.LoadTagIndex(indexBaseFolder)
 		sigolo.FatalCheck(err)
 
-		featureStorageReader := storage.NewFeatureStorageReader(indexBaseFolder, "index")
+		featureStorageReader := storage.NewFeatureStorageReader(indexBaseFolder, "index", defaultCellSize, defaultCellSize)
 
 		geometryIndex := index.LoadGridIndex(indexBaseFolder, defaultCellSize, defaultCellSize, cli.Query.CheckFeatureValidity, tagIndex, featureStorageReader)
 

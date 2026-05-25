@@ -2,6 +2,8 @@ package common
 
 import (
 	"testing"
+
+	"github.com/paulmach/orb"
 )
 
 func TestGridCellIndex_isBelowOrLeftOf(t *testing.T) {
@@ -204,4 +206,24 @@ func TestGridCellExtent_intersects(t *testing.T) {
 	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{15, 0}, CellIndex{30, 30}}))
 
 	AssertTrue(t, extent.Intersects(CellExtent{CellIndex{0, 0}, CellIndex{30, 30}}))
+}
+
+func TestCellExtent_ToBound(t *testing.T) {
+	extent := CellExtent{
+		CellIndex{10, 10},
+		CellIndex{10, 10},
+	}
+	AssertEqual(t, orb.Bound{Min: orb.Point{1, 1}, Max: orb.Point{1.1, 1.1}}, extent.ToBound(0.1, 0.1))
+
+	extent = CellExtent{
+		CellIndex{10, 10},
+		CellIndex{20, 20},
+	}
+	AssertEqual(t, orb.Bound{Min: orb.Point{1, 1}, Max: orb.Point{2.1, 2.1}}, extent.ToBound(0.1, 0.1))
+
+	extent = CellExtent{
+		CellIndex{12, 13},
+		CellIndex{45, 46},
+	}
+	AssertEqual(t, orb.Bound{Min: orb.Point{1.56, 1.69}, Max: orb.Point{5.98, 6.11}}, extent.ToBound(0.13, 0.13))
 }

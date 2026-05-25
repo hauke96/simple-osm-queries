@@ -117,16 +117,16 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 	sigolo.Info("Read temp features and write them as normal features into cells")
 	currentStepStartTime = time.Now()
 
-	featureStorageWriter = storage.NewFeatureStorageWriter(baseFolder, "index")
-	featureStorageReader := storage.NewFeatureStorageReader(baseFolder, "index.raw")
-
 	sigolo.Debugf("Start processing %d sub-extents", len(subExtents))
+	featureStorageWriter = storage.NewFeatureStorageWriter(baseFolder, "index")
+	featureStorageReader := storage.NewFeatureStorageReader(baseFolder, "index.raw", cellWidth, cellHeight)
 	featureStorageReader.InitRelationCache()
 	for i, subExtent := range subExtents {
 		currentSubExtentStartTime := time.Now()
-		sigolo.Debugf("=== Process sub-extent [%d/%d, %d/%d] (%d / %d) ===", subExtent.LowerLeftCell().X(), subExtent.LowerLeftCell().Y(), subExtent.UpperRightCell().X(), subExtent.UpperRightCell().Y(), i+1, len(subExtents))
+		sigolo.Debugf("=== Writing final data  /  Step 1/2 (nodes and ways)  /  sub-extent %d / %d ===", i+1, len(subExtents))
+		sigolo.Tracef("Sub-extent bound: [%d/%d, %d/%d]", subExtent.LowerLeftCell().X(), subExtent.LowerLeftCell().Y(), subExtent.UpperRightCell().X(), subExtent.UpperRightCell().Y())
 
-		nodes, ways, relations := featureStorageReader.ReadRawDataWithParentIds(subExtent)
+		nodes, ways := featureStorageReader.ReadRawDataWithParentIds(subExtent)
 
 		sizeBeforeWriting := getIndexFileSize(baseFolder)
 
@@ -156,24 +156,30 @@ func Import(inputFile string, cellWidth float64, cellHeight float64, baseFolder 
 		sizeAfterWritingPartOfCell = getIndexFileSize(baseFolder)
 		sigolo.Debugf("Size of %d ways in cell: %.2f MB", len(ways), float64(sizeAfterWritingPartOfCell-sizeBeforeWritingPartOfCell)/1024/1024)
 
-		/*
-			Relations
-		*/
-		sizeBeforeWritingPartOfCell = getIndexFileSize(baseFolder)
-		for _, relation := range relations {
-			err = featureStorageWriter.WriteRelationFeature(relation, subExtent)
-			sigolo.FatalCheck(errors.Wrapf(err, "Unable to write relation %d to final index", relation.GetID()))
-		}
-		err = featureStorageWriter.FlushData()
-		sigolo.FatalCheck(errors.Wrap(err, "Unable to flush final data from writer"))
-		sizeAfterWritingPartOfCell = getIndexFileSize(baseFolder)
-		sigolo.Debugf("Size of %d relations in cell: %.2f MB", len(relations), float64(sizeAfterWritingPartOfCell-sizeBeforeWritingPartOfCell)/1024/1024)
-
 		duration = time.Since(currentSubExtentStartTime)
 		sigolo.Debugf("Processed sub-extent %v in %s", subExtent, duration)
 
 		sizeAfterWriting := getIndexFileSize(baseFolder)
 		sigolo.Debugf("Size of Cell: %.2f MB", float64(sizeAfterWriting-sizeBeforeWriting)/1024/1024)
+	}
+
+	for i, subExtent := range subExtents {
+		sigolo.Debugf("=== Writing final data  /  Step 2/2 (relations)  /  sub-extent %d / %d ===", i+1, len(subExtents))
+		sigolo.Tracef("Sub-extent bound: [%d/%d, %d/%d]", subExtent.LowerLeftCell().X(), subExtent.LowerLeftCell().Y(), subExtent.UpperRightCell().X(), subExtent.UpperRightCell().Y())
+
+		/*
+			Relations
+		*/
+		sizeBeforeWritingPartOfCell := getIndexFileSize(baseFolder)
+		relationsInExtent := featureStorageReader.GetRelationsInExtent(subExtent)
+		for _, relation := range relationsInExtent {
+			err = featureStorageWriter.WriteRelationFeature(relation, subExtent)
+			sigolo.FatalCheck(errors.Wrapf(err, "Unable to write relation %d to final index", relation.GetID()))
+		}
+		err = featureStorageWriter.FlushData()
+		sigolo.FatalCheck(errors.Wrap(err, "Unable to flush final data from writer"))
+		sizeAfterWritingPartOfCell := getIndexFileSize(baseFolder)
+		sigolo.Debugf("Size of %d relations in cell: %.2f MB", len(relationsInExtent), float64(sizeAfterWritingPartOfCell-sizeBeforeWritingPartOfCell)/1024/1024)
 	}
 
 	duration = time.Since(currentStepStartTime)

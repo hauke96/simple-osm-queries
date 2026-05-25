@@ -151,6 +151,13 @@ func (c CellExtent) ToPolygon(cellWidth float64, cellHeight float64) orb.Polygon
 	}
 }
 
+func (c CellExtent) ToBound(cellWidth float64, cellHeight float64) orb.Bound {
+	lowerLeft := c[0].ToPoint(cellWidth, cellHeight)
+	maxCell := CellIndex{c[1].X() + 1, c[1].Y() + 1}
+	upperRight := maxCell.ToPoint(cellWidth, cellHeight)
+	return orb.Bound{Min: lowerLeft, Max: upperRight}
+}
+
 func (c CellExtent) String() string {
 	return fmt.Sprintf("CellExtent{lowerLeft=%s, upperRight=%s}", c.LowerLeftCell().String(), c.UpperRightCell().String())
 }
