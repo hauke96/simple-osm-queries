@@ -8,6 +8,7 @@ import (
 	"soq/index"
 	"soq/index/storage"
 	"soq/parser"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/hauke96/sigolo/v2"
@@ -53,6 +54,8 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 		http.ServeFile(writer, request, "./web/index.html")
 	})
 	r.HandleFunc("/query", func(writer http.ResponseWriter, request *http.Request) {
+		handlerStartTime := time.Now()
+
 		writer.Header().Set("Access-Control-Allow-Origin", "*")
 		writer.Header().Set("Content-Type", "application/json")
 
@@ -135,6 +138,9 @@ func initRouter(indexBaseFolder string, defaultCellSize float64, checkFeatureVal
 			}
 			return
 		}
+
+		queryDuration := time.Since(handlerStartTime)
+		sigolo.Infof("Handles query request in %s", queryDuration)
 	}).Methods(http.MethodPost)
 
 	return r

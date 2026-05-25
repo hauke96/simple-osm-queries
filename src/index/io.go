@@ -1,13 +1,14 @@
 package index
 
 import (
-	"github.com/hauke96/sigolo/v2"
-	"github.com/paulmach/orb/geojson"
-	"github.com/pkg/errors"
 	"io"
 	"os"
 	"soq/feature"
 	"time"
+
+	"github.com/hauke96/sigolo/v2"
+	"github.com/paulmach/orb/geojson"
+	"github.com/pkg/errors"
 )
 
 func WriteFeaturesAsGeoJsonFile(encodedFeatures []feature.Feature, tagIndex *TagIndex) error {
@@ -70,7 +71,7 @@ func WriteFeaturesAsGeoJson(encodedFeatures []feature.Feature, tagIndex *TagInde
 	}
 
 	queryDuration := time.Since(writeStartTime)
-	sigolo.Infof("Finished writing in %s", queryDuration)
+	sigolo.Infof("Finished writing GeoJSON in %s", queryDuration)
 
 	return nil
 }
